@@ -13,11 +13,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    
-    - uses: actions/setup-haskell@v1
+
+    - uses: haskell/actions/setup@v1
       id: setup-haskell
       with:
-        ghc-version: '8.10'
+        ghc-version: '8.10.7'
 
     - name: Cache
       uses: actions/cache@v1
@@ -27,7 +27,7 @@ jobs:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: ${{ runner.os }}-${{ github.sha }}
         restore-keys: ${{ runner.os }}-
-          
+
     - name: Install dependencies
       run: |
         cabal update
@@ -35,6 +35,6 @@ jobs:
 
     - name: Build
       run: cabal build --enable-tests --enable-benchmarks all
-    
+
     - name: Run tests
       run: cabal test all
