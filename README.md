@@ -38,10 +38,10 @@ An input file could look like the following
 
 ```toml
 [[sources]]
-url = https://..../source1.tar.gz
+url = "https://.../source1.tar.gz"
 
 [[sources]]
-url = https://..../source2.tar.gz
+url = "https://.../source2.tar.gz"
 subdirs = [
     "a",
     "b",
@@ -65,6 +65,14 @@ cabal, e.g. in a `cabal.project`
 ```
 repository packages.example.org
   url: https://packages.example.org/
+  secure: True
+```
+
+Alternatively, cabal can read the repository directly off disk
+
+```
+repository packages.example.org
+  url: file:///path/to/_repo
   secure: True
 ```
 
