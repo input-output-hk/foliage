@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+
+  workflow_dispatch: {}
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    container: alpine:3.12
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install system dependencies
+      run: |
+        apk add --no-cache curl gcc g++ gmp-dev ncurses-dev libffi-dev make xz gzip tar perl git bash sudo binutils-gold
+        apk add --no-cache zlib zlib-dev zlib-static gmp gmp-dev ncurses-static
+
+    - uses: haskell/actions/setup@v1
+      id: setup-haskell
+      with:
+        ghc-version: '8.10.7'
+
+    - name: Cache
+      uses: actions/cache@v1
+      env:
+        cache-name: cache-cabal
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: ${{ runner.os }}-${{ github.sha }}
+        restore-keys: ${{ runner.os }}-
+
+    - name: Install dependencies
+      run: cabal build --only-dependencies --ghc-options='-split-sections -optl-static'
+
+    - name: Build
+      id: build
+      run: |
+        cabal build --ghc-options='-split-sections -optl-static'
+        echo "action_state=yellow" >> $GITHUB_ENV
+        # don't ask me why this works
+        echo "::set-output name=executable::$(cabal list-bin *.cabal)"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: static-executable
+        path: ${{ steps.build.outputs.executable }}
