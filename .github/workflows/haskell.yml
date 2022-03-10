@@ -2,39 +2,81 @@ name: Haskell CI
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+    tags:
+      - v*
   pull_request:
-    branches: [ main ]
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on:
+      - ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - uses: haskell/actions/setup@v1
-      id: setup-haskell
-      with:
-        ghc-version: '8.10.7'
+      - name: Setup Haskell
+        id: setup-haskell
+        uses: haskell/actions/setup@v1
+        with:
+          ghc-version: '8.10.7'
 
-    - name: Cache
-      uses: actions/cache@v1
-      env:
-        cache-name: cache-cabal
-      with:
-        path: ${{ steps.setup-haskell.outputs.cabal-store }}
-        key: ${{ runner.os }}-${{ github.sha }}
-        restore-keys: ${{ runner.os }}-
+      - name: Cache
+        uses: actions/cache@v1
+        with:
+          path: ${{ steps.setup-haskell.outputs.cabal-store }}
+          key: ${{ runner.os }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-
 
-    - name: Install dependencies
-      run: |
-        cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks
+      - name: Build dependencies
+        run: cabal build --only-dependencies
 
-    - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
+      - name: Build
+        run: cabal build
 
-    - name: Run tests
-      run: cabal test all
+      - name: Test
+        run: cabal test
+
+      - name: Copy artifacts
+        run: |
+          mkdir ${{ github.workspace }}/build-artifacts
+          cabal install --install-method=copy --installdir=${{ github.workspace }}/build-artifacts
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifact-${{ runner.os }}
+          path: ${{ github.workspace }}/build-artifacts
+          if-no-files-found: error
+
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v3
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -R
+
+          # Tag artifacts by ref_name and os (only Linux for now)
+          mkdir release-artifacts
+          for path in build-artifact-Linux/*; do
+            name=${path##*/}
+            cp $path release-artifacts/$name-${{ github.ref_name }}-Linux
+          done
+
+          ls -R
+
+          gh release create ${{ github.ref_name }} \
+            --repo ${{ github.repository }} --draft --generate-notes \
+            release-artifacts/*
