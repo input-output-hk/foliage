@@ -1,0 +1,38 @@
+name: Foliage
+
+description: Create a Haskell package repository
+
+inputs:
+  config:
+    description: Path to the repository config file
+    default: config.toml
+
+outputs:
+  repository-path:
+    description: Path to the generated repository
+    value: ${{ steps.generate-repository.outputs.repository-path }}
+
+runs:
+  # I am using a composite actions because
+  # 1. Docker seems excessive
+  # 2. I dislike javascript tooling
+  using: "composite"
+
+  steps:
+
+    - name: Setup foliage tool
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const tc = require('@actions/tool-cache')
+          const version = "0.1.0.0"
+          const toolUrl = `https://github.com/andreabedini/foliage/releases/download/v${version}/foliage-v${version}-Linux`
+          const downloadPath = await tc.downloadTool(toolUrl)
+          const cachedPath = await tc.cacheFile(downloadPath, 'foliage', 'foliage', version)
+          core.addPath(cachedPath)
+
+    - name: Generate repository
+      id: generate-repository
+      run: |
+        foliage --config ${{ inputs.config }}
+        echo "::set-output name=repository-path::$PWD/_repo"
