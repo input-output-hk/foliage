@@ -16,13 +16,13 @@ updateRepo :: FilePath -> FilePath -> IO ()
 updateRepo keysDir repoDir = do
   keysLoc <- KeysLoc <$> makeAbsolute (fromFilePath keysDir)
   repoLoc <- RepoLoc <$> makeAbsolute (fromFilePath repoDir)
-  RepoTool.bootstrapOrUpdate (globalOpts $ Update keysLoc repoLoc) keysLoc repoLoc True
+  RepoTool.bootstrapOrUpdate (globalOpts $ Update keysLoc repoLoc) keysLoc repoLoc False
 
 bootstrapRepo :: FilePath -> FilePath -> IO ()
 bootstrapRepo keysDir repoDir = do
   keysLoc <- KeysLoc <$> makeAbsolute (fromFilePath keysDir)
   repoLoc <- RepoLoc <$> makeAbsolute (fromFilePath repoDir)
-  RepoTool.bootstrapOrUpdate (globalOpts $ Bootstrap keysLoc repoLoc) keysLoc repoLoc False
+  RepoTool.bootstrapOrUpdate (globalOpts $ Bootstrap keysLoc repoLoc) keysLoc repoLoc True
 
 createKeys :: FilePath -> IO ()
 createKeys keysDir = do
