@@ -73,6 +73,9 @@ jobs:
             cp $path release-artifacts/$name-Linux
           done
 
+          # Strip binaries
+          strip release-artifacts/*
+
           gh release create ${{ github.ref_name }} \
             --repo ${{ github.repository }} --draft --generate-notes \
             release-artifacts/*
