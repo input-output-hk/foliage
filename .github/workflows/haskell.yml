@@ -67,7 +67,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Tag artifacts by os (only Linux for now)
-          # Do not
           mkdir release-artifacts
           for path in build-artifact-Linux/*; do
             name=${path##*/}
