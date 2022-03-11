@@ -93,7 +93,7 @@ ensureKeys keysDir = do
       case mKeys of
         Just _keys -> do
           echo "Using keys from environment"
-          bash_ "echo $KEYS | base64 0d | tar xz" []
+          bash_ "echo \"$KEYS\" | base64 -d | tar xz" []
         Nothing -> do
           echo $ "Creating new repository keys in " <> toTextIgnore keysDir
           hackageRepoTool "create-keys" ["--keys", toTextIgnore keysDir]
