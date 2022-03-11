@@ -93,7 +93,8 @@ ensureKeys keysDir = do
       case mKeys of
         Just _keys -> do
           echo "Using keys from environment"
-          bash_ "echo \"$KEYS\" | base64 -d | tar xz" []
+          mkdir keysDir
+          bash_ ("echo \"$KEYS\" | base64 -d | tar xvz -C " <> keysDir) []
         Nothing -> do
           echo $ "Creating new repository keys in " <> toTextIgnore keysDir
           liftIO $ createKeys keysDir
