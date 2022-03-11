@@ -7,6 +7,10 @@ inputs:
     description: Path to the repository config file
     default: config.toml
 
+  version:
+    description: Foliage version to use
+    default: latest
+
 outputs:
   repository-path:
     description: Path to the generated repository
@@ -25,14 +29,33 @@ runs:
       with:
         script: |
           const tc = require('@actions/tool-cache')
-          const version = "0.1.0.0"
-          const toolUrl = `https://github.com/andreabedini/foliage/releases/download/v${version}/foliage-v${version}-Linux`
-          const downloadPath = await tc.downloadTool(toolUrl)
-          const cachedPath = await tc.cacheFile(downloadPath, 'foliage', 'foliage', version)
-          core.addPath(cachedPath)
+
+          let version = core.getInput('version')
+          if (!version || version == 'latest') {
+            const res = await github.rest.repos.getLatestRelease({
+              owner: "andreabedini",
+              repo: "foliage"
+            })
+            version = res.name
+          } else {
+            version = `v${version}`
+          }
+
+          let toolPath = tc.find('foliage', version)
+          if (!toolPath) {
+            const toolUrl = `https://github.com/andreabedini/foliage/releases/download/${version}/foliage-${version}-Linux`
+            const downloadPath = await tc.downloadTool(toolUrl)
+            toolPath = await tc.cacheFile(downloadPath, 'foliage', 'foliage', version)
+          }
+          core.addPath(toolPath)
 
     - name: Generate repository
       id: generate-repository
-      run: |
-        foliage --config ${{ inputs.config }}
-        echo "::set-output name=repository-path::$PWD/_repo"
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const configPath = core.getInput('config')
+          await exec.exec('foliage', ['--config', configPath]);
+
+          const process = require('process');
+          core.setOutput('repository-path', `${process.cwd()}/_repo`);
