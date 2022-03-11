@@ -38,6 +38,7 @@ makeRepository sources = shelly $ do
   outDir <- absPath "_repo"
   idxDir <- absPath "_repo/index"
   pkgDir <- absPath "_repo/package"
+
   -- clean repository directory
   rm_rf outDir
   mkdir outDir
@@ -47,6 +48,8 @@ makeRepository sources = shelly $ do
   ensureKeys keysDir
 
   forM_ sources $ processSource pkgDir
+
+  echo "Bootstrapping repository"
   liftIO $ bootstrapRepo keysDir outDir
 
   revisions <-
