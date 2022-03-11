@@ -1,0 +1,98 @@
+cabal-version:       1.12
+name:                hackage-repo-tool
+version:             0.1.1.2
+x-revision: 2
+
+build-type:          Simple
+synopsis:            Manage secure file-based package repositories
+description:         This utility can be used to manage secure file-based package
+                     repositories (creating [TUF](https://theupdateframework.github.io/)
+                     metadata as well as a Hackage index tarball) which can be used by
+                     clients such as [cabal-install](http://hackage.haskell.org/package/cabal-install).
+                     Currently it also provides various lower level utilities for creating
+                     and signing TUF files.
+                     .
+                     This is part of the [Hackage Security](https://github.com/haskell/hackage-security#readme)
+                     infrastructure.
+license:             BSD3
+license-file:        LICENSE
+author:              Edsko de Vries
+maintainer:          cabal-devel@haskell.org
+copyright:           Copyright 2015 Well-Typed LLP
+category:            Distribution
+homepage:            https://github.com/haskell/hackage-security
+bug-reports:         https://github.com/haskell/hackage-security/issues
+tested-with:         GHC==8.8.1, GHC==8.6.5, GHC==8.4.4, GHC==8.2.2, GHC==8.0.2,
+                     GHC==7.10.3, GHC==7.8.4, GHC==7.6.3, GHC==7.4.2
+
+extra-source-files:
+  ChangeLog.md README.md
+
+source-repository head
+  type: git
+  location: https://github.com/haskell/hackage-security.git
+
+flag use-network-uri
+  description: Are we using @network-uri@?
+  manual: False
+
+flag use-old-time
+  description: Are we using @old-time@?
+  manual: False
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Hackage.Security.RepoTool.Main
+                       Hackage.Security.RepoTool.Options
+                       Hackage.Security.RepoTool.Layout
+                       Hackage.Security.RepoTool.Layout.Keys
+                       Hackage.Security.RepoTool.Paths
+                       Hackage.Security.RepoTool.Util.IO
+
+  -- For boot libraries we try to accomodate the versions bundled with
+  -- the respective GHC release
+  build-depends:       base                 >= 4.5  && < 4.15,
+                       bytestring           >= 0.9  && < 0.12,
+                       Cabal                >= 1.14 && < 1.26
+                                         || >= 2.0  && < 2.6
+                                         || >= 3.0  && < 3.4,
+                       directory            >= 1.1  && < 1.4,
+                       filepath             >= 1.3  && < 1.5,
+                       time                 >= 1.4  && < 1.10
+  if !os(windows)
+    build-depends:     unix                 >= 2.5  && < 2.8
+
+  if flag(use-old-time)
+    build-depends: directory < 1.2
+                 , old-time == 1.1.*
+  else
+    build-depends: directory >= 1.2
+
+  -- For non-boot libraries we try to support single major versions
+  -- to reduce the risk of semantic differences
+  build-depends:       microlens            >= 0.4.11.2 && < 0.5,
+                       optparse-applicative >= 0.15.1   && < 0.16,
+                       tar                  >= 0.5      && < 0.6,
+                       zlib                 >= 0.6      && < 0.7,
+                       hackage-security     >= 0.6      && < 0.7
+
+  -- see comments in hackage-security.cabal
+  if flag(use-network-uri)
+    build-depends: network-uri >= 2.6 && < 2.7,
+                   network     >= 2.6 && < 2.9
+                            || >= 3.0 && < 3.2
+  else
+    build-depends: network     >= 2.5 && < 2.6
+
+
+  default-language:    Haskell2010
+  default-extensions:  DeriveDataTypeable
+                       FlexibleContexts
+                       FlexibleInstances
+                       NoMonomorphismRestriction
+                       ScopedTypeVariables
+                       StandaloneDeriving
+                       RecordWildCards
+
+  ghc-options:         -Wall
+

@@ -1,4 +1,4 @@
-module Config
+module Foliage.Config
   ( Config (..),
     Source (..),
     readConfig,

@@ -5,21 +5,18 @@
 
 module Main where
 
-import Config (Config (..), Source (..), readConfig)
+import Control.Monad
 import Control.Monad.IO.Class (MonadIO)
-import Data.Foldable (forM_)
 import Data.List (isPrefixOf)
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Traversable (forM)
-import Options (Options (..), parseOptions)
+import Foliage.Config (Config (..), Source (..), readConfig)
+import Foliage.Options (Options (..), parseOptions)
+import Foliage.RepoToolWrapper
 import Shelly
 import System.FilePath (replaceDirectory, stripExtension, takeFileName)
 import System.IO (hPutStrLn, stderr)
-
-hackageRepoTool :: Text -> [Text] -> Sh ()
-hackageRepoTool = command1_ "hackage-repo-tool" []
 
 cabal :: Text -> [Text] -> Sh ()
 cabal = command1_ "cabal" []
@@ -50,7 +47,7 @@ makeRepository sources = shelly $ do
   ensureKeys keysDir
 
   forM_ sources $ processSource pkgDir
-  hackageRepoTool "bootstrap" ["--keys", toTextIgnore keysDir, "--repo", toTextIgnore outDir]
+  liftIO $ bootstrapRepo keysDir outDir
 
   revisions <-
     fmap catMaybes $ do
@@ -74,7 +71,7 @@ makeRepository sources = shelly $ do
 
   unless (null revisions) $ do
     echo "Updating index after applying revisions"
-    hackageRepoTool "update" ["--keys", toTextIgnore keysDir, "--repo", toTextIgnore outDir]
+    liftIO $ updateRepo keysDir outDir
 
   echo $ "Hackage repository built in " <> toTextIgnore outDir
 
@@ -96,7 +93,7 @@ ensureKeys keysDir = do
           bash_ "echo \"$KEYS\" | base64 -d | tar xz" []
         Nothing -> do
           echo $ "Creating new repository keys in " <> toTextIgnore keysDir
-          hackageRepoTool "create-keys" ["--keys", toTextIgnore keysDir]
+          liftIO $ createKeys keysDir
 
 processSource :: FilePath -> Source -> Sh ()
 processSource pkgDir (Source url subdirs) = do

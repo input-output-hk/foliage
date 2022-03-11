@@ -1,4 +1,4 @@
-module Options
+module Foliage.Options
   ( parseOptions,
     Options (..),
     module Options.Applicative,
