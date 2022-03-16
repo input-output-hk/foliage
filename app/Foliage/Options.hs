@@ -17,8 +17,9 @@ parseOptions =
           <> header "foliage - a builder for static Hackage repositories"
       )
 
-newtype Options = Options
+data Options = Options
   { optionsConfig :: FilePath
+  , optionsKeys :: FilePath
   }
 
 optionsParser :: Parser Options
@@ -31,3 +32,11 @@ optionsParser =
           <> showDefault
           <> value "config.toml"
       )
+    <*> strOption
+      ( long "keys"
+          <> metavar "KEYS"
+          <> help "Keys folder"
+          <> showDefault
+          <> value "_keys"
+      )
+

@@ -23,7 +23,7 @@ cabal = command1_ "cabal" []
 
 main :: IO ()
 main = do
-  Options {optionsConfig} <- parseOptions
+  Options {optionsConfig, optionsKeys} <- parseOptions
 
   eConfig <- readConfig optionsConfig
 
@@ -31,10 +31,10 @@ main = do
     Left e ->
       hPutStrLn stderr e
     Right config ->
-      makeRepository (configSources config)
+      makeRepository (configSources config) optionsKeys
 
-makeRepository :: MonadIO m => [Source] -> m ()
-makeRepository sources = shelly $ do
+makeRepository :: MonadIO m => [Source] -> FilePath -> m ()
+makeRepository sources keysPath = shelly $ do
   outDir <- absPath "_repo"
   idxDir <- absPath "_repo/index"
   pkgDir <- absPath "_repo/package"
@@ -44,7 +44,7 @@ makeRepository sources = shelly $ do
   mkdir outDir
   mkdir pkgDir
 
-  keysDir <- absPath "_keys"
+  keysDir <- absPath keysPath
   ensureKeys keysDir
 
   forM_ sources $ processSource pkgDir
@@ -89,15 +89,8 @@ ensureKeys keysDir = do
   if b
     then echo $ "Using existing keys in " <> toTextIgnore keysDir
     else do
-      mKeys <- get_env "KEYS"
-      case mKeys of
-        Just _keys -> do
-          echo "Using keys from environment"
-          mkdir keysDir
-          bash_ ("echo \"$KEYS\" | base64 -d | tar xvz -C " <> keysDir) []
-        Nothing -> do
-          echo $ "Creating new repository keys in " <> toTextIgnore keysDir
-          liftIO $ createKeys keysDir
+      echo $ "Creating new repository keys in " <> toTextIgnore keysDir
+      liftIO $ createKeys keysDir
 
 processSource :: FilePath -> Source -> Sh ()
 processSource pkgDir (Source url subdirs) = do
