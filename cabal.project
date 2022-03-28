@@ -1,6 +1,0 @@
-packages:
-  ./foliage.cabal
-  ./hackage-repo-tool-0.1.1.2/hackage-repo-tool.cabal
-
-allow-newer:
-  hackage-repo-tool:*

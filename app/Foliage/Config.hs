@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Foliage.Config
   ( Config (..),
     Source (..),

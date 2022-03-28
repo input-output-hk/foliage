@@ -1,42 +1,88 @@
 module Foliage.Options
-  ( parseOptions,
-    Options (..),
-    module Options.Applicative,
+  ( parseCommand,
+    Command (..),
+    BuildOptions (..),
+    ImportHackageOptions (..),
   )
 where
 
+import Foliage.Time
 import Options.Applicative
 
-parseOptions :: IO Options
-parseOptions =
-  execParser $
-    info
+data Command
+  = CreateKeys FilePath
+  | Build BuildOptions
+  | ImportHackage ImportHackageOptions
+
+parseCommand :: IO Command
+parseCommand =
+  customExecParser
+    (prefs showHelpOnEmpty)
+    $ info
       (optionsParser <**> helper)
       ( fullDesc
           <> progDesc "foliage"
           <> header "foliage - a builder for static Hackage repositories"
       )
 
-data Options = Options
-  { optionsConfig :: FilePath
-  , optionsKeys :: FilePath
-  }
-
-optionsParser :: Parser Options
+optionsParser :: Parser Command
 optionsParser =
-  Options
+  hsubparser $
+    command "create-keys" (info createKeysCommand (progDesc "Create TUF keys"))
+      <> command "build" (info buildCommand (progDesc "Build repository"))
+      <> command "import-hackage" (info importHackageCommand (progDesc "Import from Hackage"))
+
+data BuildOptions = BuildOptions FilePath (Maybe UTCTime) FilePath
+
+buildCommand :: Parser Command
+buildCommand =
+  Build
+    <$> ( BuildOptions
+            <$> strOption
+              ( long "keys"
+                  <> metavar "KEYS"
+                  <> help "TUF keys location"
+                  <> showDefault
+                  <> value "_keys"
+              )
+            <*> optional
+              ( option
+                  (maybeReader iso8601ParseM)
+                  ( long "current-time"
+                      <> metavar "TIME"
+                      <> help "Set current time"
+                      <> showDefault
+                  )
+              )
+            <*> strOption
+              ( long "output-directory"
+                  <> metavar "OUTDIR"
+                  <> help "Repository output directory"
+                  <> showDefault
+                  <> value "_repo"
+              )
+        )
+
+createKeysCommand :: Parser Command
+createKeysCommand =
+  CreateKeys
     <$> strOption
-      ( long "config"
-          <> metavar "CONFIG"
-          <> help "Config file"
-          <> showDefault
-          <> value "config.toml"
-      )
-    <*> strOption
       ( long "keys"
           <> metavar "KEYS"
-          <> help "Keys folder"
+          <> help "TUF keys location"
           <> showDefault
           <> value "_keys"
       )
 
+newtype ImportHackageOptions = ImportHackageOptions (Maybe String)
+
+importHackageCommand :: Parser Command
+importHackageCommand =
+  ImportHackage . ImportHackageOptions
+    <$> optional
+      ( strOption
+          ( long "package-name"
+              <> metavar "NAME"
+              <> help "Filter for package name"
+          )
+      )
