@@ -22,6 +22,7 @@ import Foliage.Shake.Oracle
 import Foliage.Time qualified as Time
 import Foliage.Utils
 import System.Directory qualified as IO
+import Data.Maybe (fromMaybe)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild (BuildOptions keysPath mCurrentTime outDir) = do
@@ -246,24 +247,25 @@ cmdBuild (BuildOptions keysPath mCurrentTime outDir) = do
             SourceMeta {sourceTimestamp, sourceRevisions} <- getSourceMeta (GetSourceMeta pkgId)
 
             srcDir <- getSourceDir (GetSourceDir pkgId)
+            now <- getCurrentTime GetCurrentTime
 
             sequence $
               [ -- original cabal file
                 mkTarEntry
                   (srcDir </> pkgName <.> "cabal")
                   (pkgName </> pkgVersion </> pkgName <.> "cabal")
-                  sourceTimestamp,
+                  (fromMaybe now sourceTimestamp),
                 -- package.json
                 mkTarEntry
                   (outDir </> "index" </> pkgName </> pkgVersion </> "package.json")
                   (pkgName </> pkgVersion </> "package.json")
-                  sourceTimestamp
+                  (fromMaybe now sourceTimestamp)
               ]
                 ++ [ -- revised cabal files
                      mkTarEntry
                        ("_sources" </> pkgName </> pkgVersion </> "revisions" </> show revNum <.> "cabal")
                        (pkgName </> pkgVersion </> pkgName <.> "cabal")
-                       revTimestamp
+                       (fromMaybe now revTimestamp)
                      | RevisionMeta revTimestamp revNum <- sourceRevisions
                    ]
 

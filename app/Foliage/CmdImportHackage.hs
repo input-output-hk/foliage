@@ -54,14 +54,14 @@ importIndex f (Tar.Next e es) m =
                       Just $
                         SourceMeta
                           { sourceUrl = pkgIdToHackageUrl pkgId,
-                            sourceTimestamp = time,
+                            sourceTimestamp = Just time,
                             sourceSubdir = Nothing,
                             sourceRevisions = []
                           }
                   -- Existing package, new revision
                   Just sm -> do
                     let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
-                        newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = time}
+                        newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = Just time}
                     -- bad performance here but I don't care
                     let sm' = sm {sourceRevisions = sourceRevisions sm ++ [newRevision]}
                     let PackageId pkgName pkgVersion = pkgId
