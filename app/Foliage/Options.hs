@@ -32,7 +32,12 @@ optionsParser =
       <> command "build" (info buildCommand (progDesc "Build repository"))
       <> command "import-hackage" (info importHackageCommand (progDesc "Import from Hackage"))
 
-data BuildOptions = BuildOptions FilePath (Maybe UTCTime) FilePath
+data BuildOptions = BuildOptions
+  { buildOptsKeysPath :: FilePath,
+    buildOptsCurrentTime :: Maybe UTCTime,
+    buildOptsInputDir :: FilePath,
+    buildOptsOutputDir :: FilePath
+  }
 
 buildCommand :: Parser Command
 buildCommand =
@@ -55,8 +60,15 @@ buildCommand =
                   )
               )
             <*> strOption
+              ( long "input-directory"
+                  <> metavar "INPUT"
+                  <> help "Repository input directory"
+                  <> showDefault
+                  <> value "_sources"
+              )
+            <*> strOption
               ( long "output-directory"
-                  <> metavar "OUTDIR"
+                  <> metavar "OUTPUT"
                   <> help "Repository output directory"
                   <> showDefault
                   <> value "_repo"
