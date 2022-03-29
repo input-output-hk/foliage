@@ -20,7 +20,73 @@ deployment of [hackage-server](https://github.com/haskell/hackage-server/).
 Foliage explores the idea of creaating and serving this content as a static
 website, generated programmatically from textual input files.
 
-## Example
+## Use cases
+
+### Company internal hackage
+
+Company XYZ has developed many Haskell packages, some of which are forks of
+public Haskell libraries. For various reasons XYZ might not be inclined in
+publishing their packages to Hackage. If XYZ is using multiple repositories
+for version control, keeping all the company's packages in sync will become
+a problem.
+
+Currently XYZ's best option is to use `cabal.project` files. Each cabal
+package can declare its non-Hackage dependencies using the
+[`source-repository-package` stanza](https://cabal.readthedocs.io/en/3.6/cabal-project.html#specifying-packages-from-remote-version-control-locations).
+
+*Note*: packages can be grouped together into a cabal project, in which case
+`source-repository-package` stanzas become the project dependencies; this
+distintion is inconsequential to our example.
+
+E.g. if packageA needs packageB, hosted on GitHub; packageA's
+`cabal.project` will include:
+
+```
+source-repository-package
+    type: git
+    location: https://github.com/Company-XYZ/packageB
+    tag: e70cf0c171c9a586b62b3f75d72f1591e4e6aaa1
+```
+
+While the presence of a git tag makes this quite reproducible; a problem
+arises in that these dependencies are not transitive. Without any
+versioning to help, one has to manually pick a working set of dependencies.
+
+E.g. if packageC depends on packageA, packageC `cabal.project` will have to
+include something like:
+
+```
+-- Direct dependency
+source-repository-package
+    type: git
+    location: https://github.com/Company-XYZ/packageA
+    tag: e76fdc753e660dfa615af6c8b6a2ad9ddf6afe70
+
+-- From packageA
+source-repository-package
+    type: git
+    location: https://github.com/Company-XYZ/packageB
+    tag: e70cf0c171c9a586b62b3f75d72f1591e4e6aaa1
+```
+
+Having an internal company Hackage, solves the above problem by
+reintroducing versioning and a familiar workflow for handling Hackage
+dependencies; while maintaining absolute control and flexibility over
+versioning policies and dependency management.
+
+When the team behind packageA wants to push out a new version, say version
+1.2.3.4, all they have to do is to update the foliage repository with a
+file `packageA/1.2.3.4/meta.toml` with content:
+
+```toml
+timestamp = 2022-03-29T06:19:50+00:00
+url = https://github.com/Company-XYZ/packageA/tarball/e76fdc753e660dfa615af6c8b6a2ad9ddf6afe70
+```
+
+*Note*: Any other url would work here. E.g. one could use GitHub releases:
+`https://github.com/Company-XYZ/packageA/archive/refs/tags/v1.2.3.4.tar.gz`.
+
+## Quickstart
 
 Foliage expects a folder `_sources` with a subfolder per package name and
 version.
