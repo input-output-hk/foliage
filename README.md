@@ -80,7 +80,7 @@ file `packageA/1.2.3.4/meta.toml` with content:
 
 ```toml
 timestamp = 2022-03-29T06:19:50+00:00
-url = https://github.com/Company-XYZ/packageA/tarball/e76fdc753e660dfa615af6c8b6a2ad9ddf6afe70
+url = 'https://github.com/Company-XYZ/packageA/tarball/e76fdc753e660dfa615af6c8b6a2ad9ddf6afe70'
 ```
 
 *Note*: Any other url would work here. E.g. one could use GitHub releases:
