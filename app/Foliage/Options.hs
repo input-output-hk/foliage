@@ -3,6 +3,7 @@ module Foliage.Options
     Command (..),
     BuildOptions (..),
     ImportHackageOptions (..),
+    ImportFilter(..)
   )
 where
 
@@ -86,15 +87,27 @@ createKeysCommand =
           <> value "_keys"
       )
 
-newtype ImportHackageOptions = ImportHackageOptions (Maybe String)
+data ImportFilter = ImportFilter String (Maybe String)
+
+newtype ImportHackageOptions = ImportHackageOptions
+  { importOptsFilter :: Maybe ImportFilter
+  }
 
 importHackageCommand :: Parser Command
 importHackageCommand =
   ImportHackage . ImportHackageOptions
     <$> optional
-      ( strOption
-          ( long "package-name"
-              <> metavar "NAME"
-              <> help "Filter for package name"
-          )
+      ( ImportFilter
+          <$> strOption
+            ( long "package-name"
+                <> metavar "NAME"
+                <> help "package name"
+            )
+          <*> optional
+            ( strOption
+                ( long "package-version"
+                    <> metavar "VERSION"
+                    <> help "package version"
+                )
+            )
       )

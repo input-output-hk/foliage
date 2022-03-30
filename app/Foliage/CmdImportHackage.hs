@@ -21,7 +21,10 @@ import System.FilePath
 
 cmdImportHackage :: ImportHackageOptions -> IO ()
 cmdImportHackage (ImportHackageOptions Nothing) = importHackage (const True)
-cmdImportHackage (ImportHackageOptions (Just s)) = importHackage ((== s) . pkgName)
+cmdImportHackage (ImportHackageOptions (Just f)) = importHackage (mkFilter f)
+  where
+    mkFilter (ImportFilter pn Nothing) = (== pn) . pkgName
+    mkFilter (ImportFilter pn (Just pv)) = (&&) <$> (== pn) . pkgName <*> (== pv) . pkgVersion
 
 importHackage ::
   (PackageId -> Bool) ->
