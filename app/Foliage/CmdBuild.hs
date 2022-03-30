@@ -341,12 +341,20 @@ cmdBuild
 
       outputDir </> "package/*.tar.gz" %> \path -> do
         let [_, _, filename] = splitDirectories path
-        let Just pkgId = parsePkgId <$> stripExtension "tar.gz" filename
+        let Just pkgId@PackageId {pkgName, pkgVersion} = parsePkgId <$> stripExtension "tar.gz" filename
 
         srcDir <- getSourceDir (GetSourceDir pkgId)
 
         withTempDir $ \tmpDir -> do
           putInfo $ " Creating source distribution for " <> pkgIdToString pkgId
+
+          patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
+
+          for_ patches $ \patch -> do
+            let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
+            putInfo $ "Applying patch: " <> patch
+            cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
+
           cmd_ Shell (Cwd srcDir) (FileStdout path) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
 
           -- check cabal sdist has produced a single tarball with the
