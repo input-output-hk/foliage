@@ -20,9 +20,9 @@ deployment of [hackage-server](https://github.com/haskell/hackage-server/).
 Foliage explores the idea of creaating and serving this content as a static
 website, generated programmatically from textual input files.
 
-## Use cases
+# Use cases
 
-### Company internal hackage
+## Company internal hackage
 
 Company XYZ has developed many Haskell packages, some of which are forks of
 public Haskell libraries. For various reasons XYZ might not be inclined in
@@ -86,35 +86,78 @@ url = 'https://github.com/Company-XYZ/packageA/tarball/e76fdc753e660dfa615af6c8b
 *Note*: Any other url would work here. E.g. one could use GitHub releases:
 `https://github.com/Company-XYZ/packageA/archive/refs/tags/v1.2.3.4.tar.gz`.
 
-## Quickstart
+:information_source: Although the `timestamp` field in the package source metadata is
+optional, it is highly reccomended if you intend your repository users to
+be able to use cabal's `index-state` functionality. Adding a timestamp
+every time you add a package version ensures the newly created index is
+"compatible" with what the users have already fetched.
 
-Foliage expects a folder `_sources` with a subfolder per package name and
-version.
+# Quickstart
+
+### Adding one package
+
+It's reccomended to create a working directory first.
+
+Let's add a package (say `typed-protocols-0.1.0.0` from https://github.com/input-output-hk/ouroboros-network/tree/master/typed-protocols, at commit hash fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa).
+
+```bash
+$ mkdir -p _sources/typed-protocols/0.1.0.0
+$ cat _sources/typed-protocols/0.1.0.0/meta.toml
+url = 'https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa'
+subdir = 'typed-protocols'
+```
+
+### Building the repository
+
+Run foliage build.
+
+```
+$ foliage build
+🌿 Foliage
+🗝️ You don't seem to have created a set of TUF keys. I will create one in _keys
+🕐 Current time set to 2022-03-30T04:02:56Z.
+You can set a fixed time using the --current-time option
+
+🕐 Expiry time set to 2023-03-30T04:02:56Z (a year from now).
+🐢 Downloading https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa
+# curl (for _cache/aHR0cHM6Ly9naXRodWIuY29tL2lucHV0LW91dHB1dC1oay9vdXJvYm9yb3MtbmV0d29yay90YXJiYWxsL2ZhMTBjYjRlZWYxZTdkM2UwOTVjZWMzYzJiYjEyMTA3NzRiN2U1ZmE/.downloaded)
+# mv (for _cache/aHR0cHM6Ly9naXRodWIuY29tL2lucHV0LW91dHB1dC1oay9vdXJvYm9yb3MtbmV0d29yay90YXJiYWxsL2ZhMTBjYjRlZWYxZTdkM2UwOTVjZWMzYzJiYjEyMTA3NzRiN2U1ZmE/.downloaded)
+👀 https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa
+⚠️ Deleting cabal project files from _cache/aHR0cHM6Ly9naXRodWIuY29tL2lucHV0LW91dHB1dC1oay9vdXJvYm9yb3MtbmV0d29yay90YXJiYWxsL2ZhMTBjYjRlZWYxZTdkM2UwOTVjZWMzYzJiYjEyMTA3NzRiN2U1ZmE
+✅ Written _repo/index/typed-protocols/0.1.0.0/typed-protocols.cabal
+✅ Written _repo/root.json
+✅ Written _repo/mirrors.json
+ Creating source distribution for typed-protocols-0.1.0.0
+# cabal (for _repo/package/typed-protocols-0.1.0.0.tar.gz)
+# mv (for _repo/package/typed-protocols-0.1.0.0.tar.gz)
+✅ Written _repo/package/typed-protocols-0.1.0.0.tar.gz
+✅ Written _repo/index/typed-protocols/0.1.0.0/package.json
+✅ Written _repo/01-index.tar
+✅ Written _repo/01-index.tar.gz
+✅ Written _repo/snapshot.json
+✅ Written _repo/timestamp.json
+💥 All done. The repository is now available in _repo.
+```
+
+If you want to rely on the cabal index-state feature you need to specify a
+timestamp in the `meta.toml` file.
 
 E.g.
 
 ```
-_sources
-└── typed-protocols
-    └── 0.1.0.0
-        └── meta.toml
+$ cat _sources/typed-protocols/0.1.0.0/meta.toml
+url = 'https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa'
+subdir = 'typed-protocols'
+timestamp = 2022-03-29T06:19:50+00:00
 ```
 
-The file `meta.toml` describes a package and looks like this
+:information_source: Foliage uses the metadata timestamps to determine the
+order of the entries in `01-index`. This allows you to create an index that
+1) can be updated incrementally and 2) can be used with cabal's
+[index-state](https://cabal.readthedocs.io/en/3.6/cabal-project.html?highlight=index-state#cfg-field-index-state)
+feature.
 
-```toml
-timestamp = 2022-03-28T07:57:10Z
-url = 'https://github.com/input-output-hk/ouroboros-network/tarball/d2d219a86cda42787325bb8c20539a75c2667132'
-subdir = 'typed-protocols' # optional
-```
-
-Foliage will download the source url for each package (assumed to be a
-tarball), decompress it, make a source distribution and take the cabal
-file.
-
-After all packages have been processed, foliage will create a repository,
-including the index and the TUF metadata. With the input above foliage will
-produce the following:
+With the input above foliage will produce the following:
 
 ```
 _repo
@@ -133,25 +176,76 @@ _repo
 └── timestamp.json
 ```
 
-* `typed-protocols-0.1.0.0.tar.gz` is obtained by running
-  `cabal sdist` of the repository (and, optionally, subfolder) specified in
-  `meta.toml`.
-* `type-protocols.cabal` is extracted from the repository.
-* `01-index.tar` will include the cabal files and signed target file, using
-  the timestamp in `meta.toml`.
-  ```bash
-  $ TZ=UTC tar tvf _repo/01-index.tar
-  -rw-r--r-- foliage/foliage 1627 2022-03-28 07:57 typed-protocols/0.1.0.0/typed-protocols.cabal
-  -rw-r--r-- foliage/foliage  833 2022-03-28 07:57 typed-protocols/0.1.0.0/package.json
-  ```
-* The TUF files (`mirrors.json`, `root.json`, `snapshot.json`,
-  `timestamp.json`) are signed and contains reasonable defaults.
+The content of `_repo` can be served over HTTP(s) to cabal, e.g. from a
+`cabal.project` file.
 
-## Revisions
+```
+repository packages.example.org
+  url: http://packages.example.org
+  secure: True
+  root-keys:
+    144d97d34d0a86adb1ca7d6bdc1b2d9f0c9123e3c29e3765f5a9eece345ce4f9
+    a15f6ae88a26638934d90eff28da29990a4b12c8bb0b2c12f07e9a510e839a97
+    fde23c79a14bcbef6ccf198b4ad94ded4092784fcaed17c3d184008e9bf6f722
+  key-threshold: 3
+```
+
+Where the root key ids can be obtained from `_repo/root.json`.
+
+```bash
+$ jq -r .signatures[].keyid _repo/root.json
+144d97d34d0a86adb1ca7d6bdc1b2d9f0c9123e3c29e3765f5a9eece345ce4f9
+a15f6ae88a26638934d90eff28da29990a4b12c8bb0b2c12f07e9a510e839a97
+fde23c79a14bcbef6ccf198b4ad94ded4092784fcaed17c3d184008e9bf6f722
+```
+
+### TUF keys
+
+Foliage creates a set of private keys to sign the TUF metadata at first
+use. By default, the keys are created in `_keys`:
+
+```
+_keys/
+├── mirrors
+│   ├── 105369fb9cb1555cf4517be3e885215a7bc730bd59cf3084ea7140f9692ae847.json
+│   ├── 2178cff7b2a3a6edd396371c03bc8fddb77b77b104a9fd97f6291f2c49285946.json
+│   └── 4689f8a6d905a59536213a27ea577b34ff3e6d79d5a7b375458d3bb6026a5e13.json
+├── root
+│   ├── 144d97d34d0a86adb1ca7d6bdc1b2d9f0c9123e3c29e3765f5a9eece345ce4f9.json
+│   ├── a15f6ae88a26638934d90eff28da29990a4b12c8bb0b2c12f07e9a510e839a97.json
+│   └── fde23c79a14bcbef6ccf198b4ad94ded4092784fcaed17c3d184008e9bf6f722.json
+├── snapshot
+│   └── 07a918ccdb3ac0600a8b65f3bc96da18dfc5be65c023c64ccd0fb6a04692b64d.json
+├── target
+│   ├── 793b1b2730db6ec5247934ad0cc7b28ed3b05eae4ffec7e28e7b1739f1cb65b4.json
+│   ├── 908041deaae700390dfd7b4c8d3eca7049c8172a205bea19de8314c4fd9ca56f.json
+│   └── f102c7035da2a3b5fa82b90d8afe3e8892d13a8c6b7a4281403c340317a35014.json
+└── timestamp
+    └── 141da8eb2ccba61c2f6bb656b2292970d086770f5bf7d53802d2bc0ec1defa26.json
+```
+
+These keys are small enough you can store them in an environment variable.
+E.g.
+
+Save:
+```bash
+$ KEYS=$(tar cz -C _keys . | base64)
+```
+
+Restore:
+```bash
+$ mkdir _keys
+$ echo "$KEYS" | base64 -d | tar xz -C _keys
+```
+
+:warning: These are private keys. Don't publish them along with your
+repository!
+
+# Revisions
 
 Foliage supports cabal file revisions. Adding the following snippet to a
 package's `meta.toml`, will make foliage look for a cabal file in
-`<pkgName>/<pkgVersion>/revisions/1.cabal`.
+`<package>/<version>/revisions/1.cabal`.
 
 ```
 [[revisions]]
@@ -162,30 +256,19 @@ package's `meta.toml`, will make foliage look for a cabal file in
 The revised cabal file will enter the index with the timestamp provided in
 `meta.toml`.
 
-## Using the repository with cabal
+# Patches
 
-The resulting repository can then be server through HTTPS and used with
-cabal, e.g. in a `cabal.project`:
+Foliage also supports patches. Any file with `.patch` extension in
+`<package>/<version>/patches` will be applied as a patch to the source
+tarball before creating the source distribution.
 
-```
-repository packages.example.org
-  url: https://packages.example.org/
-  secure: True
-```
+:warning: Note that it is not possible to "apply a timestamp" to a patch. A
+patch changes the content of the source distribution and the repository can
+only provide one source distribution for given package name and version.
 
-Alternatively, cabal can read the repository directly off disk:
-
-```
-repository packages.example.org
-  url: file:///path/to/_repo
-  secure: True
-```
-
-**Note:** Hackage implements [The Update
-Framework](https://theupdateframework.io) which requires a set of public
-and private keys. Foliage can either generate a new set of keys or reuse a
-pre-existing one. Cabal can either trust a repository at first use or
-verify signatures against public keys obtained separately.
+If you want to add patches incrementally, you can add a patched version as
+a new entry in the index. The metadata file can point to the pre-existing
+non-patched url.
 
 ## Author
 
