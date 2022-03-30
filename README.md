@@ -267,10 +267,6 @@ tarball before creating the source distribution.
 changes the content of the source distribution and the repository can only
 provide one source distribution for a given package name and version.
 
-If you want to add patches incrementally, you can add a new patched
-version. The source url for the new version can point to the non-patched
-url.
-
 ## Author
 
 - Andrea Bedini (@andreabedini)
