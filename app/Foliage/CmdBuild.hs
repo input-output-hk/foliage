@@ -6,7 +6,7 @@ module Foliage.CmdBuild (cmdBuild) where
 import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (for_)
 import Data.List (isPrefixOf, sortOn)
@@ -348,12 +348,15 @@ cmdBuild
         withTempDir $ \tmpDir -> do
           putInfo $ " Creating source distribution for " <> pkgIdToString pkgId
 
-          patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
+          let patchesDir = inputDir </> pkgName </> pkgVersion </> "patches"
+          hasPatches <- doesDirectoryExist patchesDir
 
-          for_ patches $ \patch -> do
-            let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
-            putInfo $ "Applying patch: " <> patch
-            cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
+          when hasPatches $ do
+            patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
+            for_ patches $ \patch -> do
+              let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
+              putInfo $ "Applying patch: " <> patch
+              cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
 
           cmd_ Shell (Cwd srcDir) (FileStdout path) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
 
