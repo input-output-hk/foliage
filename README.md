@@ -17,8 +17,9 @@ includes cryptographic metadata (public keys and signatures).
 These files are commonly served by Hackage proper, that is the central
 deployment of [hackage-server](https://github.com/haskell/hackage-server/).
 
-Foliage explores the idea of creaating and serving this content as a static
-website, generated programmatically from textual input files.
+Foliage explores the idea of creating and serving this content as a static
+website, generated programmatically a deterministically from textual input
+files.
 
 # Use cases
 
@@ -262,13 +263,13 @@ Foliage also supports patches. Any file with `.patch` extension in
 `<package>/<version>/patches` will be applied as a patch to the source
 tarball before creating the source distribution.
 
-:warning: Note that it is not possible to "apply a timestamp" to a patch. A
-patch changes the content of the source distribution and the repository can
-only provide one source distribution for given package name and version.
+:warning: It is not possible to "apply a timestamp" to a patch. A patch
+changes the content of the source distribution and the repository can only
+provide one source distribution for a given package name and version.
 
-If you want to add patches incrementally, you can add a patched version as
-a new entry in the index. The metadata file can point to the pre-existing
-non-patched url.
+If you want to add patches incrementally, you can add a new patched
+version. The source url for the new version can point to the non-patched
+url.
 
 ## Author
 
