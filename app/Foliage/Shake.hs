@@ -22,7 +22,7 @@ readFileByteStringLazy x = need [x] >> liftIO (BSL.readFile x)
 
 readKeysAt :: FilePath -> Action [Some Key]
 readKeysAt base = do
-  paths <- getDirectoryFiles base ["*.private"]
+  paths <- getDirectoryFiles base ["*.json"]
   need $ map (base </>) paths
   for paths $ \path -> do
     Right key <- liftIO $ readJSONSimple (base </> path)
