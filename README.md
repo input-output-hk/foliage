@@ -260,8 +260,15 @@ The revised cabal file will enter the index with the timestamp provided in
 # Patches
 
 Foliage also supports patches. Any file with `.patch` extension in
-`<package>/<version>/patches` will be applied as a patch to the source
-tarball before creating the source distribution.
+`<package>/<version>/patches` will be applied as a patch to the package
+sources.
+
+Patches are applied very early in the process, and they can modify any file
+in the source tree. This means one could use a patch to define a new
+package version (by changing the version field in the cabal file).
+
+Revisions are independent of patches, a patched cabal file will be subject
+to revisions just like the original cabal file.
 
 :warning: It is not possible to "apply a timestamp" to a patch. A patch
 changes the content of the source distribution and the repository can only
