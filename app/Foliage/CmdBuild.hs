@@ -69,22 +69,34 @@ cmdBuild
       getSourceMeta <- addOracle $ \(GetSourceMeta PackageId {pkgName, pkgVersion}) ->
         readSourceMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
 
-      getSourceDir <- addOracle $ \(GetSourceDir pkgId) -> do
+      getSourceDir <- addOracle $ \(GetSourceDir pkgId@PackageId {pkgName, pkgVersion}) -> do
         SourceMeta {sourceUrl, sourceSubdir} <- getSourceMeta (GetSourceMeta pkgId)
-        let srcDir = "_cache" </> urlToFileName sourceUrl
+        let urlDir = "_cache" </> urlToFileName sourceUrl
 
-        need [srcDir </> ".downloaded"]
+        need [urlDir </> ".downloaded"]
         -- FIXME Without this, sometimes the download doesn't trigger
         putInfo $ "👀 " <> sourceUrl
 
-        projectFiles <- liftIO $ filter ("cabal.project" `isPrefixOf`) <$> IO.getDirectoryContents srcDir
+        projectFiles <- liftIO $ filter ("cabal.project" `isPrefixOf`) <$> IO.getDirectoryContents urlDir
         unless (null projectFiles) $ do
-          putWarn $ "⚠️ Deleting cabal project files from " ++ srcDir
-          liftIO $ for_ projectFiles $ IO.removeFile . (srcDir </>)
+          putWarn $ "⚠️ Deleting cabal project files from " ++ urlDir
+          liftIO $ for_ projectFiles $ IO.removeFile . (urlDir </>)
 
-        return $ case sourceSubdir of
-          Just s -> srcDir </> s
-          Nothing -> srcDir
+        let srcDir = case sourceSubdir of
+              Just s -> urlDir </> s
+              Nothing -> urlDir
+
+        let patchesDir = inputDir </> pkgName </> pkgVersion </> "patches"
+        hasPatches <- doesDirectoryExist patchesDir
+
+        when hasPatches $ do
+          patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
+          for_ patches $ \patch -> do
+            let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
+            putInfo $ "Applying patch: " <> patch
+            cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
+
+        return srcDir
 
       getPackages <- addOracle $ \GetPackages -> do
         metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
@@ -341,23 +353,12 @@ cmdBuild
 
       outputDir </> "package/*.tar.gz" %> \path -> do
         let [_, _, filename] = splitDirectories path
-        let Just pkgId@PackageId {pkgName, pkgVersion} = parsePkgId <$> stripExtension "tar.gz" filename
+        let Just pkgId = parsePkgId <$> stripExtension "tar.gz" filename
 
         srcDir <- getSourceDir (GetSourceDir pkgId)
 
         withTempDir $ \tmpDir -> do
           putInfo $ " Creating source distribution for " <> pkgIdToString pkgId
-
-          let patchesDir = inputDir </> pkgName </> pkgVersion </> "patches"
-          hasPatches <- doesDirectoryExist patchesDir
-
-          when hasPatches $ do
-            patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
-            for_ patches $ \patch -> do
-              let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
-              putInfo $ "Applying patch: " <> patch
-              cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
-
           cmd_ Shell (Cwd srcDir) (FileStdout path) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
 
           -- check cabal sdist has produced a single tarball with the
