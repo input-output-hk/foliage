@@ -11,6 +11,7 @@ module Foliage.Meta
     sourceUrl,
     sourceSubdir,
     sourceRevisions,
+    sourceForceVersion,
     readSourceMeta,
     writeSourceMeta,
     RevisionMeta,
@@ -24,6 +25,7 @@ where
 
 import Control.Monad (void)
 import Data.Coerce (coerce)
+import Data.Maybe (fromMaybe)
 import Data.Time.Format.ISO8601
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
 import Development.Shake.Classes
@@ -32,15 +34,26 @@ import GHC.Generics
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
-data SourceMeta = SourceMeta' (Maybe WrapUTCTime) String (Maybe String) [RevisionMeta]
+data SourceMeta
+  = SourceMeta'
+      (Maybe WrapUTCTime)
+      -- ^ timestamp
+      String
+      -- ^ url
+      (Maybe String)
+      -- ^ subdir
+      [RevisionMeta]
+      -- ^ revisions
+      Bool
+      -- ^ force version
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-pattern SourceMeta :: Maybe UTCTime -> String -> Maybe String -> [RevisionMeta] -> SourceMeta
-pattern SourceMeta {sourceTimestamp, sourceUrl, sourceSubdir, sourceRevisions} <-
-  SourceMeta' (coerce -> sourceTimestamp) sourceUrl sourceSubdir sourceRevisions
+pattern SourceMeta :: Maybe UTCTime -> String -> Maybe String -> [RevisionMeta] -> Bool -> SourceMeta
+pattern SourceMeta {sourceTimestamp, sourceUrl, sourceSubdir, sourceRevisions, sourceForceVersion} <-
+  SourceMeta' (coerce -> sourceTimestamp) sourceUrl sourceSubdir sourceRevisions sourceForceVersion
   where
-    SourceMeta timestamp url subdir revisions = SourceMeta' (coerce timestamp) url subdir revisions
+    SourceMeta timestamp url subdir revisions forceversion = SourceMeta' (coerce timestamp) url subdir revisions forceversion
 
 sourceMetaCodec :: TomlCodec SourceMeta
 sourceMetaCodec =
@@ -49,6 +62,12 @@ sourceMetaCodec =
     <*> Toml.string "url" .= sourceUrl
     <*> Toml.dioptional (Toml.string "subdir") .= sourceSubdir
     <*> Toml.list revisionMetaCodec "revisions" .= sourceRevisions
+    <*> withDefault False (Toml.bool "force-version") .= sourceForceVersion
+
+withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
+withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
+  where
+    f a = if a == d then Nothing else Just a
 
 readSourceMeta :: FilePath -> IO SourceMeta
 readSourceMeta = Toml.decodeFile sourceMetaCodec

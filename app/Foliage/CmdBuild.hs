@@ -69,8 +69,8 @@ cmdBuild
       getSourceMeta <- addOracle $ \(GetSourceMeta PackageId {pkgName, pkgVersion}) ->
         readSourceMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
 
-      getSourceDir <- addOracle $ \(GetSourceDir pkgId@PackageId {pkgName, pkgVersion}) -> do
-        SourceMeta {sourceUrl, sourceSubdir} <- getSourceMeta (GetSourceMeta pkgId)
+      getSourceDir <- addOracle $ \(GetSourceDir pkgId) -> do
+        SourceMeta {sourceUrl, sourceSubdir, sourceForceVersion} <- getSourceMeta (GetSourceMeta pkgId)
         let urlDir = "_cache" </> urlToFileName sourceUrl
 
         need [urlDir </> ".downloaded"]
@@ -86,15 +86,10 @@ cmdBuild
               Just s -> urlDir </> s
               Nothing -> urlDir
 
-        let patchesDir = inputDir </> pkgName </> pkgVersion </> "patches"
-        hasPatches <- doesDirectoryExist patchesDir
+        when sourceForceVersion $
+          forcePackageVersion srcDir pkgId
 
-        when hasPatches $ do
-          patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
-          for_ patches $ \patch -> do
-            let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
-            putInfo $ "Applying patch: " <> patch
-            cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
+        applyPatches inputDir srcDir pkgId
 
         return srcDir
 
@@ -421,3 +416,33 @@ mkTarEntry filePath indexPath timestamp = do
               Tar.groupId = 0
             }
       }
+
+applyPatches :: FilePath -> FilePath -> PackageId -> Action ()
+applyPatches inputDir srcDir PackageId {pkgName, pkgVersion} = do
+  let patchesDir = inputDir </> pkgName </> pkgVersion </> "patches"
+  hasPatches <- doesDirectoryExist patchesDir
+
+  when hasPatches $ do
+    patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
+    for_ patches $ \patch -> do
+      let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
+      putInfo $ "Applying patch: " <> patch
+      cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
+
+forcePackageVersion :: FilePath -> PackageId -> Action ()
+forcePackageVersion srcDir PackageId {pkgName, pkgVersion} = do
+  let cabalFilePath = srcDir </> pkgName <.> "cabal"
+  cabalFile <- readFile' cabalFilePath
+  writeFile' cabalFilePath (replaceVersion pkgVersion cabalFile)
+
+replaceVersion :: String -> String -> String
+replaceVersion version = unlines . map f . lines
+  where
+    f line
+      | "version" `isPrefixOf` line =
+        unlines
+          [ "-- version field replaced by foliage",
+            "--" <> line,
+            "version:\t" ++ version
+          ]
+    f line = line

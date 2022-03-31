@@ -59,7 +59,8 @@ importIndex f (Tar.Next e es) m =
                           { sourceUrl = pkgIdToHackageUrl pkgId,
                             sourceTimestamp = Just time,
                             sourceSubdir = Nothing,
-                            sourceRevisions = []
+                            sourceRevisions = [],
+                            sourceForceVersion = False
                           }
                   -- Existing package, new revision
                   Just sm -> do
