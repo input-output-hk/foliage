@@ -7,57 +7,9 @@ Does `cabal sdist` need `cabal.project`?
 Perhaps using Distribution.Simple directly?
 Idk, I don't understand sdists.
 
-## sources
-
-supporting only tarballs now
-
-- url: https://...
-
-anything curl can handle will work here
-
-- url: file://...
-
-Different versions of the same package can co-exist. The tool will check for name and version collisions.
-
 *Note:* perhaps include hash validation? this can be done later
 
-## revisions?
-
-Files in a special folder
-
-    revisions/bar-0.2.0.0.cabal
-
-automatically become revisions for, e.g., package bar version 0.2.0.0
-
-It can be done with hackage-repo-tool update
-
-    run_ "hackage-repo-tool" ["update", "--keys", toTextIgnore (_keys config), "--repo", "repo.tmp/", "--verbose"]
-
-Obtaining a package name and version by filename is ok, see https://github.com/haskell/hackage-security/blob/9a5f2d16fc145cbd488c48ab9d177bc3192e303c/hackage-repo-tool/src/Main.hs#L575-L586
-
-*Note:* one could rewrite https://github.com/haskell/hackage-security/blob/9a5f2d16fc145cbd488c48ab9d177bc3192e303c/hackage-repo-tool/src/Main.hs#L196 and do it in one go
-
-## patches
-
-I am not sure whether I want to support patches or not. Basically one could simply fork and point the repo to the new source.
-On the otherside, hackage-overlay-repo-tool is made especially for patches so there might be a real need for it.
-For the time being,I am not supporting patches.
-
-## output
-
-No more than a directory full of files.
-
-- Can be served over HTTPS
-- Served on [ipfs](https://github.com/ipfs-shipyard/ipfs-deploy)
-- Committed to git
-- Can be tar'gzipped and moved
-- All of the above
-
-+ nix-compatible hash of the whole thing
-
 ## usage
-
-many ways to use this.
 
 ### quick and easy
 
