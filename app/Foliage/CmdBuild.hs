@@ -110,10 +110,10 @@ cmdBuild
           putWarn $ "⚠️ Deleting cabal project files from " ++ srcDir
           liftIO $ for_ projectFiles $ IO.removeFile . (srcDir </>)
 
+        applyPatches inputDir srcDir pkgId
+
         when packageForceVersion $
           forcePackageVersion srcDir pkgId
-
-        applyPatches inputDir srcDir pkgId
 
         return srcDir
 
