@@ -264,8 +264,7 @@ Foliage also supports patches. Any file with `.patch` extension in
 sources.
 
 Patches are applied very early in the process, and they can modify any file
-in the source tree. This means one could use a patch to define a new
-package version (by changing the version field in the cabal file).
+in the source tree.
 
 Revisions are independent of patches, a patched cabal file will be subject
 to revisions just like the original cabal file.
@@ -273,6 +272,14 @@ to revisions just like the original cabal file.
 :warning: It is not possible to "apply a timestamp" to a patch. A patch
 changes the content of the source distribution and the repository can only
 provide one source distribution for a given package name and version.
+
+# New package versions
+
+You can introduce new versions of existing packages by patching the cabal
+file. Foliage supports a short cut for this use case. If the package
+metadata file `<package>/<version>/meta.toml` includes the option
+`force-version = true`, then the version in the package cabal file will be
+overwritten with `<version>`. Notice this is done after applying patches.
 
 ## Author
 
