@@ -40,8 +40,8 @@ importIndex ::
   Show e =>
   (PackageId -> Bool) ->
   Tar.Entries e ->
-  Map PackageId SourceMeta ->
-  IO (Map PackageId SourceMeta)
+  Map PackageId PackageMeta ->
+  IO (Map PackageId PackageMeta)
 importIndex f (Tar.Next e es) m =
   case isCabalFile e of
     Just (pkgId, contents, time)
@@ -55,19 +55,18 @@ importIndex f (Tar.Next e es) m =
                   Nothing ->
                     pure $
                       Just $
-                        SourceMeta
-                          { sourceUrl = pkgIdToHackageUrl pkgId,
-                            sourceTimestamp = Just time,
-                            sourceSubdir = Nothing,
-                            sourceRevisions = [],
-                            sourceForceVersion = False
+                        PackageMeta
+                          { packageSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
+                            packageTimestamp = Just time,
+                            packageRevisions = [],
+                            packageForceVersion = False
                           }
                   -- Existing package, new revision
                   Just sm -> do
                     let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
                         newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = Just time}
                     -- bad performance here but I don't care
-                    let sm' = sm {sourceRevisions = sourceRevisions sm ++ [newRevision]}
+                    let sm' = sm {packageRevisions = packageRevisions sm ++ [newRevision]}
                     let PackageId pkgName pkgVersion = pkgId
                     let outDir = "_sources" </> pkgName </> pkgVersion </> "revisions"
                     IO.createDirectoryIfMissing True outDir
@@ -85,12 +84,12 @@ importIndex _f (Tar.Fail e) _ =
 
 finalise ::
   PackageId ->
-  SourceMeta ->
+  PackageMeta ->
   IO ()
 finalise PackageId {pkgName, pkgVersion} meta = do
   let dir = "_sources" </> pkgName </> pkgVersion
   IO.createDirectoryIfMissing True dir
-  writeSourceMeta (dir </> "meta.toml") meta
+  writePackageMeta (dir </> "meta.toml") meta
 
 isCabalFile ::
   Tar.Entry ->

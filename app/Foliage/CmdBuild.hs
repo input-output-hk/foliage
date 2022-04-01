@@ -1,4 +1,3 @@
-{-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module Foliage.CmdBuild (cmdBuild) where
@@ -8,8 +7,9 @@ import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
 import Data.ByteString.Lazy qualified as BSL
+import Data.Char (isAlpha)
 import Data.Foldable (for_)
-import Data.List (isPrefixOf, sortOn)
+import Data.List (dropWhileEnd, isPrefixOf, sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
@@ -21,8 +21,8 @@ import Foliage.Package
 import Foliage.Shake
 import Foliage.Shake.Oracle
 import Foliage.Time qualified as Time
-import Foliage.Utils
 import System.Directory qualified as IO
+import System.FilePath.Posix qualified as Posix
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild
@@ -66,27 +66,51 @@ cmdBuild
         putInfo $ "🕐 Expiry time set to " <> Time.iso8601Show t <> " (a year from now)."
         return t
 
-      getSourceMeta <- addOracle $ \(GetSourceMeta PackageId {pkgName, pkgVersion}) ->
-        readSourceMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
+      getPackageMeta <- addOracle $ \(GetPackageMeta PackageId {pkgName, pkgVersion}) ->
+        readPackageMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
 
-      getSourceDir <- addOracle $ \(GetSourceDir pkgId) -> do
-        SourceMeta {sourceUrl, sourceSubdir, sourceForceVersion} <- getSourceMeta (GetSourceMeta pkgId)
-        let urlDir = "_cache" </> urlToFileName sourceUrl
+      preparePackageSource <- addOracle $ \(PreparePackageSource pkgId@PackageId {pkgName, pkgVersion}) -> do
+        PackageMeta {packageSource, packageForceVersion} <- getPackageMeta (GetPackageMeta pkgId)
 
-        need [urlDir </> ".downloaded"]
-        -- FIXME Without this, sometimes the download doesn't trigger
-        putInfo $ "👀 " <> sourceUrl
+        let srcDir = "_cache" </> "packages" </> pkgName </> pkgVersion
 
-        projectFiles <- liftIO $ filter ("cabal.project" `isPrefixOf`) <$> IO.getDirectoryContents urlDir
+        -- FIXME too much rework?
+        -- this action only depends on the tarball and the package metadata
+
+        -- delete everything inside the package source tree
+        liftIO $ do
+          -- FIXME this should only delete inside srcDir but apparently
+          -- also deletes srcDir itself
+          removeFiles srcDir ["//*"]
+          IO.createDirectoryIfMissing True srcDir
+
+        case packageSource of
+          TarballSource url mSubdir -> do
+            tarballPath <- fetchUrl url
+
+            withTempDir $ \tmpDir -> do
+              cmd_ ["tar", "xzf", tarballPath, "-C", tmpDir]
+
+              -- Special treatment of top-level directory: we remove it
+              --
+              -- Note: Don't let shake look into tmpDir! it will cause
+              -- unnecessary rework because tmpDir is always new
+              ls <- liftIO $ IO.getDirectoryContents tmpDir
+              let ls' = filter (not . all (== '.')) ls
+
+              let fix1 = case ls' of [l] -> (</> l); _ -> id
+                  fix2 = case mSubdir of Just s -> (</> s); _ -> id
+                  tdir = fix2 $ fix1 tmpDir
+
+              cmd_ ["cp", "--recursive", "--no-target-directory", "--dereference", tdir, srcDir]
+
+        -- Delete cabal.project files if present
+        projectFiles <- liftIO $ filter ("cabal.project" `isPrefixOf`) <$> IO.getDirectoryContents srcDir
         unless (null projectFiles) $ do
-          putWarn $ "⚠️ Deleting cabal project files from " ++ urlDir
-          liftIO $ for_ projectFiles $ IO.removeFile . (urlDir </>)
+          putWarn $ "⚠️ Deleting cabal project files from " ++ srcDir
+          liftIO $ for_ projectFiles $ IO.removeFile . (srcDir </>)
 
-        let srcDir = case sourceSubdir of
-              Just s -> urlDir </> s
-              Nothing -> urlDir
-
-        when sourceForceVersion $
+        when packageForceVersion $
           forcePackageVersion srcDir pkgId
 
         applyPatches inputDir srcDir pkgId
@@ -257,9 +281,9 @@ cmdBuild
           fmap concat $
             for pkgIds $ \pkgId -> do
               let PackageId {pkgName, pkgVersion} = pkgId
-              SourceMeta {sourceTimestamp, sourceRevisions} <- getSourceMeta (GetSourceMeta pkgId)
+              PackageMeta {packageTimestamp, packageRevisions} <- getPackageMeta (GetPackageMeta pkgId)
 
-              srcDir <- getSourceDir (GetSourceDir pkgId)
+              srcDir <- preparePackageSource $ PreparePackageSource pkgId
               now <- getCurrentTime GetCurrentTime
 
               sequence $
@@ -267,19 +291,19 @@ cmdBuild
                   mkTarEntry
                     (srcDir </> pkgName <.> "cabal")
                     (pkgName </> pkgVersion </> pkgName <.> "cabal")
-                    (fromMaybe now sourceTimestamp),
+                    (fromMaybe now packageTimestamp),
                   -- package.json
                   mkTarEntry
                     (outputDir </> "index" </> pkgName </> pkgVersion </> "package.json")
                     (pkgName </> pkgVersion </> "package.json")
-                    (fromMaybe now sourceTimestamp)
+                    (fromMaybe now packageTimestamp)
                 ]
                   ++ [ -- revised cabal files
                        mkTarEntry
                          (inputDir </> pkgName </> pkgVersion </> "revisions" </> show revNum <.> "cabal")
                          (pkgName </> pkgVersion </> pkgName <.> "cabal")
                          (fromMaybe now revTimestamp)
-                       | RevisionMeta revTimestamp revNum <- sourceRevisions
+                       | RevisionMeta revTimestamp revNum <- packageRevisions
                      ]
 
         liftIO $ BSL.writeFile path $ Tar.write (sortOn Tar.entryTime entries)
@@ -295,23 +319,24 @@ cmdBuild
         putInfo $ "✅ Written " <> path
 
       --
-      -- index cabal files (latest revision)
+      -- index cabal files
+      --
+      -- these come either from the package source or the revision files
       --
 
       outputDir </> "index/*/*/*.cabal" %> \path -> do
         let [_, _, pkgName, pkgVersion, _] = splitDirectories path
         let pkgId = PackageId pkgName pkgVersion
 
-        -- Figure out where to get it from
-        meta <- getSourceMeta $ GetSourceMeta pkgId
+        meta <- getPackageMeta $ GetPackageMeta pkgId
 
         case latestRevisionNumber meta of
           Nothing -> do
-            srcDir <- getSourceDir (GetSourceDir pkgId)
+            srcDir <- preparePackageSource $ PreparePackageSource pkgId
             copyFileChanged (srcDir </> pkgName <.> "cabal") path
           Just revNum -> do
-            let revisionCabal = inputDir </> pkgName </> pkgVersion </> "revisions" </> show revNum <.> "cabal"
-            copyFileChanged revisionCabal path
+            let revisionFile = inputDir </> pkgName </> pkgVersion </> "revisions" </> show revNum <.> "cabal"
+            copyFileChanged revisionFile path
 
         putInfo $ "✅ Written " <> path
 
@@ -343,17 +368,19 @@ cmdBuild
         putInfo $ "✅ Written " <> path
 
       --
-      -- source distributions
+      -- source distributions, including patching
       --
 
       outputDir </> "package/*.tar.gz" %> \path -> do
         let [_, _, filename] = splitDirectories path
         let Just pkgId = parsePkgId <$> stripExtension "tar.gz" filename
 
-        srcDir <- getSourceDir (GetSourceDir pkgId)
+        srcDir <- preparePackageSource $ PreparePackageSource pkgId
+        putInfo srcDir
 
         withTempDir $ \tmpDir -> do
-          putInfo $ " Creating source distribution for " <> pkgIdToString pkgId
+          putInfo $ "Creating source distribution for " <> pkgIdToString pkgId
+
           cmd_ Shell (Cwd srcDir) (FileStdout path) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
 
           -- check cabal sdist has produced a single tarball with the
@@ -373,33 +400,24 @@ cmdBuild
         putInfo $ "✅ Written " <> path
 
       --
-      -- source tree downloads
+      -- tarball downloads
       --
 
-      "_cache/*/.downloaded" %> \path -> do
-        let [_, hashedUrl, _] = splitDirectories path
-        let url = fileNameToUrl hashedUrl
-        let srcDir = takeDirectory path
-
-        withTempDir $ \tmpDir -> do
-          -- Download and extract tarball
-          putInfo $ "🐢 Downloading " <> url
-          cmd_ Shell $ "curl --silent -L " <> url <> " | tar xz -C " <> tmpDir
-
-          -- Special treatment of top-level directory: we remove it
-          --
-          -- Note: Don't let shake look into tmpDir! it will cause
-          -- unnecessary rework because tmpDir is always new
-          ls <- liftIO $ IO.getDirectoryContents tmpDir
-          let ls' = filter (not . all (== '.')) ls
-          case ls' of
-            [l] -> cmd_ Shell ["mv", "-T", tmpDir </> l, srcDir]
-            _ -> cmd_ Shell ["mv", "-T", tmpDir, srcDir]
-
-        -- Touch the trigger file
-        writeFile' path ""
+      "_cache/downloads/**" %> \path -> do
+        let scheme : rest = drop 2 $ splitDirectories path
+        let url = scheme <> "://" <> Posix.joinPath rest
+        putInfo $ "🐢 Downloading " <> url
+        cmd_ Shell (FileStdout path) $ "curl --silent -L " <> url
 
     putStrLn $ "💥 All done. The repository is now available in " <> outputDir <> "."
+
+fetchUrl :: String -> Action FilePath
+fetchUrl url = do
+  let scheme : rest = Posix.splitPath url
+      scheme' = dropWhileEnd (not . isAlpha) scheme
+      urlPath = "_cache" </> "downloads" </> joinPath (scheme' : rest)
+  need [urlPath]
+  return urlPath
 
 mkTarEntry :: FilePath -> [Char] -> UTCTime -> Action Tar.Entry
 mkTarEntry filePath indexPath timestamp = do
@@ -417,17 +435,16 @@ mkTarEntry filePath indexPath timestamp = do
             }
       }
 
-applyPatches :: FilePath -> FilePath -> PackageId -> Action ()
+applyPatches :: [Char] -> FilePath -> PackageId -> Action ()
 applyPatches inputDir srcDir PackageId {pkgName, pkgVersion} = do
   let patchesDir = inputDir </> pkgName </> pkgVersion </> "patches"
   hasPatches <- doesDirectoryExist patchesDir
 
   when hasPatches $ do
-    patches <- getDirectoryFiles (inputDir </> pkgName </> pkgVersion </> "patches") ["*.patch"]
-    for_ patches $ \patch -> do
-      let patchfile = inputDir </> pkgName </> pkgVersion </> "patches" </> patch
-      putInfo $ "Applying patch: " <> patch
-      cmd_ Shell (Cwd srcDir) (FileStdin patchfile) "patch --backup -p1"
+    patchfiles <- getDirectoryFiles patchesDir ["*.patch"]
+    for_ patchfiles $ \patchfile -> do
+      let patch = patchesDir </> patchfile
+      cmd_ Shell (Cwd srcDir) (FileStdin patch) "patch -p1"
 
 forcePackageVersion :: FilePath -> PackageId -> Action ()
 forcePackageVersion srcDir PackageId {pkgName, pkgVersion} = do
@@ -442,7 +459,7 @@ replaceVersion version = unlines . map f . lines
       | "version" `isPrefixOf` line =
         unlines
           [ "-- version field replaced by foliage",
-            "--" <> line,
-            "version:\t" ++ version
+            "-- " <> line,
+            "version: " ++ version
           ]
     f line = line

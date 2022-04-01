@@ -5,19 +5,20 @@
 {-# LANGUAGE PatternSynonyms #-}
 
 module Foliage.Meta
-  ( SourceMeta,
-    pattern SourceMeta,
-    sourceTimestamp,
-    sourceUrl,
-    sourceSubdir,
-    sourceRevisions,
-    sourceForceVersion,
-    readSourceMeta,
-    writeSourceMeta,
+  ( PackageMeta,
+    pattern PackageMeta,
+    packageTimestamp,
+    packageSource,
+    packageRevisions,
+    packageForceVersion,
+    readPackageMeta,
+    writePackageMeta,
     RevisionMeta,
     pattern RevisionMeta,
     revisionTimestamp,
     revisionNumber,
+    PackageSource,
+    pattern TarballSource,
     UTCTime,
     latestRevisionNumber,
   )
@@ -34,14 +35,30 @@ import GHC.Generics
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
-data SourceMeta
-  = SourceMeta'
+data PackageSource
+  = TarballSource String (Maybe String)
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
+packageSourceCodec :: TomlCodec PackageSource
+packageSourceCodec =
+  Toml.dimatch matchTarballSource (uncurry TarballSource) tarballSourceCodec
+
+tarballSourceCodec :: TomlCodec (String, Maybe String)
+tarballSourceCodec =
+  Toml.pair
+    (Toml.string "url")
+    (Toml.dioptional $ Toml.string "subdir")
+
+matchTarballSource :: PackageSource -> Maybe (String, Maybe String)
+matchTarballSource (TarballSource url mSubdir) = Just (url, mSubdir)
+
+data PackageMeta
+  = PackageMeta'
       (Maybe WrapUTCTime)
       -- ^ timestamp
-      String
-      -- ^ url
-      (Maybe String)
-      -- ^ subdir
+      PackageSource
+      -- ^ source parameters
       [RevisionMeta]
       -- ^ revisions
       Bool
@@ -49,31 +66,25 @@ data SourceMeta
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-pattern SourceMeta :: Maybe UTCTime -> String -> Maybe String -> [RevisionMeta] -> Bool -> SourceMeta
-pattern SourceMeta {sourceTimestamp, sourceUrl, sourceSubdir, sourceRevisions, sourceForceVersion} <-
-  SourceMeta' (coerce -> sourceTimestamp) sourceUrl sourceSubdir sourceRevisions sourceForceVersion
+pattern PackageMeta :: Maybe UTCTime -> PackageSource -> [RevisionMeta] -> Bool -> PackageMeta
+pattern PackageMeta {packageTimestamp, packageSource, packageRevisions, packageForceVersion} <-
+  PackageMeta' (coerce -> packageTimestamp) packageSource packageRevisions packageForceVersion
   where
-    SourceMeta timestamp url subdir revisions forceversion = SourceMeta' (coerce timestamp) url subdir revisions forceversion
+    PackageMeta timestamp source revisions forceversion = PackageMeta' (coerce timestamp) source revisions forceversion
 
-sourceMetaCodec :: TomlCodec SourceMeta
+sourceMetaCodec :: TomlCodec PackageMeta
 sourceMetaCodec =
-  SourceMeta
-    <$> Toml.dioptional (timeCodec "timestamp") .= sourceTimestamp
-    <*> Toml.string "url" .= sourceUrl
-    <*> Toml.dioptional (Toml.string "subdir") .= sourceSubdir
-    <*> Toml.list revisionMetaCodec "revisions" .= sourceRevisions
-    <*> withDefault False (Toml.bool "force-version") .= sourceForceVersion
+  PackageMeta
+    <$> Toml.dioptional (timeCodec "timestamp") .= packageTimestamp
+    <*> packageSourceCodec .= packageSource
+    <*> Toml.list revisionMetaCodec "revisions" .= packageRevisions
+    <*> withDefault False (Toml.bool "force-version") .= packageForceVersion
 
-withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
-withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
-  where
-    f a = if a == d then Nothing else Just a
+readPackageMeta :: FilePath -> IO PackageMeta
+readPackageMeta = Toml.decodeFile sourceMetaCodec
 
-readSourceMeta :: FilePath -> IO SourceMeta
-readSourceMeta = Toml.decodeFile sourceMetaCodec
-
-writeSourceMeta :: FilePath -> SourceMeta -> IO ()
-writeSourceMeta fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
+writePackageMeta :: FilePath -> PackageMeta -> IO ()
+writePackageMeta fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
 
 data RevisionMeta = RevisionMeta' (Maybe WrapUTCTime) Int
   deriving (Show, Eq, Generic)
@@ -91,6 +102,20 @@ revisionMetaCodec =
     <$> Toml.dioptional (timeCodec "timestamp") .= revisionTimestamp
     <*> Toml.int "number" .= revisionNumber
 
+timeCodec :: Toml.Key -> TomlCodec UTCTime
+timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
+
+latestRevisionNumber :: PackageMeta -> Maybe Int
+latestRevisionNumber sm =
+  if null (packageRevisions sm)
+    then Nothing
+    else Just $ maximum $ map revisionNumber (packageRevisions sm)
+
+withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
+withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
+  where
+    f a = if a == d then Nothing else Just a
+
 newtype WrapUTCTime = WrapUTCTime {unwrapUTCTime :: UTCTime}
   deriving (Show, Eq, Generic)
   deriving anyclass (Hashable, NFData)
@@ -99,12 +124,3 @@ newtype WrapUTCTime = WrapUTCTime {unwrapUTCTime :: UTCTime}
 instance Binary WrapUTCTime where
   get = iso8601ParseM =<< get
   put = put . iso8601Show
-
-timeCodec :: Toml.Key -> TomlCodec UTCTime
-timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
-
-latestRevisionNumber :: SourceMeta -> Maybe Int
-latestRevisionNumber sm =
-  if null (sourceRevisions sm)
-    then Nothing
-    else Just $ maximum $ map revisionNumber (sourceRevisions sm)

@@ -18,7 +18,6 @@ executable foliage
         Foliage.Shake
         Foliage.Shake.Oracle
         Foliage.Time
-        Foliage.Utils
 
     default-language:   Haskell2010
     default-extensions:
