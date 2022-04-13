@@ -119,6 +119,15 @@ cmdBuild
 
       getPackages <- addOracle $ \GetPackages -> do
         metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
+
+        when (null metaFiles) $ do
+          putError $
+            unlines
+              [ "We could not find any package metadata file (i.e. _sources/<name>/<version>/meta.toml)",
+                "Make sure you are passing the right input directory. The default input directory is _sources"
+              ]
+          fail "no package metadata found"
+
         return $
           [ PackageId pkgName pkgVersion
             | path <- metaFiles,
