@@ -24,6 +24,9 @@
               shell.buildInputs = with pkgs; [
                 nixpkgs-fmt
               ];
+              modules = [{
+                packages.foliage.components.exes.foliage.dontStrip = false;
+              }];
             };
         })
       ];
