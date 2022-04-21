@@ -14,10 +14,7 @@
         (final: prev: {
           foliage =
             final.haskell-nix.project' {
-              src = final.haskell-nix.haskellLib.cleanGit {
-                name = "foliage-src";
-                src = ./.;
-              };
+              src = ./.;
               compiler-nix-name = "ghc8107";
               shell.tools = {
                 cabal = {};
@@ -31,11 +28,12 @@
         })
       ];
       pkgs = import nixpkgs { inherit system overlays; inherit (haskellNix) config; };
-      flake = pkgs.foliage.flake {
-        # This adds support for `nix build .#js-unknown-ghcjs-cabal:hello:exe:hello`
-        # crossPlatforms = p: [p.ghcjs];
-      };
+      flake = pkgs.foliage.flake { };
     in flake // {
       defaultPackage = flake.packages."foliage:exe:foliage";
+
+      devShell = pkgs.mkShell {
+        name = "foliage-dev-shell";
+      };
     });
 }
