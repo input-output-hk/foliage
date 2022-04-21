@@ -1,0 +1,29 @@
+name: nix-based CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on:
+      - ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: cachix/install-nix-action@v15
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - uses: cachix/cachix-action@v10
+        with:
+           name: foliage
+           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - run: nix build
+
+      - run: nix flake check
