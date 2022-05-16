@@ -2,41 +2,44 @@
   description = "Foliage is a tool to create custom Haskell package repositories, in a fully reproducible way.";
 
   inputs = {
-    nixpkgs.follows = "haskellNix/nixpkgs-unstable";
-    haskellNix.url = "github:input-output-hk/haskell.nix";
+    nixpkgs.follows = "haskell-nix/nixpkgs-unstable";
+    haskell-nix.url = "github:input-output-hk/haskell.nix";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, haskellNix }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
+  outputs = { self, nixpkgs, flake-utils, haskell-nix }:
+    flake-utils.lib.eachDefaultSystem (system:
     let
-      overlays = [ haskellNix.overlay
-        (final: prev: {
-          foliage =
-            final.haskell-nix.project' {
-              src = ./.;
-              compiler-nix-name = "ghc8107";
-              shell.tools = {
-                cabal = {};
-                hlint = {};
-                haskell-language-server = {};
-              };
-              shell.buildInputs = with pkgs; [
-                nixpkgs-fmt
-              ];
-              modules = [{
-                packages.foliage.components.exes.foliage.dontStrip = false;
-              }];
-            };
-        })
-      ];
-      pkgs = import nixpkgs { inherit system overlays; inherit (haskellNix) config; };
-      flake = pkgs.foliage.flake { };
-    in flake // {
-      defaultPackage = flake.packages."foliage:exe:foliage";
+      pkgs = import nixpkgs { inherit system; inherit (haskell-nix) config; overlays = [haskell-nix.overlay]; };
+      project = pkgs.haskell-nix.cabalProject {
+        src = ./.;
+        compiler-nix-name = "ghc8107";
+        shell.tools = {
+          cabal = {};
+          hlint = {};
+          haskell-language-server = {};
+        };
+        shell.buildInputs = with pkgs; [
+          nixpkgs-fmt
+        ];
+        modules = [{
+          packages.foliage.components.exes.foliage.dontStrip = false;
+        }];
+      };
+    in {
+      packages.default = project.foliage.components.exes.foliage;
 
       devShell = pkgs.mkShell {
         name = "foliage-dev-shell";
       };
     });
+
+  nixConfig = {
+    extra-substituters = [
+      "https://hydra.iohk.io"
+    ];
+    extra-trusted-public-keys = [
+      "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+    ];
+  };
 }
