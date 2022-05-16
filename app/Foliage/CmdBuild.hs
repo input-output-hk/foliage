@@ -162,9 +162,10 @@ cmdBuild
 
         keys <- readKeysAt (keysPath </> "timestamp")
         let timestampSigned = withSignatures hackageRepoLayout keys timestamp
-        liftIO $ do
-          p <- makeAbsolute (fromFilePath path)
-          writeJSON hackageRepoLayout p timestampSigned
+        traced "writing" $
+          liftIO $ do
+            p <- makeAbsolute (fromFilePath path)
+            writeJSON hackageRepoLayout p timestampSigned
 
       --
       -- snapshot.json
@@ -188,9 +189,10 @@ cmdBuild
 
         keys <- readKeysAt (keysPath </> "snapshot")
         let snapshotSigned = withSignatures hackageRepoLayout keys snapshot
-        liftIO $ do
-          p <- makeAbsolute (fromFilePath path)
-          writeJSON hackageRepoLayout p snapshotSigned
+        traced "writing" $
+          liftIO $ do
+            p <- makeAbsolute (fromFilePath path)
+            writeJSON hackageRepoLayout p snapshotSigned
 
       --
       -- root.json
@@ -250,9 +252,10 @@ cmdBuild
 
         keys <- readKeysAt (keysPath </> "root")
         let signedRoot = withSignatures hackageRepoLayout keys root
-        liftIO $ do
-          p <- makeAbsolute (fromFilePath path)
-          writeJSON hackageRepoLayout p signedRoot
+        traced "writing" $
+          liftIO $ do
+            p <- makeAbsolute (fromFilePath path)
+            writeJSON hackageRepoLayout p signedRoot
 
       --
       -- mirrors.json
@@ -269,9 +272,10 @@ cmdBuild
 
         keys <- readKeysAt (keysPath </> "mirrors")
         let signedMirrors = withSignatures hackageRepoLayout keys mirrors
-        liftIO $ do
-          p <- makeAbsolute (fromFilePath path)
-          writeJSON hackageRepoLayout p signedMirrors
+        traced "writing" $
+          liftIO $ do
+            p <- makeAbsolute (fromFilePath path)
+            writeJSON hackageRepoLayout p signedMirrors
 
       --
       -- 01-index.tar
@@ -281,35 +285,37 @@ cmdBuild
         pkgIds <- getPackages GetPackages
 
         entries <-
-          fmap concat $
-            for pkgIds $ \pkgId -> do
-              let PackageId {pkgName, pkgVersion} = pkgId
-              PackageMeta {packageTimestamp, packageRevisions} <- getPackageMeta (GetPackageMeta pkgId)
+          flip foldMap pkgIds $ \pkgId -> do
+            let PackageId {pkgName, pkgVersion} = pkgId
+            PackageMeta {packageTimestamp, packageRevisions} <- getPackageMeta (GetPackageMeta pkgId)
 
-              srcDir <- preparePackageSource $ PreparePackageSource pkgId
-              now <- getCurrentTime GetCurrentTime
+            srcDir <- preparePackageSource $ PreparePackageSource pkgId
+            now <- getCurrentTime GetCurrentTime
 
-              sequence $
-                [ -- original cabal file
-                  mkTarEntry
-                    (srcDir </> pkgName <.> "cabal")
-                    (pkgName </> pkgVersion </> pkgName <.> "cabal")
-                    (fromMaybe now packageTimestamp),
-                  -- package.json
-                  mkTarEntry
-                    (outputDir </> "index" </> pkgName </> pkgVersion </> "package.json")
-                    (pkgName </> pkgVersion </> "package.json")
-                    (fromMaybe now packageTimestamp)
-                ]
-                  ++ [ -- revised cabal files
-                       mkTarEntry
-                         (inputDir </> pkgName </> pkgVersion </> "revisions" </> show revNum <.> "cabal")
-                         (pkgName </> pkgVersion </> pkgName <.> "cabal")
-                         (fromMaybe now revTimestamp)
-                       | RevisionMeta revTimestamp revNum <- packageRevisions
-                     ]
+            -- original cabal file
+            cabalEntry <-
+              mkTarEntry
+                (srcDir </> pkgName <.> "cabal")
+                (pkgName </> pkgVersion </> pkgName <.> "cabal")
+                (fromMaybe now packageTimestamp)
 
-        liftIO $ BSL.writeFile path $ Tar.write (sortOn Tar.entryTime entries)
+            -- package.json
+            packageEntry <-
+              mkTarEntry
+                (outputDir </> "index" </> pkgName </> pkgVersion </> "package.json")
+                (pkgName </> pkgVersion </> "package.json")
+                (fromMaybe now packageTimestamp)
+
+            -- revised cabal files
+            revisionEntries <- for packageRevisions $ \RevisionMeta {revisionNumber, revisionTimestamp} ->
+              mkTarEntry
+                (inputDir </> pkgName </> pkgVersion </> "revisions" </> show revisionNumber <.> "cabal")
+                (pkgName </> pkgVersion </> pkgName <.> "cabal")
+                (fromMaybe now revisionTimestamp)
+
+            return $ cabalEntry : packageEntry : revisionEntries
+
+        traced "writing" $ liftIO $ BSL.writeFile path $ Tar.write (sortOn Tar.entryTime entries)
 
       --
       -- 01-index.tar.gz
@@ -317,7 +323,7 @@ cmdBuild
 
       outputDir </> "01-index.tar.gz" %> \path -> do
         tar <- readFileByteStringLazy (outputDir </> "01-index.tar")
-        liftIO $ BSL.writeFile path (GZip.compress tar)
+        traced "writing" $ liftIO $ BSL.writeFile path (GZip.compress tar)
 
       --
       -- index cabal files

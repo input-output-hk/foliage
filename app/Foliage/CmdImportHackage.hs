@@ -15,8 +15,8 @@ import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Foliage.Meta
 import Foliage.Options
 import Foliage.Package
-import System.Directory qualified as IO
-import System.Environment
+import System.Directory (createDirectoryIfMissing)
+import System.Environment (getEnv)
 import System.FilePath
 
 cmdImportHackage :: ImportHackageOptions -> IO ()
@@ -48,33 +48,28 @@ importIndex f (Tar.Next e es) m =
       | f pkgId ->
         do
           putStrLn $ "Found cabal file " ++ pkgIdToString pkgId ++ " with time " ++ show time
-          m' <-
-            M.alterF
-              ( \case
-                  -- New package
-                  Nothing ->
-                    pure $
-                      Just $
-                        PackageMeta
-                          { packageSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
-                            packageTimestamp = Just time,
-                            packageRevisions = [],
-                            packageForceVersion = False
-                          }
-                  -- Existing package, new revision
-                  Just sm -> do
-                    let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
-                        newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = Just time}
-                    -- bad performance here but I don't care
-                    let sm' = sm {packageRevisions = packageRevisions sm ++ [newRevision]}
-                    let PackageId pkgName pkgVersion = pkgId
-                    let outDir = "_sources" </> pkgName </> pkgVersion </> "revisions"
-                    IO.createDirectoryIfMissing True outDir
-                    BSL.writeFile (outDir </> show revnum <.> "cabal") contents
-                    return $ Just sm'
-              )
-              pkgId
-              m
+          let -- new package
+              go Nothing =
+                pure $
+                  Just $
+                    PackageMeta
+                      { packageSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
+                        packageTimestamp = Just time,
+                        packageRevisions = [],
+                        packageForceVersion = False
+                      }
+              -- Existing package, new revision
+              go (Just sm) = do
+                let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
+                    newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = Just time}
+                -- Repeatedly adding at the end of a list is bad performance but good for the moment.
+                let sm' = sm {packageRevisions = packageRevisions sm ++ [newRevision]}
+                let PackageId pkgName pkgVersion = pkgId
+                let outDir = "_sources" </> pkgName </> pkgVersion </> "revisions"
+                createDirectoryIfMissing True outDir
+                BSL.writeFile (outDir </> show revnum <.> "cabal") contents
+                return $ Just sm'
+          m' <- M.alterF go pkgId m
           importIndex f es m'
     _ -> importIndex f es m
 importIndex _f Tar.Done m =
@@ -88,7 +83,7 @@ finalise ::
   IO ()
 finalise PackageId {pkgName, pkgVersion} meta = do
   let dir = "_sources" </> pkgName </> pkgVersion
-  IO.createDirectoryIfMissing True dir
+  createDirectoryIfMissing True dir
   writePackageMeta (dir </> "meta.toml") meta
 
 isCabalFile ::
