@@ -7,9 +7,8 @@ import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
 import Data.ByteString.Lazy qualified as BSL
-import Data.Char (isAlpha)
 import Data.Foldable (for_)
-import Data.List (dropWhileEnd, isPrefixOf, sortOn)
+import Data.List (isPrefixOf, sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
@@ -18,11 +17,11 @@ import Foliage.HackageSecurity
 import Foliage.Meta
 import Foliage.Options
 import Foliage.Package
+import Foliage.RemoteAsset (addBuiltinRemoteAssetRule, remoteAssetNeed)
 import Foliage.Shake
 import Foliage.Shake.Oracle
 import Foliage.Time qualified as Time
 import System.Directory qualified as IO
-import System.FilePath.Posix qualified as Posix
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild
@@ -34,16 +33,19 @@ cmdBuild
     } = do
     ks <- IO.doesDirectoryExist keysPath
     unless ks $ do
-      putStrLn $ "🗝️ You don't seem to have created a set of TUF keys. I will create one in " <> keysPath
+      putStrLn $ "You don't seem to have created a set of TUF keys. I will create one in " <> keysPath
       createKeys keysPath
 
     let opts =
           shakeOptions
             { shakeChange = ChangeDigest,
-              shakeFiles = "_cache"
+              shakeFiles = "_cache",
+              shakeVerbosity = Info
             }
 
     shake opts $ do
+      addBuiltinRemoteAssetRule ("_cache" </> "downloads")
+
       --
       -- Oracles
       --
@@ -51,25 +53,21 @@ cmdBuild
         case mCurrentTime of
           Nothing -> do
             t <- Time.truncateSeconds <$> liftIO Time.getCurrentTime
-            putInfo $
-              unlines
-                [ "🕐 Current time set to " <> Time.iso8601Show t <> ".",
-                  "You can set a fixed time using the --current-time option"
-                ]
+            putInfo $ "Current time set to " <> Time.iso8601Show t <> ". You can set a fixed time using the --current-time option."
             return t
           Just t -> do
-            putInfo $ "🕐 Current time set to " <> Time.iso8601Show t <> "."
+            putInfo $ "Current time set to " <> Time.iso8601Show t <> "."
             return t
 
-      getExpiryTime <- addOracle $ \GetExpiryTime -> do
+      getExpiryTime <- addOracleCache $ \GetExpiryTime -> do
         t <- Time.addUTCTime (Time.nominalDay * 365) <$> getCurrentTime GetCurrentTime
-        putInfo $ "🕐 Expiry time set to " <> Time.iso8601Show t <> " (a year from now)."
+        putInfo $ "Expiry time set to " <> Time.iso8601Show t <> " (a year from now)."
         return t
 
-      getPackageMeta <- addOracle $ \(GetPackageMeta PackageId {pkgName, pkgVersion}) ->
+      getPackageMeta <- addOracleCache $ \(GetPackageMeta PackageId {pkgName, pkgVersion}) ->
         readPackageMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
 
-      preparePackageSource <- addOracle $ \(PreparePackageSource pkgId@PackageId {pkgName, pkgVersion}) -> do
+      preparePackageSource <- addOracleCache $ \(PreparePackageSource pkgId@PackageId {pkgName, pkgVersion}) -> do
         PackageMeta {packageSource, packageForceVersion} <- getPackageMeta (GetPackageMeta pkgId)
 
         let srcDir = "_cache" </> "packages" </> pkgName </> pkgVersion
@@ -86,7 +84,7 @@ cmdBuild
 
         case packageSource of
           TarballSource url mSubdir -> do
-            tarballPath <- fetchUrl url
+            tarballPath <- remoteAssetNeed url
 
             withTempDir $ \tmpDir -> do
               cmd_ ["tar", "xzf", tarballPath, "-C", tmpDir]
@@ -107,7 +105,7 @@ cmdBuild
         -- Delete cabal.project files if present
         projectFiles <- liftIO $ filter ("cabal.project" `isPrefixOf`) <$> IO.getDirectoryContents srcDir
         unless (null projectFiles) $ do
-          putWarn $ "⚠️ Deleting cabal project files from " ++ srcDir
+          putWarn $ "Deleting cabal project files from " ++ srcDir
           liftIO $ for_ projectFiles $ IO.removeFile . (srcDir </>)
 
         applyPatches inputDir srcDir pkgId
@@ -117,7 +115,7 @@ cmdBuild
 
         return srcDir
 
-      getPackages <- addOracle $ \GetPackages -> do
+      getPackages <- addOracleCache $ \GetPackages -> do
         metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
 
         when (null metaFiles) $ do
@@ -167,7 +165,6 @@ cmdBuild
         liftIO $ do
           p <- makeAbsolute (fromFilePath path)
           writeJSON hackageRepoLayout p timestampSigned
-        putInfo $ "✅ Written " <> path
 
       --
       -- snapshot.json
@@ -194,7 +191,6 @@ cmdBuild
         liftIO $ do
           p <- makeAbsolute (fromFilePath path)
           writeJSON hackageRepoLayout p snapshotSigned
-        putInfo $ "✅ Written " <> path
 
       --
       -- root.json
@@ -257,7 +253,6 @@ cmdBuild
         liftIO $ do
           p <- makeAbsolute (fromFilePath path)
           writeJSON hackageRepoLayout p signedRoot
-        putInfo $ "✅ Written " <> path
 
       --
       -- mirrors.json
@@ -277,7 +272,6 @@ cmdBuild
         liftIO $ do
           p <- makeAbsolute (fromFilePath path)
           writeJSON hackageRepoLayout p signedMirrors
-        putInfo $ "✅ Written " <> path
 
       --
       -- 01-index.tar
@@ -316,7 +310,6 @@ cmdBuild
                      ]
 
         liftIO $ BSL.writeFile path $ Tar.write (sortOn Tar.entryTime entries)
-        putInfo $ "✅ Written " <> path
 
       --
       -- 01-index.tar.gz
@@ -325,7 +318,6 @@ cmdBuild
       outputDir </> "01-index.tar.gz" %> \path -> do
         tar <- readFileByteStringLazy (outputDir </> "01-index.tar")
         liftIO $ BSL.writeFile path (GZip.compress tar)
-        putInfo $ "✅ Written " <> path
 
       --
       -- index cabal files
@@ -346,8 +338,6 @@ cmdBuild
           Just revNum -> do
             let revisionFile = inputDir </> pkgName </> pkgVersion </> "revisions" </> show revNum <.> "cabal"
             copyFileChanged revisionFile path
-
-        putInfo $ "✅ Written " <> path
 
       --
       -- index package files (only depends on the source distribution)
@@ -374,7 +364,6 @@ cmdBuild
         liftIO $ do
           p <- makeAbsolute (fromFilePath path)
           writeJSON hackageRepoLayout p signedTargets
-        putInfo $ "✅ Written " <> path
 
       --
       -- source distributions, including patching
@@ -406,27 +395,7 @@ cmdBuild
             _ ->
               fail $ "cabal sdist for " <> pkgIdToString pkgId <> " did not produce a single tarball!"
 
-        putInfo $ "✅ Written " <> path
-
-      --
-      -- tarball downloads
-      --
-
-      "_cache/downloads/**" %> \path -> do
-        let scheme : rest = drop 2 $ splitDirectories path
-        let url = scheme <> "://" <> Posix.joinPath rest
-        putInfo $ "🐢 Downloading " <> url
-        cmd_ Shell (FileStdout path) $ "curl --silent -L " <> url
-
-    putStrLn $ "💥 All done. The repository is now available in " <> outputDir <> "."
-
-fetchUrl :: String -> Action FilePath
-fetchUrl url = do
-  let scheme : rest = Posix.splitPath url
-      scheme' = dropWhileEnd (not . isAlpha) scheme
-      urlPath = "_cache" </> "downloads" </> joinPath (scheme' : rest)
-  need [urlPath]
-  return urlPath
+    putStrLn $ "All done. The repository is now available in " <> outputDir <> "."
 
 mkTarEntry :: FilePath -> [Char] -> UTCTime -> Action Tar.Entry
 mkTarEntry filePath indexPath timestamp = do

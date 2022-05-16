@@ -22,6 +22,7 @@ executable foliage
         Foliage.Meta
         Foliage.Options
         Foliage.Package
+        Foliage.RemoteAsset
         Foliage.Shake
         Foliage.Shake.Oracle
         Foliage.Time
