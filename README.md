@@ -115,29 +115,23 @@ Run foliage build.
 ```
 $ foliage build
 🌿 Foliage
-🗝️ You don't seem to have created a set of TUF keys. I will create one in _keys
-🕐 Current time set to 2022-03-30T04:02:56Z.
-You can set a fixed time using the --current-time option
-
-🕐 Expiry time set to 2023-03-30T04:02:56Z (a year from now).
-🐢 Downloading https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa
-# curl (for _cache/aHR0cHM6Ly9naXRodWIuY29tL2lucHV0LW91dHB1dC1oay9vdXJvYm9yb3MtbmV0d29yay90YXJiYWxsL2ZhMTBjYjRlZWYxZTdkM2UwOTVjZWMzYzJiYjEyMTA3NzRiN2U1ZmE/.downloaded)
-# mv (for _cache/aHR0cHM6Ly9naXRodWIuY29tL2lucHV0LW91dHB1dC1oay9vdXJvYm9yb3MtbmV0d29yay90YXJiYWxsL2ZhMTBjYjRlZWYxZTdkM2UwOTVjZWMzYzJiYjEyMTA3NzRiN2U1ZmE/.downloaded)
-👀 https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa
-⚠️ Deleting cabal project files from _cache/aHR0cHM6Ly9naXRodWIuY29tL2lucHV0LW91dHB1dC1oay9vdXJvYm9yb3MtbmV0d29yay90YXJiYWxsL2ZhMTBjYjRlZWYxZTdkM2UwOTVjZWMzYzJiYjEyMTA3NzRiN2U1ZmE
-✅ Written _repo/index/typed-protocols/0.1.0.0/typed-protocols.cabal
-✅ Written _repo/root.json
-✅ Written _repo/mirrors.json
- Creating source distribution for typed-protocols-0.1.0.0
+You don't seem to have created a set of TUF keys. I will create one in _keys
+Current time set to 2022-05-16T09:33:26Z. You can set a fixed time using the --current-time option.
+Expiry time set to 2023-05-16T09:33:26Z (a year from now).
+# curl (for RemoteAsset "https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa")
+# tar (for OracleQ (PreparePackageSource (PackageId {pkgName = "typed-protocols", pkgVersion = "0.1.0.0"})))
+# cp (for OracleQ (PreparePackageSource (PackageId {pkgName = "typed-protocols", pkgVersion = "0.1.0.0"})))
+# writing (for _repo/root.json)
+# writing (for _repo/mirrors.json)
+_cache/packages/typed-protocols/0.1.0.0
+Creating source distribution for typed-protocols-0.1.0.0
 # cabal (for _repo/package/typed-protocols-0.1.0.0.tar.gz)
 # mv (for _repo/package/typed-protocols-0.1.0.0.tar.gz)
-✅ Written _repo/package/typed-protocols-0.1.0.0.tar.gz
-✅ Written _repo/index/typed-protocols/0.1.0.0/package.json
-✅ Written _repo/01-index.tar
-✅ Written _repo/01-index.tar.gz
-✅ Written _repo/snapshot.json
-✅ Written _repo/timestamp.json
-💥 All done. The repository is now available in _repo.
+# writing (for _repo/01-index.tar)
+# writing (for _repo/01-index.tar.gz)
+# writing (for _repo/snapshot.json)
+# writing (for _repo/timestamp.json)
+All done. The repository is now available in _repo.
 ```
 
 If you want to rely on the cabal index-state feature you need to specify a
@@ -284,4 +278,3 @@ overwritten with `<version>`. Notice this is done after applying patches.
 ## Author
 
 - Andrea Bedini (@andreabedini)
-
