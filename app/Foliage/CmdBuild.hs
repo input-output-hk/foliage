@@ -64,8 +64,26 @@ cmdBuild
         putInfo $ "Expiry time set to " <> Time.iso8601Show t <> " (a year from now)."
         return t
 
-      getPackageMeta <- addOracleCache $ \(GetPackageMeta PackageId {pkgName, pkgVersion}) ->
-        readPackageMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
+      getPackageMeta <- addOracleCache $ \(GetPackageMeta pkgId@PackageId {pkgName, pkgVersion}) -> do
+        meta <- readPackageMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
+
+        -- Here we do some validation of the package metadata. We could
+        -- fine a better place for it.
+        case meta of
+          PackageMeta {packageRevisions, packageTimestamp = Nothing}
+            | not (null packageRevisions) -> do
+              putError $
+                "Package " <> pkgIdToString pkgId
+                  <> " has cabal file revisions but the original package has no timestamp. This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
+              fail "invalid package metadata"
+          PackageMeta {packageRevisions, packageTimestamp = Just pkgTs}
+            | any ((< pkgTs) . revisionTimestamp) packageRevisions -> do
+              putError $
+                "Package " <> pkgIdToString pkgId
+                  <> " has a revision with timestamp earlier than the package itself. Adjust the timestamps so that all revisions come after the original package"
+              fail "invalid package metadata"
+          _ ->
+            return meta
 
       preparePackageSource <- addOracleCache $ \(PreparePackageSource pkgId@PackageId {pkgName, pkgVersion}) -> do
         PackageMeta {packageSource, packageForceVersion} <- getPackageMeta (GetPackageMeta pkgId)
@@ -311,7 +329,7 @@ cmdBuild
               mkTarEntry
                 (inputDir </> pkgName </> pkgVersion </> "revisions" </> show revisionNumber <.> "cabal")
                 (pkgName </> pkgVersion </> pkgName <.> "cabal")
-                (fromMaybe now revisionTimestamp)
+                revisionTimestamp
 
             return $ cabalEntry : packageEntry : revisionEntries
 

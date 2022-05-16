@@ -61,7 +61,7 @@ importIndex f (Tar.Next e es) m =
               -- Existing package, new revision
               go (Just sm) = do
                 let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
-                    newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = Just time}
+                    newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = time}
                 -- Repeatedly adding at the end of a list is bad performance but good for the moment.
                 let sm' = sm {packageRevisions = packageRevisions sm ++ [newRevision]}
                 let PackageId pkgName pkgVersion = pkgId

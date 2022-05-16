@@ -86,11 +86,11 @@ readPackageMeta = Toml.decodeFile sourceMetaCodec
 writePackageMeta :: FilePath -> PackageMeta -> IO ()
 writePackageMeta fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
 
-data RevisionMeta = RevisionMeta' (Maybe WrapUTCTime) Int
+data RevisionMeta = RevisionMeta' WrapUTCTime Int
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-pattern RevisionMeta :: Maybe UTCTime -> Int -> RevisionMeta
+pattern RevisionMeta :: UTCTime -> Int -> RevisionMeta
 pattern RevisionMeta {revisionTimestamp, revisionNumber} <-
   RevisionMeta' (coerce -> revisionTimestamp) revisionNumber
   where
@@ -99,7 +99,7 @@ pattern RevisionMeta {revisionTimestamp, revisionNumber} <-
 revisionMetaCodec :: TomlCodec RevisionMeta
 revisionMetaCodec =
   RevisionMeta
-    <$> Toml.dioptional (timeCodec "timestamp") .= revisionTimestamp
+    <$> timeCodec "timestamp" .= revisionTimestamp
     <*> Toml.int "number" .= revisionNumber
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
