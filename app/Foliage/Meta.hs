@@ -17,6 +17,9 @@ module Foliage.Meta
     pattern RevisionMeta,
     revisionTimestamp,
     revisionNumber,
+    TarballLocation,
+    pattern LocalTarball,
+    pattern RemoteTarball,
     PackageSource,
     pattern TarballSource,
     UTCTime,
@@ -24,6 +27,7 @@ module Foliage.Meta
   )
 where
 
+import Control.Applicative ((<|>))
 import Control.Monad (void)
 import Data.Coerce (coerce)
 import Data.Maybe (fromMaybe)
@@ -35,8 +39,26 @@ import GHC.Generics
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
+data TarballLocation
+  = RemoteTarball String -- ^ URL
+  | LocalTarball FilePath
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
+tarballLocationCodec :: TomlCodec TarballLocation
+tarballLocationCodec = local <|> remote
+  where
+    local = Toml.dimatch matchLocalTarball LocalTarball (Toml.string "path")
+    remote = Toml.dimatch matchRemoteTarball RemoteTarball (Toml.string "url")
+
+    matchLocalTarball (LocalTarball path) = Just path
+    matchLocalTarball _ = Nothing
+    
+    matchRemoteTarball (RemoteTarball url) = Just url
+    matchRemoteTarball _ = Nothing
+
 data PackageSource
-  = TarballSource String (Maybe String)
+  = TarballSource TarballLocation (Maybe String)
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
@@ -44,13 +66,13 @@ packageSourceCodec :: TomlCodec PackageSource
 packageSourceCodec =
   Toml.dimatch matchTarballSource (uncurry TarballSource) tarballSourceCodec
 
-tarballSourceCodec :: TomlCodec (String, Maybe String)
+tarballSourceCodec :: TomlCodec (TarballLocation, Maybe String)
 tarballSourceCodec =
   Toml.pair
-    (Toml.string "url")
+    tarballLocationCodec
     (Toml.dioptional $ Toml.string "subdir")
 
-matchTarballSource :: PackageSource -> Maybe (String, Maybe String)
+matchTarballSource :: PackageSource -> Maybe (TarballLocation, Maybe String)
 matchTarballSource (TarballSource url mSubdir) = Just (url, mSubdir)
 
 data PackageMeta

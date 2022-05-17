@@ -53,7 +53,7 @@ importIndex f (Tar.Next e es) m =
                 pure $
                   Just $
                     PackageMeta
-                      { packageSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
+                      { packageSource = TarballSource (RemoteTarball $ pkgIdToHackageUrl pkgId) Nothing,
                         packageTimestamp = Just time,
                         packageRevisions = [],
                         packageForceVersion = False

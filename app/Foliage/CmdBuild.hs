@@ -101,8 +101,10 @@ cmdBuild
           IO.createDirectoryIfMissing True srcDir
 
         case packageSource of
-          TarballSource url mSubdir -> do
-            tarballPath <- remoteAssetNeed url
+          TarballSource location mSubdir -> do
+            tarballPath <- case location of
+                             RemoteTarball url -> remoteAssetNeed url
+                             LocalTarball path -> need [path] >> return path
 
             withTempDir $ \tmpDir -> do
               cmd_ ["tar", "xzf", tarballPath, "-C", tmpDir]
