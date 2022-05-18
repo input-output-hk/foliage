@@ -13,6 +13,7 @@ import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
+import Distribution.Parsec (simpleParsec)
 import Foliage.HackageSecurity
 import Foliage.Meta
 import Foliage.Options
@@ -21,6 +22,7 @@ import Foliage.RemoteAsset (addBuiltinRemoteAssetRule, remoteAssetNeed)
 import Foliage.Shake
 import Foliage.Shake.Oracle
 import Foliage.Time qualified as Time
+import Foliage.UpdateCabalFile (rewritePackageVersion)
 import System.Directory qualified as IO
 
 cmdBuild :: BuildOptions -> IO ()
@@ -451,17 +453,5 @@ applyPatches inputDir srcDir PackageId {pkgName, pkgVersion} = do
 forcePackageVersion :: FilePath -> PackageId -> Action ()
 forcePackageVersion srcDir PackageId {pkgName, pkgVersion} = do
   let cabalFilePath = srcDir </> pkgName <.> "cabal"
-  cabalFile <- readFile' cabalFilePath
-  writeFile' cabalFilePath (replaceVersion pkgVersion cabalFile)
-
-replaceVersion :: String -> String -> String
-replaceVersion version = unlines . map f . lines
-  where
-    f line
-      | "version" `isPrefixOf` line =
-        unlines
-          [ "-- version field replaced by foliage",
-            "-- " <> line,
-            "version: " ++ version
-          ]
-    f line = line
+  let Just version = simpleParsec pkgVersion
+  liftIO $ rewritePackageVersion cabalFilePath version
