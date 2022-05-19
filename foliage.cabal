@@ -22,7 +22,6 @@ executable foliage
         Foliage.HackageSecurity
         Foliage.Meta
         Foliage.Options
-        Foliage.Package
         Foliage.RemoteAsset
         Foliage.Shake
         Foliage.Shake.Oracle

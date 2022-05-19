@@ -16,8 +16,8 @@ where
 import Data.Time.Compat ()
 import Development.Shake (RuleResult)
 import Development.Shake.Classes (Binary, Hashable, NFData)
+import Distribution.Types.PackageId (PackageId)
 import Foliage.Meta
-import Foliage.Package
 import GHC.Generics (Generic)
 
 data GetCurrentTime = GetCurrentTime

@@ -12,9 +12,12 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
 import Data.Maybe (fromMaybe)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Distribution.Package (PackageIdentifier (PackageIdentifier, pkgVersion), pkgName)
+import Distribution.Parsec (simpleParsec)
+import Distribution.Pretty (prettyShow)
+import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta
 import Foliage.Options
-import Foliage.Package
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (getEnv)
 import System.FilePath
@@ -23,11 +26,11 @@ cmdImportHackage :: ImportHackageOptions -> IO ()
 cmdImportHackage (ImportHackageOptions Nothing) = importHackage (const True)
 cmdImportHackage (ImportHackageOptions (Just f)) = importHackage (mkFilter f)
   where
-    mkFilter (ImportFilter pn Nothing) = (== pn) . pkgName
-    mkFilter (ImportFilter pn (Just pv)) = (&&) <$> (== pn) . pkgName <*> (== pv) . pkgVersion
+    mkFilter (ImportFilter pn Nothing) = (== pn) . unPackageName . pkgName
+    mkFilter (ImportFilter pn (Just pv)) = (&&) <$> (== pn) . unPackageName . pkgName <*> (== pv) . prettyShow . pkgVersion
 
 importHackage ::
-  (PackageId -> Bool) ->
+  (PackageIdentifier -> Bool) ->
   IO ()
 importHackage f = do
   putStrLn "EXPERIMENTAL. Import the Hackage index from $HOME/.cabal. Make sure you have done `cabal update` recently."
@@ -38,16 +41,16 @@ importHackage f = do
 
 importIndex ::
   Show e =>
-  (PackageId -> Bool) ->
+  (PackageIdentifier -> Bool) ->
   Tar.Entries e ->
-  Map PackageId PackageVersionMeta ->
-  IO (Map PackageId PackageVersionMeta)
+  Map PackageIdentifier PackageVersionMeta ->
+  IO (Map PackageIdentifier PackageVersionMeta)
 importIndex f (Tar.Next e es) m =
   case isCabalFile e of
     Just (pkgId, contents, time)
       | f pkgId ->
         do
-          putStrLn $ "Found cabal file " ++ pkgIdToString pkgId ++ " with time " ++ show time
+          putStrLn $ "Found cabal file " ++ prettyShow pkgId ++ " with timestamp " ++ show time
           let -- new package
               go Nothing =
                 pure $
@@ -64,8 +67,8 @@ importIndex f (Tar.Next e es) m =
                     newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = time}
                 -- Repeatedly adding at the end of a list is bad performance but good for the moment.
                 let sm' = sm {packageVersionRevisions = packageVersionRevisions sm ++ [newRevision]}
-                let PackageId pkgName pkgVersion = pkgId
-                let outDir = "_sources" </> pkgName </> pkgVersion </> "revisions"
+                let PackageIdentifier pkgName pkgVersion = pkgId
+                let outDir = "_sources" </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions"
                 createDirectoryIfMissing True outDir
                 BSL.writeFile (outDir </> show revnum <.> "cabal") contents
                 return $ Just sm'
@@ -77,18 +80,22 @@ importIndex _f Tar.Done m =
 importIndex _f (Tar.Fail e) _ =
   error $ show e
 
+pkgIdToHackageUrl :: PackageIdentifier -> String
+pkgIdToHackageUrl pkgId =
+  "https://hackage.haskell.org/package" </> prettyShow pkgId </> prettyShow pkgId <.> "tar.gz"
+
 finalise ::
-  PackageId ->
+  PackageIdentifier ->
   PackageVersionMeta ->
   IO ()
-finalise PackageId {pkgName, pkgVersion} meta = do
-  let dir = "_sources" </> pkgName </> pkgVersion
+finalise PackageIdentifier {pkgName, pkgVersion} meta = do
+  let dir = "_sources" </> unPackageName pkgName </> prettyShow pkgVersion
   createDirectoryIfMissing True dir
   writePackageVersionMeta (dir </> "meta.toml") meta
 
 isCabalFile ::
   Tar.Entry ->
-  Maybe (PackageId, BSL.ByteString, UTCTime)
+  Maybe (PackageIdentifier, BSL.ByteString, UTCTime)
 isCabalFile
   Tar.Entry
     { Tar.entryTarPath = Tar.fromTarPath -> path,
@@ -97,6 +104,8 @@ isCabalFile
     }
     | ".cabal" `isSuffixOf` path =
       let [pkgName, pkgVersion, _] = splitDirectories path
-          packageId = PackageId pkgName pkgVersion
+          Just name = simpleParsec pkgName
+          Just version = simpleParsec pkgVersion
+          packageId = PackageIdentifier name version
        in Just (packageId, contents, time)
 isCabalFile _ = Nothing

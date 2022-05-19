@@ -13,11 +13,12 @@ import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
+import Distribution.Package
 import Distribution.Parsec (simpleParsec)
+import Distribution.Pretty
 import Foliage.HackageSecurity
 import Foliage.Meta
 import Foliage.Options
-import Foliage.Package
 import Foliage.RemoteAsset (addBuiltinRemoteAssetRule, remoteAssetNeed)
 import Foliage.Shake
 import Foliage.Shake.Oracle
@@ -66,8 +67,8 @@ cmdBuild
         putInfo $ "Expiry time set to " <> Time.iso8601Show t <> " (a year from now)."
         return t
 
-      getPackageVersionMeta <- addOracleCache $ \(GetPackageVersionMeta pkgId@PackageId {pkgName, pkgVersion}) -> do
-        meta <- readPackageVersionMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
+      getPackageVersionMeta <- addOracleCache $ \(GetPackageVersionMeta pkgId@PackageIdentifier {pkgName, pkgVersion}) -> do
+        meta <- readPackageVersionMeta' $ inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
 
         -- Here we do some validation of the package metadata. We could
         -- fine a better place for it.
@@ -75,25 +76,24 @@ cmdBuild
           PackageVersionMeta {packageVersionRevisions, packageVersionTimestamp = Nothing}
             | not (null packageVersionRevisions) -> do
               putError $
-                "Package " <> pkgIdToString pkgId
+                "Package " <> prettyShow pkgId
                   <> " has cabal file revisions but the original package has no timestamp. This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
               fail "invalid package metadata"
           PackageVersionMeta {packageVersionRevisions, packageVersionTimestamp = Just pkgTs}
             | any ((< pkgTs) . revisionTimestamp) packageVersionRevisions -> do
               putError $
-                "Package " <> pkgIdToString pkgId
+                "Package " <> prettyShow pkgId
                   <> " has a revision with timestamp earlier than the package itself. Adjust the timestamps so that all revisions come after the original package"
               fail "invalid package metadata"
           _ ->
             return meta
 
-      preparePackageSource <- addOracleCache $ \(PreparePackageSource pkgId@PackageId {pkgName, pkgVersion}) -> do
+      preparePackageSource <- addOracleCache $ \(PreparePackageSource pkgId@PackageIdentifier {pkgName, pkgVersion}) -> do
         PackageVersionMeta {packageVersionSource, packageVersionForce} <- getPackageVersionMeta (GetPackageVersionMeta pkgId)
-
-        let srcDir = "_cache" </> "packages" </> pkgName </> pkgVersion
 
         -- FIXME too much rework?
         -- this action only depends on the tarball and the package metadata
+        let srcDir = "_cache" </> "packages" </> unPackageName pkgName </> prettyShow pkgVersion
 
         -- delete everything inside the package source tree
         liftIO $ do
@@ -147,9 +147,11 @@ cmdBuild
           fail "no package metadata found"
 
         return $
-          [ PackageId pkgName pkgVersion
+          [ PackageIdentifier name version
             | path <- metaFiles,
-              let [pkgName, pkgVersion, _] = splitDirectories path
+              let [pkgName, pkgVersion, _] = splitDirectories path,
+              let Just name = simpleParsec pkgName,
+              let Just version = simpleParsec pkgVersion
           ]
 
       --
@@ -163,8 +165,8 @@ cmdBuild
       action $ do
         pkgIds <- getPackages GetPackages
         need
-          [ outputDir </> "index" </> pkgName </> pkgVersion </> pkgName <.> "cabal"
-            | PackageId pkgName pkgVersion <- pkgIds
+          [ outputDir </> "index" </> unPackageName pkgName </> prettyShow pkgVersion </> unPackageName pkgName <.> "cabal"
+            | PackageIdentifier pkgName pkgVersion <- pkgIds
           ]
 
       --
@@ -306,8 +308,11 @@ cmdBuild
 
         entries <-
           flip foldMap pkgIds $ \pkgId -> do
-            let PackageId {pkgName, pkgVersion} = pkgId
+            let PackageIdentifier {pkgName, pkgVersion} = pkgId
             PackageVersionMeta {packageVersionTimestamp, packageVersionRevisions} <- getPackageVersionMeta (GetPackageVersionMeta pkgId)
+
+            let name = unPackageName pkgName
+            let version = prettyShow pkgVersion
 
             srcDir <- preparePackageSource $ PreparePackageSource pkgId
             now <- getCurrentTime GetCurrentTime
@@ -315,22 +320,22 @@ cmdBuild
             -- original cabal file
             cabalEntry <-
               mkTarEntry
-                (srcDir </> pkgName <.> "cabal")
-                (pkgName </> pkgVersion </> pkgName <.> "cabal")
+                (srcDir </> name <.> "cabal")
+                (name </> version </> name <.> "cabal")
                 (fromMaybe now packageVersionTimestamp)
 
             -- package.json
             packageEntry <-
               mkTarEntry
-                (outputDir </> "index" </> pkgName </> pkgVersion </> "package.json")
-                (pkgName </> pkgVersion </> "package.json")
+                (outputDir </> "index" </> name </> version </> "package.json")
+                (name </> version </> "package.json")
                 (fromMaybe now packageVersionTimestamp)
 
             -- revised cabal files
             revisionEntries <- for packageVersionRevisions $ \RevisionMeta {revisionNumber, revisionTimestamp} ->
               mkTarEntry
-                (inputDir </> pkgName </> pkgVersion </> "revisions" </> show revisionNumber <.> "cabal")
-                (pkgName </> pkgVersion </> pkgName <.> "cabal")
+                (inputDir </> name </> version </> "revisions" </> show revisionNumber <.> "cabal")
+                (name </> version </> name <.> "cabal")
                 revisionTimestamp
 
             return $ cabalEntry : packageEntry : revisionEntries
@@ -353,7 +358,9 @@ cmdBuild
 
       outputDir </> "index/*/*/*.cabal" %> \path -> do
         let [_, _, pkgName, pkgVersion, _] = splitDirectories path
-        let pkgId = PackageId pkgName pkgVersion
+        let Just name = simpleParsec pkgName
+        let Just version = simpleParsec pkgVersion
+        let pkgId = PackageIdentifier name version
 
         meta <- getPackageVersionMeta $ GetPackageVersionMeta pkgId
 
@@ -397,13 +404,13 @@ cmdBuild
 
       outputDir </> "package/*.tar.gz" %> \path -> do
         let [_, _, filename] = splitDirectories path
-        let Just pkgId = parsePkgId <$> stripExtension "tar.gz" filename
+        let Just pkgId = stripExtension "tar.gz" filename >>= simpleParsec
 
         srcDir <- preparePackageSource $ PreparePackageSource pkgId
         putInfo srcDir
 
         withTempDir $ \tmpDir -> do
-          putInfo $ "Creating source distribution for " <> pkgIdToString pkgId
+          putInfo $ "Creating source distribution for " <> prettyShow pkgId
 
           cmd_ Shell (Cwd srcDir) (FileStdout path) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
 
@@ -419,7 +426,7 @@ cmdBuild
               | l /= filename ->
                 fail $ "cabal sdist produced a different package. I expected " <> filename <> " but found " <> l
             _ ->
-              fail $ "cabal sdist for " <> pkgIdToString pkgId <> " did not produce a single tarball!"
+              fail $ "cabal sdist for " <> prettyShow pkgId <> " did not produce a single tarball!"
 
     putStrLn $ "All done. The repository is now available in " <> outputDir <> "."
 
@@ -440,8 +447,8 @@ mkTarEntry filePath indexPath timestamp = do
       }
 
 applyPatches :: [Char] -> FilePath -> PackageId -> Action ()
-applyPatches inputDir srcDir PackageId {pkgName, pkgVersion} = do
-  let patchesDir = inputDir </> pkgName </> pkgVersion </> "patches"
+applyPatches inputDir srcDir PackageIdentifier {pkgName, pkgVersion} = do
+  let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
   hasPatches <- doesDirectoryExist patchesDir
 
   when hasPatches $ do
@@ -451,7 +458,6 @@ applyPatches inputDir srcDir PackageId {pkgName, pkgVersion} = do
       cmd_ Shell (Cwd srcDir) (FileStdin patch) "patch -p1"
 
 forcePackageVersion :: FilePath -> PackageId -> Action ()
-forcePackageVersion srcDir PackageId {pkgName, pkgVersion} = do
-  let cabalFilePath = srcDir </> pkgName <.> "cabal"
-  let Just version = simpleParsec pkgVersion
-  liftIO $ rewritePackageVersion cabalFilePath version
+forcePackageVersion srcDir PackageIdentifier {pkgName, pkgVersion} = do
+  let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
+  liftIO $ rewritePackageVersion cabalFilePath pkgVersion
