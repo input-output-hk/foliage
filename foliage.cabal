@@ -18,7 +18,7 @@ executable foliage
         Distribution.Types.Orphans
         Foliage.CmdBuild
         Foliage.CmdCreateKeys
-        Foliage.CmdImportHackage
+        Foliage.CmdImportIndex
         Foliage.HackageSecurity
         Foliage.Meta
         Foliage.Options

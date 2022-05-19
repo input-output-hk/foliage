@@ -2,8 +2,8 @@ module Foliage.Options
   ( parseCommand,
     Command (..),
     BuildOptions (..),
-    ImportHackageOptions (..),
-    ImportFilter(..)
+    ImportIndexOptions (..),
+    ImportFilter (..),
   )
 where
 
@@ -13,7 +13,7 @@ import Options.Applicative
 data Command
   = CreateKeys FilePath
   | Build BuildOptions
-  | ImportHackage ImportHackageOptions
+  | ImportIndex ImportIndexOptions
 
 parseCommand :: IO Command
 parseCommand =
@@ -31,7 +31,7 @@ optionsParser =
   hsubparser $
     command "create-keys" (info createKeysCommand (progDesc "Create TUF keys"))
       <> command "build" (info buildCommand (progDesc "Build repository"))
-      <> command "import-hackage" (info importHackageCommand (progDesc "Import from Hackage"))
+      <> command "import-index" (info importIndexCommand (progDesc "Import from Hackage index"))
 
 data BuildOptions = BuildOptions
   { buildOptsKeysPath :: FilePath,
@@ -89,13 +89,13 @@ createKeysCommand =
 
 data ImportFilter = ImportFilter String (Maybe String)
 
-newtype ImportHackageOptions = ImportHackageOptions
+newtype ImportIndexOptions = ImportIndexOptions
   { importOptsFilter :: Maybe ImportFilter
   }
 
-importHackageCommand :: Parser Command
-importHackageCommand =
-  ImportHackage . ImportHackageOptions
+importIndexCommand :: Parser Command
+importIndexCommand =
+  ImportIndex . ImportIndexOptions
     <$> optional
       ( ImportFilter
           <$> strOption

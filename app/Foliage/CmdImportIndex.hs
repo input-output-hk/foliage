@@ -1,5 +1,5 @@
-module Foliage.CmdImportHackage
-  ( cmdImportHackage,
+module Foliage.CmdImportIndex
+  ( cmdImportIndex,
   )
 where
 
@@ -22,22 +22,20 @@ import System.Directory (createDirectoryIfMissing)
 import System.Environment (getEnv)
 import System.FilePath
 
-cmdImportHackage :: ImportHackageOptions -> IO ()
-cmdImportHackage (ImportHackageOptions Nothing) = importHackage (const True)
-cmdImportHackage (ImportHackageOptions (Just f)) = importHackage (mkFilter f)
-  where
-    mkFilter (ImportFilter pn Nothing) = (== pn) . unPackageName . pkgName
-    mkFilter (ImportFilter pn (Just pv)) = (&&) <$> (== pn) . unPackageName . pkgName <*> (== pv) . prettyShow . pkgVersion
-
-importHackage ::
-  (PackageIdentifier -> Bool) ->
-  IO ()
-importHackage f = do
+cmdImportIndex :: ImportIndexOptions -> IO ()
+cmdImportIndex opts = do
   putStrLn "EXPERIMENTAL. Import the Hackage index from $HOME/.cabal. Make sure you have done `cabal update` recently."
   home <- getEnv "HOME"
   entries <- Tar.read <$> BSL.readFile (home </> ".cabal/packages/hackage.haskell.org/01-index.tar")
-  m <- importIndex f entries M.empty
+  m <- importIndex indexfilter entries M.empty
   for_ (M.toList m) $ uncurry finalise
+  where
+    indexfilter = case importOptsFilter opts of
+      Nothing -> const True
+      (Just f) -> mkFilter f
+
+    mkFilter (ImportFilter pn Nothing) = (== pn) . unPackageName . pkgName
+    mkFilter (ImportFilter pn (Just pv)) = (&&) <$> (== pn) . unPackageName . pkgName <*> (== pv) . prettyShow . pkgVersion
 
 importIndex ::
   Show e =>
