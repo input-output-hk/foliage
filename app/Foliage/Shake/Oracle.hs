@@ -7,7 +7,7 @@ module Foliage.Shake.Oracle
   ( UTCTime,
     GetCurrentTime (..),
     GetExpiryTime (..),
-    GetPackageMeta (..),
+    GetPackageVersionMeta (..),
     GetPackages (..),
     PreparePackageSource (..),
   )
@@ -38,11 +38,11 @@ data GetPackages = GetPackages
 
 type instance RuleResult GetPackages = [PackageId]
 
-newtype GetPackageMeta = GetPackageMeta PackageId
+newtype GetPackageVersionMeta = GetPackageVersionMeta PackageId
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-type instance RuleResult GetPackageMeta = PackageMeta
+type instance RuleResult GetPackageVersionMeta = PackageVersionMeta
 
 newtype PreparePackageSource = PreparePackageSource PackageId
   deriving (Show, Eq, Generic)

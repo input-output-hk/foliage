@@ -66,20 +66,20 @@ cmdBuild
         putInfo $ "Expiry time set to " <> Time.iso8601Show t <> " (a year from now)."
         return t
 
-      getPackageMeta <- addOracleCache $ \(GetPackageMeta pkgId@PackageId {pkgName, pkgVersion}) -> do
-        meta <- readPackageMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
+      getPackageVersionMeta <- addOracleCache $ \(GetPackageVersionMeta pkgId@PackageId {pkgName, pkgVersion}) -> do
+        meta <- readPackageVersionMeta' $ inputDir </> pkgName </> pkgVersion </> "meta.toml"
 
         -- Here we do some validation of the package metadata. We could
         -- fine a better place for it.
         case meta of
-          PackageMeta {packageRevisions, packageTimestamp = Nothing}
-            | not (null packageRevisions) -> do
+          PackageVersionMeta {packageVersionRevisions, packageVersionTimestamp = Nothing}
+            | not (null packageVersionRevisions) -> do
               putError $
                 "Package " <> pkgIdToString pkgId
                   <> " has cabal file revisions but the original package has no timestamp. This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
               fail "invalid package metadata"
-          PackageMeta {packageRevisions, packageTimestamp = Just pkgTs}
-            | any ((< pkgTs) . revisionTimestamp) packageRevisions -> do
+          PackageVersionMeta {packageVersionRevisions, packageVersionTimestamp = Just pkgTs}
+            | any ((< pkgTs) . revisionTimestamp) packageVersionRevisions -> do
               putError $
                 "Package " <> pkgIdToString pkgId
                   <> " has a revision with timestamp earlier than the package itself. Adjust the timestamps so that all revisions come after the original package"
@@ -88,7 +88,7 @@ cmdBuild
             return meta
 
       preparePackageSource <- addOracleCache $ \(PreparePackageSource pkgId@PackageId {pkgName, pkgVersion}) -> do
-        PackageMeta {packageSource, packageForceVersion} <- getPackageMeta (GetPackageMeta pkgId)
+        PackageVersionMeta {packageVersionSource, packageVersionForce} <- getPackageVersionMeta (GetPackageVersionMeta pkgId)
 
         let srcDir = "_cache" </> "packages" </> pkgName </> pkgVersion
 
@@ -102,7 +102,7 @@ cmdBuild
           removeFiles srcDir ["//*"]
           IO.createDirectoryIfMissing True srcDir
 
-        case packageSource of
+        case packageVersionSource of
           TarballSource url mSubdir -> do
             tarballPath <- remoteAssetNeed url
 
@@ -130,7 +130,7 @@ cmdBuild
 
         applyPatches inputDir srcDir pkgId
 
-        when packageForceVersion $
+        when packageVersionForce $
           forcePackageVersion srcDir pkgId
 
         return srcDir
@@ -307,7 +307,7 @@ cmdBuild
         entries <-
           flip foldMap pkgIds $ \pkgId -> do
             let PackageId {pkgName, pkgVersion} = pkgId
-            PackageMeta {packageTimestamp, packageRevisions} <- getPackageMeta (GetPackageMeta pkgId)
+            PackageVersionMeta {packageVersionTimestamp, packageVersionRevisions} <- getPackageVersionMeta (GetPackageVersionMeta pkgId)
 
             srcDir <- preparePackageSource $ PreparePackageSource pkgId
             now <- getCurrentTime GetCurrentTime
@@ -317,17 +317,17 @@ cmdBuild
               mkTarEntry
                 (srcDir </> pkgName <.> "cabal")
                 (pkgName </> pkgVersion </> pkgName <.> "cabal")
-                (fromMaybe now packageTimestamp)
+                (fromMaybe now packageVersionTimestamp)
 
             -- package.json
             packageEntry <-
               mkTarEntry
                 (outputDir </> "index" </> pkgName </> pkgVersion </> "package.json")
                 (pkgName </> pkgVersion </> "package.json")
-                (fromMaybe now packageTimestamp)
+                (fromMaybe now packageVersionTimestamp)
 
             -- revised cabal files
-            revisionEntries <- for packageRevisions $ \RevisionMeta {revisionNumber, revisionTimestamp} ->
+            revisionEntries <- for packageVersionRevisions $ \RevisionMeta {revisionNumber, revisionTimestamp} ->
               mkTarEntry
                 (inputDir </> pkgName </> pkgVersion </> "revisions" </> show revisionNumber <.> "cabal")
                 (pkgName </> pkgVersion </> pkgName <.> "cabal")
@@ -355,7 +355,7 @@ cmdBuild
         let [_, _, pkgName, pkgVersion, _] = splitDirectories path
         let pkgId = PackageId pkgName pkgVersion
 
-        meta <- getPackageMeta $ GetPackageMeta pkgId
+        meta <- getPackageVersionMeta $ GetPackageVersionMeta pkgId
 
         case latestRevisionNumber meta of
           Nothing -> do

@@ -15,6 +15,7 @@ executable foliage
     main-is:            Main.hs
     hs-source-dirs:     app
     other-modules:
+        Distribution.Types.Orphans
         Foliage.CmdBuild
         Foliage.CmdCreateKeys
         Foliage.CmdImportHackage

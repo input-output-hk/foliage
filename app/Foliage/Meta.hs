@@ -5,42 +5,110 @@
 {-# LANGUAGE PatternSynonyms #-}
 
 module Foliage.Meta
-  ( PackageMeta,
-    pattern PackageMeta,
-    packageTimestamp,
-    packageSource,
-    packageRevisions,
-    packageForceVersion,
+  ( PackageMeta (PackageMeta),
     readPackageMeta,
     writePackageMeta,
-    RevisionMeta,
-    pattern RevisionMeta,
+    PackageVersionMeta (PackageVersionMeta),
+    packageVersionTimestamp,
+    packageVersionSource,
+    packageVersionRevisions,
+    packageVersionForce,
+    readPackageVersionMeta,
+    writePackageVersionMeta,
+    RevisionMeta (RevisionMeta),
     revisionTimestamp,
     revisionNumber,
-    PackageSource,
+    PackageVersionSource,
     pattern TarballSource,
     UTCTime,
     latestRevisionNumber,
+    consolidateRanges,
   )
 where
 
 import Control.Monad (void)
-import Data.Coerce (coerce)
 import Data.Maybe (fromMaybe)
-import Data.Time.Format.ISO8601
+import Data.Text qualified as T
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
 import Development.Shake.Classes
-import Foliage.Time
-import GHC.Generics
+  ( Binary,
+    Hashable,
+    NFData,
+  )
+import Distribution.Parsec (simpleParsec)
+import Distribution.Pretty
+import Distribution.Types.Orphans ()
+import Distribution.Types.Version (Version)
+import Distribution.Types.VersionRange
+  ( VersionRange,
+    anyVersion,
+    intersectVersionRanges,
+    notThisVersion,
+  )
+import Distribution.Version
+  ( isAnyVersion,
+    isNoVersion,
+    simplifyVersionRange,
+  )
+import Foliage.Time (UTCTime)
+import GHC.Generics (Generic)
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
-data PackageSource
+newtype PackageMeta = PackageMeta
+  { packageMetaEntries :: [PackageMetaEntry]
+  }
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
+data PackageMetaEntry = PackageMetaEntry
+  { packageMetaEntryTimestamp :: UTCTime,
+    packageMetaEntryPreferred :: [VersionRange],
+    packageMetaEntryDeprecated :: [Version]
+  }
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
+readPackageMeta :: FilePath -> IO PackageMeta
+readPackageMeta = Toml.decodeFile packageMetaCodec
+
+writePackageMeta :: FilePath -> PackageMeta -> IO ()
+writePackageMeta fp a = void $ Toml.encodeToFile packageMetaCodec fp a
+
+packageMetaCodec :: TomlCodec PackageMeta
+packageMetaCodec =
+  PackageMeta
+    <$> Toml.list packageMetaEntryCodec "entries" .= packageMetaEntries
+
+packageMetaEntryCodec :: TomlCodec PackageMetaEntry
+packageMetaEntryCodec =
+  PackageMetaEntry
+    <$> timeCodec "timestamp" .= packageMetaEntryTimestamp
+    <*> Toml.arrayOf _VersionRange "preferred-versions" .= packageMetaEntryPreferred
+    <*> Toml.arrayOf _Version "deprecated-versions" .= packageMetaEntryDeprecated
+
+_Version :: Toml.TomlBiMap Version Toml.AnyValue
+_Version = Toml._TextBy showVersion parseVersion
+  where
+    showVersion = T.pack . prettyShow
+    parseVersion t = case simpleParsec (T.unpack t) of
+      Nothing -> Left $ T.pack $ "unable to parse version" ++ T.unpack t
+      Just v -> Right v
+
+_VersionRange :: Toml.TomlBiMap VersionRange Toml.AnyValue
+_VersionRange = Toml._TextBy showVersion parseVersion
+  where
+    showVersion = T.pack . prettyShow
+    parseVersion t = case simpleParsec (T.unpack t) of
+      Nothing -> Left $ T.pack $ "unable to parse version" ++ T.unpack t
+      Just v -> Right v
+
+data PackageVersionSource
   = TarballSource String (Maybe String)
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-packageSourceCodec :: TomlCodec PackageSource
+packageSourceCodec :: TomlCodec PackageVersionSource
 packageSourceCodec =
   Toml.dimatch matchTarballSource (uncurry TarballSource) tarballSourceCodec
 
@@ -50,51 +118,42 @@ tarballSourceCodec =
     (Toml.string "url")
     (Toml.dioptional $ Toml.string "subdir")
 
-matchTarballSource :: PackageSource -> Maybe (String, Maybe String)
+matchTarballSource :: PackageVersionSource -> Maybe (String, Maybe String)
 matchTarballSource (TarballSource url mSubdir) = Just (url, mSubdir)
 
-data PackageMeta
-  = PackageMeta'
-      (Maybe WrapUTCTime)
-      -- ^ timestamp
-      PackageSource
-      -- ^ source parameters
-      [RevisionMeta]
-      -- ^ revisions
-      Bool
-      -- ^ force version
+data PackageVersionMeta = PackageVersionMeta
+  { -- | timestamp
+    packageVersionTimestamp :: Maybe UTCTime,
+    -- | source parameters
+    packageVersionSource :: PackageVersionSource,
+    -- | revisions
+    packageVersionRevisions :: [RevisionMeta],
+    -- | force version
+    packageVersionForce :: Bool
+  }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-pattern PackageMeta :: Maybe UTCTime -> PackageSource -> [RevisionMeta] -> Bool -> PackageMeta
-pattern PackageMeta {packageTimestamp, packageSource, packageRevisions, packageForceVersion} <-
-  PackageMeta' (coerce -> packageTimestamp) packageSource packageRevisions packageForceVersion
-  where
-    PackageMeta timestamp source revisions forceversion = PackageMeta' (coerce timestamp) source revisions forceversion
-
-sourceMetaCodec :: TomlCodec PackageMeta
+sourceMetaCodec :: TomlCodec PackageVersionMeta
 sourceMetaCodec =
-  PackageMeta
-    <$> Toml.dioptional (timeCodec "timestamp") .= packageTimestamp
-    <*> packageSourceCodec .= packageSource
-    <*> Toml.list revisionMetaCodec "revisions" .= packageRevisions
-    <*> withDefault False (Toml.bool "force-version") .= packageForceVersion
+  PackageVersionMeta
+    <$> Toml.dioptional (timeCodec "timestamp") .= packageVersionTimestamp
+    <*> packageSourceCodec .= packageVersionSource
+    <*> Toml.list revisionMetaCodec "revisions" .= packageVersionRevisions
+    <*> withDefault False (Toml.bool "force-version") .= packageVersionForce
 
-readPackageMeta :: FilePath -> IO PackageMeta
-readPackageMeta = Toml.decodeFile sourceMetaCodec
+readPackageVersionMeta :: FilePath -> IO PackageVersionMeta
+readPackageVersionMeta = Toml.decodeFile sourceMetaCodec
 
-writePackageMeta :: FilePath -> PackageMeta -> IO ()
-writePackageMeta fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
+writePackageVersionMeta :: FilePath -> PackageVersionMeta -> IO ()
+writePackageVersionMeta fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
 
-data RevisionMeta = RevisionMeta' WrapUTCTime Int
+data RevisionMeta = RevisionMeta
+  { revisionTimestamp :: UTCTime,
+    revisionNumber :: Int
+  }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
-
-pattern RevisionMeta :: UTCTime -> Int -> RevisionMeta
-pattern RevisionMeta {revisionTimestamp, revisionNumber} <-
-  RevisionMeta' (coerce -> revisionTimestamp) revisionNumber
-  where
-    RevisionMeta timestamp number = RevisionMeta' (coerce timestamp) number
 
 revisionMetaCodec :: TomlCodec RevisionMeta
 revisionMetaCodec =
@@ -105,22 +164,22 @@ revisionMetaCodec =
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
 
-latestRevisionNumber :: PackageMeta -> Maybe Int
+latestRevisionNumber :: PackageVersionMeta -> Maybe Int
 latestRevisionNumber sm =
-  if null (packageRevisions sm)
+  if null (packageVersionRevisions sm)
     then Nothing
-    else Just $ maximum $ map revisionNumber (packageRevisions sm)
+    else Just $ maximum $ map revisionNumber (packageVersionRevisions sm)
 
 withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
 withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
   where
     f a = if a == d then Nothing else Just a
 
-newtype WrapUTCTime = WrapUTCTime {unwrapUTCTime :: UTCTime}
-  deriving (Show, Eq, Generic)
-  deriving anyclass (Hashable, NFData)
-  deriving (ISO8601) via UTCTime
-
-instance Binary WrapUTCTime where
-  get = iso8601ParseM =<< get
-  put = put . iso8601Show
+-- | copied from hackage-server
+consolidateRanges :: PackageMetaEntry -> Maybe VersionRange
+consolidateRanges PackageMetaEntry {packageMetaEntryPreferred, packageMetaEntryDeprecated} =
+  if isAnyVersion range || isNoVersion range then Nothing else Just range
+  where
+    range =
+      simplifyVersionRange $
+        foldr intersectVersionRanges anyVersion (map notThisVersion packageMetaEntryDeprecated ++ packageMetaEntryPreferred)

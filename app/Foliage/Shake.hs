@@ -2,7 +2,7 @@ module Foliage.Shake
   ( computeFileInfoSimple',
     readFileByteStringLazy,
     readKeysAt,
-    readPackageMeta',
+    readPackageVersionMeta',
   )
 where
 
@@ -28,7 +28,7 @@ readKeysAt base = do
     Right key <- liftIO $ readJSONSimple (base </> path)
     pure key
 
-readPackageMeta' :: FilePath -> Action PackageMeta
-readPackageMeta' fp = do
+readPackageVersionMeta' :: FilePath -> Action PackageVersionMeta
+readPackageVersionMeta' fp = do
   need [fp]
-  liftIO $ readPackageMeta fp
+  liftIO $ readPackageVersionMeta fp
