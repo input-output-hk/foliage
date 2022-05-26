@@ -340,7 +340,7 @@ cmdBuild
 
             return $ cabalEntry : packageEntry : revisionEntries
 
-        traced "writing" $ liftIO $ BSL.writeFile path $ Tar.write (sortOn Tar.entryTime entries)
+        traced "writing" $ liftIO $ BSL.writeFile path $ Tar.write $ sortOn Tar.entryTime entries
 
       --
       -- 01-index.tar.gz
@@ -348,7 +348,7 @@ cmdBuild
 
       outputDir </> "01-index.tar.gz" %> \path -> do
         tar <- readFileByteStringLazy (outputDir </> "01-index.tar")
-        traced "writing" $ liftIO $ BSL.writeFile path (GZip.compress tar)
+        traced "writing" $ liftIO $ BSL.writeFile path $ GZip.compress tar
 
       --
       -- index cabal files

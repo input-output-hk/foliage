@@ -15,7 +15,8 @@ import Foliage.Meta
 
 computeFileInfoSimple' :: FilePath -> Action FileInfo
 computeFileInfoSimple' fp = do
-  need [fp] >> liftIO (computeFileInfoSimple fp)
+  need [fp]
+  liftIO $ computeFileInfoSimple fp
 
 readFileByteStringLazy :: FilePath -> Action BSL.ByteString
 readFileByteStringLazy x = need [x] >> liftIO (BSL.readFile x)
