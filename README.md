@@ -176,7 +176,7 @@ The content of `_repo` can be served over HTTP(s) to cabal, e.g. from a
 
 ```
 repository packages.example.org
-  url: http://packages.example.org
+  url: http://packages.example.org/
   secure: True
   root-keys:
     144d97d34d0a86adb1ca7d6bdc1b2d9f0c9123e3c29e3765f5a9eece345ce4f9
