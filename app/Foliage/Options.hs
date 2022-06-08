@@ -36,6 +36,7 @@ optionsParser =
 data BuildOptions = BuildOptions
   { buildOptsKeysPath :: FilePath,
     buildOptsCurrentTime :: Maybe UTCTime,
+    buildOptsExpireSignaturesOn :: Maybe UTCTime,
     buildOptsInputDir :: FilePath,
     buildOptsOutputDir :: FilePath
   }
@@ -58,6 +59,14 @@ buildCommand =
                       <> metavar "TIME"
                       <> help "Set current time"
                       <> showDefault
+                  )
+              )
+            <*> optional
+              ( option
+                  (maybeReader iso8601ParseM)
+                  ( long "expire-signatures-on"
+                      <> metavar "TIME"
+                      <> help "Set an expiry date on TUF signatures"
                   )
               )
             <*> strOption

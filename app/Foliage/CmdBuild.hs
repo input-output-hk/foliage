@@ -31,6 +31,7 @@ cmdBuild
   BuildOptions
     { buildOptsKeysPath = keysPath,
       buildOptsCurrentTime = mCurrentTime,
+      buildOptsExpireSignaturesOn = mExpireSignaturesOn,
       buildOptsInputDir = inputDir,
       buildOptsOutputDir = outputDir
     } = do
@@ -63,9 +64,10 @@ cmdBuild
             return t
 
       getExpiryTime <- addOracleCache $ \GetExpiryTime -> do
-        t <- Time.addUTCTime (Time.nominalDay * 365) <$> getCurrentTime GetCurrentTime
-        putInfo $ "Expiry time set to " <> Time.iso8601Show t <> " (a year from now)."
-        return t
+        alwaysRerun
+        for mExpireSignaturesOn $ \expireSignaturesOn -> do
+          putInfo $ "Expiry time set to " <> Time.iso8601Show expireSignaturesOn
+          return expireSignaturesOn
 
       getPackageVersionMeta <- addOracleCache $ \(GetPackageVersionMeta pkgId@PackageIdentifier {pkgName, pkgVersion}) -> do
         meta <- readPackageVersionMeta' $ inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
@@ -178,7 +180,7 @@ cmdBuild
         let timestamp =
               Timestamp
                 { timestampVersion = FileVersion 1,
-                  timestampExpires = FileExpires (Just expires),
+                  timestampExpires = FileExpires expires,
                   timestampInfoSnapshot = snapshotInfo
                 }
 
@@ -202,7 +204,7 @@ cmdBuild
         let snapshot =
               Snapshot
                 { snapshotVersion = FileVersion 1,
-                  snapshotExpires = FileExpires (Just expires),
+                  snapshotExpires = FileExpires expires,
                   snapshotInfoRoot = rootInfo,
                   snapshotInfoMirrors = mirrorsInfo,
                   snapshotInfoTar = Just tarInfo,
@@ -232,7 +234,7 @@ cmdBuild
         let root =
               Root
                 { rootVersion = FileVersion 1,
-                  rootExpires = FileExpires (Just expires),
+                  rootExpires = FileExpires expires,
                   rootKeys =
                     fromKeys $
                       concat
@@ -288,7 +290,7 @@ cmdBuild
         let mirrors =
               Mirrors
                 { mirrorsVersion = FileVersion 1,
-                  mirrorsExpires = FileExpires (Just expires),
+                  mirrorsExpires = FileExpires expires,
                   mirrorsMirrors = []
                 }
 
@@ -384,10 +386,11 @@ cmdBuild
         targetFileInfo <- computeFileInfoSimple' ("_repo" </> packagePath)
 
         expires <- getExpiryTime GetExpiryTime
+
         let targets =
               Targets
                 { targetsVersion = FileVersion 1,
-                  targetsExpires = FileExpires (Just expires),
+                  targetsExpires = FileExpires expires,
                   targetsTargets = fromList [(TargetPathRepo targetPath, targetFileInfo)],
                   targetsDelegations = Nothing
                 }

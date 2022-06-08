@@ -30,7 +30,7 @@ data GetExpiryTime = GetExpiryTime
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-type instance RuleResult GetExpiryTime = UTCTime
+type instance RuleResult GetExpiryTime = Maybe UTCTime
 
 data GetPackages = GetPackages
   deriving (Show, Eq, Generic)
