@@ -4,9 +4,10 @@ import Foliage.CmdBuild
 import Foliage.CmdCreateKeys
 import Foliage.CmdImportIndex
 import Foliage.Options
+import Main.Utf8 (withUtf8)
 
 main :: IO ()
-main = do
+main = withUtf8 $ do
   putStrLn "🌿 Foliage"
   parseCommand >>= \case
     CreateKeys path -> cmdCreateKeys path
