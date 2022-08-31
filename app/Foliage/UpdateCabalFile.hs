@@ -1,12 +1,11 @@
 module Foliage.UpdateCabalFile (rewritePackageVersion) where
 
-import Distribution.PackageDescription.Parsec as Cabal
-import Distribution.PackageDescription.PrettyPrint as Cabal
-import Distribution.Types.GenericPackageDescription as Cabal
-import Distribution.Types.PackageDescription as Cabal
-import Distribution.Types.PackageId as Cabal
+import Distribution.Compat.Lens (set)
+import Distribution.PackageDescription.PrettyPrint
+import Distribution.Simple.PackageDescription
+import Distribution.Types.Lens
 import Distribution.Types.Version
-import Distribution.Verbosity as Cabal
+import Distribution.Verbosity
 
 rewritePackageVersion ::
   -- | path to @.cabal@ file
@@ -15,15 +14,5 @@ rewritePackageVersion ::
   Version ->
   IO ()
 rewritePackageVersion cabalPath ver = do
-  gpd <- Cabal.readGenericPackageDescription Cabal.normal cabalPath
-  let setVersion ::
-        Version ->
-        Cabal.PackageDescription ->
-        Cabal.PackageDescription
-      setVersion v' pd =
-        pd {Cabal.package = (Cabal.package pd) {Cabal.pkgVersion = v'}}
-
-      pd = Cabal.packageDescription gpd
-      pd' = setVersion ver pd
-
-  Cabal.writePackageDescription cabalPath pd'
+  gpd <- readGenericPackageDescription normal cabalPath
+  writeGenericPackageDescription cabalPath (set (packageDescription . package . pkgVersion) ver gpd)
