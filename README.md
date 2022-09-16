@@ -179,19 +179,11 @@ repository packages.example.org
   url: http://packages.example.org/
   secure: True
   root-keys:
+    -- root-keys ids, see below
     144d97d34d0a86adb1ca7d6bdc1b2d9f0c9123e3c29e3765f5a9eece345ce4f9
     a15f6ae88a26638934d90eff28da29990a4b12c8bb0b2c12f07e9a510e839a97
     fde23c79a14bcbef6ccf198b4ad94ded4092784fcaed17c3d184008e9bf6f722
   key-threshold: 3
-```
-
-Where the root key ids can be obtained from `_repo/root.json`.
-
-```bash
-$ jq -r .signatures[].keyid _repo/root.json
-144d97d34d0a86adb1ca7d6bdc1b2d9f0c9123e3c29e3765f5a9eece345ce4f9
-a15f6ae88a26638934d90eff28da29990a4b12c8bb0b2c12f07e9a510e839a97
-fde23c79a14bcbef6ccf198b4ad94ded4092784fcaed17c3d184008e9bf6f722
 ```
 
 ### TUF keys
@@ -218,6 +210,8 @@ _keys/
 └── timestamp
     └── 141da8eb2ccba61c2f6bb656b2292970d086770f5bf7d53802d2bc0ec1defa26.json
 ```
+
+The root-key ids are simply the names of they key files.
 
 These keys are small enough you can store them in an environment variable.
 E.g.
