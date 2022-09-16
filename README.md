@@ -211,7 +211,8 @@ _keys/
     └── 141da8eb2ccba61c2f6bb656b2292970d086770f5bf7d53802d2bc0ec1defa26.json
 ```
 
-The root-key ids are simply the names of they key files.
+The root-keys ids are simply the names of they key files in
+`_keys/roots/*.json`.
 
 These keys are small enough you can store them in an environment variable.
 E.g.
