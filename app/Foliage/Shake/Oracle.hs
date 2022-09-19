@@ -9,6 +9,7 @@ module Foliage.Shake.Oracle
     GetExpiryTime (..),
     GetPackageVersionMeta (..),
     GetPackages (..),
+    GetSignOptions (..),
     PreparePackageSource (..),
   )
 where
@@ -18,6 +19,7 @@ import Development.Shake (RuleResult)
 import Development.Shake.Classes (Binary, Hashable, NFData)
 import Distribution.Types.PackageId (PackageId)
 import Foliage.Meta
+import Foliage.Options (SignOptions)
 import GHC.Generics (Generic)
 
 data GetCurrentTime = GetCurrentTime
@@ -31,6 +33,12 @@ data GetExpiryTime = GetExpiryTime
   deriving anyclass (Binary, Hashable, NFData)
 
 type instance RuleResult GetExpiryTime = Maybe UTCTime
+
+data GetSignOptions = GetSignOptions
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
+type instance RuleResult GetSignOptions = SignOptions
 
 data GetPackages = GetPackages
   deriving (Show, Eq, Generic)

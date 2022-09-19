@@ -1,13 +1,20 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+
 module Foliage.Options
   ( parseCommand,
     Command (..),
     BuildOptions (..),
+    SignOptions (..),
     ImportIndexOptions (..),
     ImportFilter (..),
   )
 where
 
+import Development.Shake.Classes (Binary, Hashable, NFData)
 import Foliage.Time
+import GHC.Generics
 import Options.Applicative
 
 data Command
@@ -33,8 +40,14 @@ optionsParser =
       <> command "build" (info buildCommand (progDesc "Build repository"))
       <> command "import-index" (info importIndexCommand (progDesc "Import from Hackage index"))
 
+data SignOptions
+  = SignOptsSignWithKeys FilePath
+  | SignOptsDon'tSign
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
 data BuildOptions = BuildOptions
-  { buildOptsKeysPath :: FilePath,
+  { buildOptsSignOpts :: SignOptions,
     buildOptsCurrentTime :: Maybe UTCTime,
     buildOptsExpireSignaturesOn :: Maybe UTCTime,
     buildOptsInputDir :: FilePath,
@@ -45,13 +58,7 @@ buildCommand :: Parser Command
 buildCommand =
   Build
     <$> ( BuildOptions
-            <$> strOption
-              ( long "keys"
-                  <> metavar "KEYS"
-                  <> help "TUF keys location"
-                  <> showDefault
-                  <> value "_keys"
-              )
+            <$> signOpts
             <*> optional
               ( option
                   (maybeReader iso8601ParseM)
@@ -84,6 +91,20 @@ buildCommand =
                   <> value "_repo"
               )
         )
+  where
+    signOpts =
+      ( SignOptsSignWithKeys
+          <$> strOption
+            ( long "keys"
+                <> metavar "KEYS"
+                <> help "TUF keys location"
+                <> showDefault
+                <> value "_keys"
+            )
+      )
+        <|> ( SignOptsDon'tSign
+                <$ switch (long "no-signatures" <> help "Don't sign the repository")
+            )
 
 createKeysCommand :: Parser Command
 createKeysCommand =

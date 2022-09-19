@@ -29,16 +29,19 @@ import System.Directory qualified as IO
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild
   BuildOptions
-    { buildOptsKeysPath = keysPath,
+    { buildOptsSignOpts = signOpts,
       buildOptsCurrentTime = mCurrentTime,
       buildOptsExpireSignaturesOn = mExpireSignaturesOn,
       buildOptsInputDir = inputDir,
       buildOptsOutputDir = outputDir
     } = do
-    ks <- IO.doesDirectoryExist keysPath
-    unless ks $ do
-      putStrLn $ "You don't seem to have created a set of TUF keys. I will create one in " <> keysPath
-      createKeys keysPath
+    case signOpts of
+      SignOptsSignWithKeys keysPath -> do
+        ks <- IO.doesDirectoryExist keysPath
+        unless ks $ do
+          putStrLn $ "You don't seem to have created a set of TUF keys. I will create one in " <> keysPath
+          createKeys keysPath
+      _ -> return ()
 
     let opts =
           shakeOptions
@@ -53,6 +56,7 @@ cmdBuild
       --
       -- Oracles
       --
+
       getCurrentTime <- addOracle $ \GetCurrentTime ->
         case mCurrentTime of
           Nothing -> do
@@ -68,6 +72,10 @@ cmdBuild
         for mExpireSignaturesOn $ \expireSignaturesOn -> do
           putInfo $ "Expiry time set to " <> Time.iso8601Show expireSignaturesOn
           return expireSignaturesOn
+
+      getSignOpts <- addOracle $ \GetSignOptions -> do
+        alwaysRerun
+        return signOpts
 
       getPackageVersionMeta <- addOracleCache $ \(GetPackageVersionMeta pkgId@PackageIdentifier {pkgName, pkgVersion}) -> do
         meta <- readPackageVersionMeta' $ inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
@@ -157,6 +165,17 @@ cmdBuild
           ]
 
       --
+      -- utilities
+      --
+
+      let readKeysAt' name =
+            getSignOpts GetSignOptions >>= \case
+              SignOptsSignWithKeys keysPath -> do
+                readKeysAt (keysPath </> name)
+              SignOptsDon'tSign ->
+                return []
+
+      --
       -- Entrypoint
       --
 
@@ -184,7 +203,7 @@ cmdBuild
                   timestampInfoSnapshot = snapshotInfo
                 }
 
-        keys <- readKeysAt (keysPath </> "timestamp")
+        keys <- readKeysAt' "timestamp"
         let timestampSigned = withSignatures hackageRepoLayout keys timestamp
         traced "writing" $
           liftIO $ do
@@ -211,7 +230,7 @@ cmdBuild
                   snapshotInfoTarGz = tarGzInfo
                 }
 
-        keys <- readKeysAt (keysPath </> "snapshot")
+        keys <- readKeysAt' "snapshot"
         let snapshotSigned = withSignatures hackageRepoLayout keys snapshot
         traced "writing" $
           liftIO $ do
@@ -225,11 +244,11 @@ cmdBuild
       outputDir </> "root.json" %> \path -> do
         expires <- getExpiryTime GetExpiryTime
 
-        privateKeysRoot <- readKeysAt (keysPath </> "root")
-        privateKeysTarget <- readKeysAt (keysPath </> "target")
-        privateKeysSnapshot <- readKeysAt (keysPath </> "snapshot")
-        privateKeysTimestamp <- readKeysAt (keysPath </> "timestamp")
-        privateKeysMirrors <- readKeysAt (keysPath </> "mirrors")
+        privateKeysRoot <- readKeysAt' "root"
+        privateKeysTarget <- readKeysAt' "target"
+        privateKeysSnapshot <- readKeysAt' "snapshot"
+        privateKeysTimestamp <- readKeysAt' "timestamp"
+        privateKeysMirrors <- readKeysAt' "mirrors"
 
         let root =
               Root
@@ -274,7 +293,7 @@ cmdBuild
                       }
                 }
 
-        keys <- readKeysAt (keysPath </> "root")
+        keys <- readKeysAt' "root"
         let signedRoot = withSignatures hackageRepoLayout keys root
         traced "writing" $
           liftIO $ do
@@ -294,7 +313,7 @@ cmdBuild
                   mirrorsMirrors = []
                 }
 
-        keys <- readKeysAt (keysPath </> "mirrors")
+        keys <- readKeysAt' "mirrors"
         let signedMirrors = withSignatures hackageRepoLayout keys mirrors
         traced "writing" $
           liftIO $ do
@@ -395,7 +414,7 @@ cmdBuild
                   targetsDelegations = Nothing
                 }
 
-        keys <- readKeysAt (keysPath </> "target")
+        keys <- readKeysAt' "target"
         let signedTargets = withSignatures hackageRepoLayout keys targets
         liftIO $ do
           p <- makeAbsolute (fromFilePath path)
