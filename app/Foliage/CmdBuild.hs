@@ -378,7 +378,7 @@ cmdBuild
       --
 
       outputDir </> "index/*/*/*.cabal" %> \path -> do
-        let [_, _, pkgName, pkgVersion, _] = splitDirectories path
+        let [_, _, pkgName, pkgVersion, _] = splitDirectories (drop (length outputDir) path)
         let Just name = simpleParsec pkgName
         let Just version = simpleParsec pkgVersion
         let pkgId = PackageIdentifier name version
@@ -398,11 +398,11 @@ cmdBuild
       --
 
       outputDir </> "index/*/*/package.json" %> \path -> do
-        let [_, _, pkgName, pkgVersion, _] = splitDirectories path
+        let [_, _, pkgName, pkgVersion, _] = splitDirectories (drop (length outputDir) path)
         let packagePath = "package" </> pkgName <> "-" <> pkgVersion <.> "tar.gz"
 
         let targetPath = rootPath $ fromUnrootedFilePath packagePath
-        targetFileInfo <- computeFileInfoSimple' ("_repo" </> packagePath)
+        targetFileInfo <- computeFileInfoSimple' (outputDir </> packagePath)
 
         expires <- getExpiryTime GetExpiryTime
 
@@ -425,7 +425,7 @@ cmdBuild
       --
 
       outputDir </> "package/*.tar.gz" %> \path -> do
-        let [_, _, filename] = splitDirectories path
+        let [_, _, filename] = splitDirectories (drop (length outputDir) path)
         let Just pkgId = stripExtension "tar.gz" filename >>= simpleParsec
 
         srcDir <- preparePackageSource $ PreparePackageSource pkgId
