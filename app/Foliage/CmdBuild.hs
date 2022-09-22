@@ -151,6 +151,17 @@ cmdBuild
 
         return srcDir
 
+      getPackageDescription <- addOracleCache $ \(GetPackageDescription pkgId) -> do
+        let PackageIdentifier {pkgName, pkgVersion} = pkgId
+        meta <- getPackageVersionMeta $ GetPackageVersionMeta pkgId
+
+        case latestRevisionNumber meta of
+          Nothing -> do
+            srcDir <- preparePackageSource $ PreparePackageSource pkgId
+            return $ srcDir </> unPackageName pkgName <.> "cabal"
+          Just revNum -> do
+            return $ inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revNum <.> "cabal"
+
       getPackages <- addOracleCache $ \GetPackages -> do
         metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
 
@@ -389,15 +400,8 @@ cmdBuild
         let Just version = simpleParsec pkgVersion
         let pkgId = PackageIdentifier name version
 
-        meta <- getPackageVersionMeta $ GetPackageVersionMeta pkgId
-
-        case latestRevisionNumber meta of
-          Nothing -> do
-            srcDir <- preparePackageSource $ PreparePackageSource pkgId
-            copyFileChanged (srcDir </> pkgName <.> "cabal") path
-          Just revNum -> do
-            let revisionFile = inputDir </> pkgName </> pkgVersion </> "revisions" </> show revNum <.> "cabal"
-            copyFileChanged revisionFile path
+        cabalFile <- getPackageDescription (GetPackageDescription pkgId)
+        copyFileChanged cabalFile path
 
       --
       -- index package files (only depends on the source distribution)

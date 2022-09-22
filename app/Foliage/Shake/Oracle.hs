@@ -7,8 +7,9 @@ module Foliage.Shake.Oracle
   ( UTCTime,
     GetCurrentTime (..),
     GetExpiryTime (..),
-    GetPackageVersionMeta (..),
+    GetPackageDescription (..),
     GetPackages (..),
+    GetPackageVersionMeta (..),
     GetSignOptions (..),
     PreparePackageSource (..),
   )
@@ -57,3 +58,9 @@ newtype PreparePackageSource = PreparePackageSource PackageId
   deriving anyclass (Binary, Hashable, NFData)
 
 type instance RuleResult PreparePackageSource = FilePath
+
+newtype GetPackageDescription = GetPackageDescription PackageId
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
+type instance RuleResult GetPackageDescription = FilePath
