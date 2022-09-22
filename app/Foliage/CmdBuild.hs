@@ -444,7 +444,7 @@ cmdBuild
         withTempDir $ \tmpDir -> do
           putInfo $ "Creating source distribution for " <> prettyShow pkgId
 
-          cmd_ Shell (Cwd srcDir) (FileStdout path) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
+          cmd_ Shell (Cwd srcDir) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
 
           -- check cabal sdist has produced a single tarball with the
           -- expected name
