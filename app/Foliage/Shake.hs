@@ -1,12 +1,13 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module Foliage.Shake
   ( computeFileInfoSimple',
-    readFileByteStringLazy,
     readKeysAt,
     readPackageVersionMeta',
+    writeSignedJSON,
   )
 where
 
-import Data.ByteString.Lazy qualified as BSL
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
@@ -17,9 +18,6 @@ computeFileInfoSimple' :: FilePath -> Action FileInfo
 computeFileInfoSimple' fp = do
   need [fp]
   liftIO $ computeFileInfoSimple fp
-
-readFileByteStringLazy :: FilePath -> Action BSL.ByteString
-readFileByteStringLazy x = need [x] >> liftIO (BSL.readFile x)
 
 readKeysAt :: FilePath -> Action [Some Key]
 readKeysAt base = do
@@ -33,3 +31,10 @@ readPackageVersionMeta' :: FilePath -> Action PackageVersionMeta
 readPackageVersionMeta' fp = do
   need [fp]
   liftIO $ readPackageVersionMeta fp
+
+writeSignedJSON :: ToJSON WriteJSON a => Path Absolute -> (RepoLayout -> RepoPath) -> [Some Key] -> a -> Action ()
+writeSignedJSON outputDirRoot repoPath keys thing = do
+  putInfo $ "Writing " ++ show (repoPath hackageRepoLayout)
+  liftIO $ writeLazyByteString fp $ renderSignedJSON keys thing
+  where
+    fp = anchorRepoPathLocally outputDirRoot $ repoPath hackageRepoLayout

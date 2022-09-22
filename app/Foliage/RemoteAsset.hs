@@ -2,9 +2,8 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.RemoteAsset
-  ( remoteAssetNeed,
-    remoteAssetRule,
-    addBuiltinRemoteAssetRule,
+  ( fetchRemoteAsset,
+    addFetchRemoteAssetRule,
   )
 where
 
@@ -27,16 +26,11 @@ newtype RemoteAsset = RemoteAsset Url
 
 type instance RuleResult RemoteAsset = FilePath
 
-data RemoteAssetRule = RemoteAssetRule RemoteAsset (Action FilePath)
+fetchRemoteAsset :: Url -> Action FilePath
+fetchRemoteAsset = apply1 . RemoteAsset
 
-remoteAssetRule :: Url -> Action FilePath -> Rules ()
-remoteAssetRule url act = addUserRule $ RemoteAssetRule (RemoteAsset url) act
-
-remoteAssetNeed :: Url -> Action FilePath
-remoteAssetNeed = apply1 . RemoteAsset
-
-addBuiltinRemoteAssetRule :: FilePath -> Rules ()
-addBuiltinRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
+addFetchRemoteAssetRule :: FilePath -> Rules ()
+addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
   where
     run :: BuiltinRun RemoteAsset FilePath
     run (RemoteAsset url) old _mode = do

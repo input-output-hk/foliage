@@ -11,11 +11,11 @@ module Foliage.HackageSecurity
 where
 
 import Control.Monad (replicateM_)
-import Data.Functor.Identity
+import Data.ByteString.Lazy qualified as BSL
 import Hackage.Security.Key.Env (fromKeys)
 import Hackage.Security.Server
 import Hackage.Security.TUF.FileMap
-import Hackage.Security.Util.Path (fromFilePath, fromUnrootedFilePath, makeAbsolute, rootPath)
+import Hackage.Security.Util.Path (Absolute, Path, fromFilePath, fromUnrootedFilePath, makeAbsolute, rootPath, writeLazyByteString)
 import Hackage.Security.Util.Some
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath
@@ -24,11 +24,6 @@ readJSONSimple :: FromJSON ReadJSON_NoKeys_NoLayout a => FilePath -> IO (Either 
 readJSONSimple fp = do
   p <- makeAbsolute (fromFilePath fp)
   readJSON_NoKeys_NoLayout p
-
-writeJSONSimple :: ToJSON Identity a => FilePath -> a -> IO ()
-writeJSONSimple fp a = do
-  p <- makeAbsolute (fromFilePath fp)
-  writeJSON_NoLayout p a
 
 computeFileInfoSimple :: FilePath -> IO FileInfo
 computeFileInfoSimple fp = do
@@ -56,3 +51,9 @@ writeKey :: FilePath -> Some Key -> IO ()
 writeKey fp key = do
   p <- makeAbsolute (fromFilePath fp)
   writeJSON_NoLayout p key
+
+renderSignedJSON :: ToJSON WriteJSON a => [Some Key] -> a -> BSL.ByteString
+renderSignedJSON keys thing =
+  renderJSON
+    hackageRepoLayout
+    (withSignatures hackageRepoLayout keys thing)
