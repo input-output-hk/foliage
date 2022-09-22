@@ -8,7 +8,7 @@ import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (for_)
-import Data.List (isPrefixOf, sortOn)
+import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
@@ -140,12 +140,6 @@ cmdBuild
                   tdir = fix2 $ fix1 tmpDir
 
               cmd_ ["cp", "--recursive", "--no-target-directory", "--dereference", tdir, srcDir]
-
-        -- Delete cabal.project files if present
-        projectFiles <- liftIO $ filter ("cabal.project" `isPrefixOf`) <$> IO.getDirectoryContents srcDir
-        unless (null projectFiles) $ do
-          putWarn $ "Deleting cabal project files from " ++ srcDir
-          liftIO $ for_ projectFiles $ IO.removeFile . (srcDir </>)
 
         applyPatches inputDir srcDir pkgId
 
