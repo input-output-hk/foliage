@@ -43,15 +43,20 @@ cmdBuild
           createKeys keysPath
       _ -> return ()
 
+    let cacheDir = "_cache"
+
+    let pkgMetaDir PackageIdentifier {pkgName, pkgVersion} =
+          inputDir </> unPackageName pkgName </> prettyShow pkgVersion
+
     let opts =
           shakeOptions
             { shakeChange = ChangeDigest,
-              shakeFiles = "_cache",
+              shakeFiles = cacheDir,
               shakeVerbosity = Info
             }
 
     shake opts $ do
-      addBuiltinRemoteAssetRule ("_cache" </> "downloads")
+      addBuiltinRemoteAssetRule (cacheDir </> "downloads")
 
       --
       -- Oracles
@@ -77,8 +82,8 @@ cmdBuild
         alwaysRerun
         return signOpts
 
-      getPackageVersionMeta <- addOracleCache $ \(GetPackageVersionMeta pkgId@PackageIdentifier {pkgName, pkgVersion}) -> do
-        meta <- readPackageVersionMeta' $ inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
+      getPackageVersionMeta <- addOracleCache $ \(GetPackageVersionMeta pkgId) -> do
+        meta <- readPackageVersionMeta' $ pkgMetaDir pkgId </> "meta.toml"
 
         -- Here we do some validation of the package metadata. We could
         -- fine a better place for it.
@@ -98,12 +103,13 @@ cmdBuild
           _ ->
             return meta
 
-      preparePackageSource <- addOracleCache $ \(PreparePackageSource pkgId@PackageIdentifier {pkgName, pkgVersion}) -> do
+      preparePackageSource <- addOracleCache $ \(PreparePackageSource pkgId) -> do
         PackageVersionMeta {packageVersionSource, packageVersionForce} <- getPackageVersionMeta (GetPackageVersionMeta pkgId)
 
         -- FIXME too much rework?
         -- this action only depends on the tarball and the package metadata
-        let srcDir = "_cache" </> "packages" </> unPackageName pkgName </> prettyShow pkgVersion
+        let PackageIdentifier {pkgName, pkgVersion} = pkgId
+        let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
 
         -- delete everything inside the package source tree
         liftIO $ do
