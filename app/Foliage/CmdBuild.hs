@@ -13,9 +13,12 @@ import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
+import Distribution.Client.SrcDist (packageDirToSdist)
 import Distribution.Package
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty
+import Distribution.Simple.PackageDescription (readGenericPackageDescription)
+import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta
 import Foliage.Options
@@ -438,27 +441,11 @@ cmdBuild
         let [_, _, filename] = splitDirectories (drop (length outputDir) path)
         let Just pkgId = stripExtension "tar.gz" filename >>= simpleParsec
 
+        cabalFile <- getPackageDescription $ GetPackageDescription pkgId
         srcDir <- preparePackageSource $ PreparePackageSource pkgId
-        putInfo srcDir
-
-        withTempDir $ \tmpDir -> do
-          putInfo $ "Creating source distribution for " <> prettyShow pkgId
-
-          cmd_ Shell (Cwd srcDir) ("cabal sdist --ignore-project --output-directory " <> tmpDir)
-
-          -- check cabal sdist has produced a single tarball with the
-          -- expected name
-          ls <- liftIO $ IO.getDirectoryContents tmpDir
-          let ls' = filter (not . all (== '.')) ls
-          case ls' of
-            [l]
-              | l == filename ->
-                cmd_ Shell ["mv", tmpDir </> l, path]
-            [l]
-              | l /= filename ->
-                fail $ "cabal sdist produced a different package. I expected " <> filename <> " but found " <> l
-            _ ->
-              fail $ "cabal sdist for " <> prettyShow pkgId <> " did not produce a single tarball!"
+        traced "cabal sdist" $ do
+          gpd <- readGenericPackageDescription Verbosity.normal cabalFile
+          packageDirToSdist Verbosity.normal gpd srcDir >>= BSL.writeFile path
 
     putStrLn $ "All done. The repository is now available in " <> outputDir <> "."
 
