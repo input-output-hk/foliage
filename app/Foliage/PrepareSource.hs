@@ -1,6 +1,6 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.PrepareSource where
@@ -9,32 +9,25 @@ import Control.Monad (when)
 import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Development.Shake
-import Development.Shake.Classes
 import Development.Shake.Rule
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta
 import Foliage.RemoteAsset (fetchRemoteAsset)
+import Foliage.Shake (PackageRule (PackageRule))
 import Foliage.UpdateCabalFile (rewritePackageVersion)
-import GHC.Generics
 import System.Directory qualified as IO
 import System.FilePath ((<.>), (</>))
 
-data PrepareSource = PrepareSource PackageId PackageVersionMeta
-  deriving (Show, Eq, Generic)
-  deriving (Hashable, Binary, NFData)
-
-type instance RuleResult PrepareSource = FilePath
-
 prepareSource :: PackageId -> PackageVersionMeta -> Action FilePath
-prepareSource pkgId pkgMeta = apply1 $ PrepareSource pkgId pkgMeta
+prepareSource pkgId pkgMeta = apply1 $ PackageRule @"prepareSource" pkgId pkgMeta
 
 addPrepareSourceRule :: FilePath -> FilePath -> Rules ()
 addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
   where
-    run :: BuiltinRun PrepareSource FilePath
-    run (PrepareSource pkgId pkgMeta) _old mode = do
+    run :: BuiltinRun (PackageRule "prepareSource" FilePath) FilePath
+    run (PackageRule pkgId pkgMeta) _old mode = do
       let PackageIdentifier {pkgName, pkgVersion} = pkgId
       let PackageVersionMeta {packageVersionSource, packageVersionForce} = pkgMeta
       let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion

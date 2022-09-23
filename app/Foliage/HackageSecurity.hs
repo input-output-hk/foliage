@@ -57,3 +57,9 @@ renderSignedJSON keys thing =
   renderJSON
     hackageRepoLayout
     (withSignatures hackageRepoLayout keys thing)
+
+writeSignedJSON :: ToJSON WriteJSON a => Path Absolute -> (RepoLayout -> RepoPath) -> [Some Key] -> a -> IO ()
+writeSignedJSON outputDirRoot repoPath keys thing = do
+  writeLazyByteString fp $ renderSignedJSON keys thing
+  where
+    fp = anchorRepoPathLocally outputDirRoot $ repoPath hackageRepoLayout

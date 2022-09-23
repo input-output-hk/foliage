@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.CmdBuild (cmdBuild) where
@@ -8,16 +10,18 @@ import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
+import Development.Shake.Rule
 import Distribution.Client.SrcDist (packageDirToSdist)
 import Distribution.Package
 import Distribution.Parsec (simpleParsec)
-import Distribution.Pretty
+import Distribution.Pretty (prettyShow)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
@@ -32,19 +36,20 @@ import System.Directory qualified as IO
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
+  outputDirRoot <- liftIO $ makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
   shake opts $
     do
       addFetchRemoteAssetRule cacheDir
       addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
+      addPrepareSdistRule outputDirRoot
       phony "buildAction" (buildAction buildOptions)
       want ["buildAction"]
   where
     cacheDir = "_cache"
     opts =
       shakeOptions
-        { shakeChange = ChangeDigest,
-          shakeFiles = cacheDir,
-          shakeVerbosity = Normal
+        { shakeFiles = cacheDir,
+          shakeVerbosity = Diagnostic
         }
 
 buildAction :: BuildOptions -> Action ()
@@ -82,116 +87,119 @@ buildAction
         putInfo $ "Current time set to " <> Time.iso8601Show t <> "."
         return t
 
-    let mirrors = do
-          keys <- maybeReadKeysAt "mirrors"
-          writeSignedJSON outputDirRoot repoLayoutMirrors keys $
-            Mirrors
-              { mirrorsVersion = FileVersion 1,
-                mirrorsExpires = FileExpires expiryTime,
-                mirrorsMirrors = []
-              }
-
-    let root = do
-          privateKeysRoot <- maybeReadKeysAt "root"
-          privateKeysTarget <- maybeReadKeysAt "target"
-          privateKeysSnapshot <- maybeReadKeysAt "snapshot"
-          privateKeysTimestamp <- maybeReadKeysAt "timestamp"
-          privateKeysMirrors <- maybeReadKeysAt "mirrors"
-
-          keys <- maybeReadKeysAt "root"
-          writeSignedJSON outputDirRoot repoLayoutRoot keys $
-            Root
-              { rootVersion = FileVersion 1,
-                rootExpires = FileExpires expiryTime,
-                rootKeys =
-                  fromKeys $
-                    concat
-                      [ privateKeysRoot,
-                        privateKeysTarget,
-                        privateKeysSnapshot,
-                        privateKeysTimestamp,
-                        privateKeysMirrors
-                      ],
-                rootRoles =
-                  RootRoles
-                    { rootRolesRoot =
-                        RoleSpec
-                          { roleSpecKeys = map somePublicKey privateKeysRoot,
-                            roleSpecThreshold = KeyThreshold 2
-                          },
-                      rootRolesSnapshot =
-                        RoleSpec
-                          { roleSpecKeys = map somePublicKey privateKeysSnapshot,
-                            roleSpecThreshold = KeyThreshold 1
-                          },
-                      rootRolesTargets =
-                        RoleSpec
-                          { roleSpecKeys = map somePublicKey privateKeysTarget,
-                            roleSpecThreshold = KeyThreshold 1
-                          },
-                      rootRolesTimestamp =
-                        RoleSpec
-                          { roleSpecKeys = map somePublicKey privateKeysTimestamp,
-                            roleSpecThreshold = KeyThreshold 1
-                          },
-                      rootRolesMirrors =
-                        RoleSpec
-                          { roleSpecKeys = map somePublicKey privateKeysMirrors,
-                            roleSpecThreshold = KeyThreshold 1
-                          }
-                    }
-              }
-
-    let snapshot = do
-          rootInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutRoot)
-          mirrorsInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutMirrors)
-          tarInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutIndexTar)
-          tarGzInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutIndexTarGz)
-
-          keys <- maybeReadKeysAt "snapshot"
-          writeSignedJSON outputDirRoot repoLayoutSnapshot keys $
-            Snapshot
-              { snapshotVersion = FileVersion 1,
-                snapshotExpires = FileExpires expiryTime,
-                snapshotInfoRoot = rootInfo,
-                snapshotInfoMirrors = mirrorsInfo,
-                snapshotInfoTar = Just tarInfo,
-                snapshotInfoTarGz = tarGzInfo
-              }
-
-    let timestamp = do
-          snapshotInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutSnapshot)
-          keys <- maybeReadKeysAt "timestamp"
-          writeSignedJSON outputDirRoot repoLayoutTimestamp keys $
-            Timestamp
-              { timestampVersion = FileVersion 1,
-                timestampExpires = FileExpires expiryTime,
-                timestampInfoSnapshot = snapshotInfo
-              }
-
     packages <- getPackages inputDir
 
+    allCabalFiles <-
+      concat
+        <$> for
+          packages
+          ( \(pkgId, pkgMeta) -> do
+              let PackageVersionMeta {packageVersionTimestamp, packageVersionRevisions} = pkgMeta
+              srcDir <- prepareSource pkgId pkgMeta
+              let cabalFilePath = srcDir </> unPackageName (pkgName pkgId) <.> "cabal"
+              let cabalFileTimestamp = fromMaybe currentTime packageVersionTimestamp
+              return $
+                (pkgId, cabalFileTimestamp, cabalFilePath) :
+                map
+                  ( \RevisionMeta {revisionTimestamp, revisionNumber} ->
+                      (pkgId, revisionTimestamp, cabalFileRevisionPath inputDir pkgId revisionNumber)
+                  )
+                  packageVersionRevisions
+          )
+
+    entries1 <- for allCabalFiles $ \(pkgId, timestamp, filePath) ->
+      prepareIndexPkgCabal pkgId timestamp filePath
+
     targetKeys <- maybeReadKeysAt "target"
-    entries <- fmap concat $
-      for packages $
-        \(pkgId, pkgMeta) -> do
-          prepareEntry
-            inputDir
-            outputDirRoot
-            targetKeys
-            currentTime
-            expiryTime
-            pkgId
-            pkgMeta
+    entries2 <- for packages $ uncurry (prepareIndexPkgMetadata currentTime expiryTime targetKeys)
 
-    let tarContents = Tar.write $ sortOn Tar.entryTime entries
-    traced "Writing" $ BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
-    traced "Writing" $ BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTarGz) $ GZip.compress tarContents
+    let tarContents = Tar.write $ sortOn Tar.entryTime (entries1 ++ entries2)
+    traced "Writing index" $ do
+      BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
+      BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTarGz) $ GZip.compress tarContents
 
-    mirrors
-    root
-    snapshot
-    timestamp
+    privateKeysRoot <- maybeReadKeysAt "root"
+    privateKeysTarget <- maybeReadKeysAt "target"
+    privateKeysSnapshot <- maybeReadKeysAt "snapshot"
+    privateKeysTimestamp <- maybeReadKeysAt "timestamp"
+    privateKeysMirrors <- maybeReadKeysAt "mirrors"
+
+    liftIO $
+      writeSignedJSON outputDirRoot repoLayoutMirrors privateKeysMirrors $
+        Mirrors
+          { mirrorsVersion = FileVersion 1,
+            mirrorsExpires = FileExpires expiryTime,
+            mirrorsMirrors = []
+          }
+
+    liftIO $
+      writeSignedJSON outputDirRoot repoLayoutRoot privateKeysRoot $
+        Root
+          { rootVersion = FileVersion 1,
+            rootExpires = FileExpires expiryTime,
+            rootKeys =
+              fromKeys $
+                concat
+                  [ privateKeysRoot,
+                    privateKeysTarget,
+                    privateKeysSnapshot,
+                    privateKeysTimestamp,
+                    privateKeysMirrors
+                  ],
+            rootRoles =
+              RootRoles
+                { rootRolesRoot =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysRoot,
+                        roleSpecThreshold = KeyThreshold 2
+                      },
+                  rootRolesSnapshot =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysSnapshot,
+                        roleSpecThreshold = KeyThreshold 1
+                      },
+                  rootRolesTargets =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysTarget,
+                        roleSpecThreshold = KeyThreshold 1
+                      },
+                  rootRolesTimestamp =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysTimestamp,
+                        roleSpecThreshold = KeyThreshold 1
+                      },
+                  rootRolesMirrors =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysMirrors,
+                        roleSpecThreshold = KeyThreshold 1
+                      }
+                }
+          }
+
+    rootInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutRoot)
+    mirrorsInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutMirrors)
+    tarInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutIndexTar)
+    tarGzInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutIndexTarGz)
+
+    liftIO $
+      writeSignedJSON outputDirRoot repoLayoutSnapshot privateKeysSnapshot $
+        Snapshot
+          { snapshotVersion = FileVersion 1,
+            snapshotExpires = FileExpires expiryTime,
+            snapshotInfoRoot = rootInfo,
+            snapshotInfoMirrors = mirrorsInfo,
+            snapshotInfoTar = Just tarInfo,
+            snapshotInfoTarGz = tarGzInfo
+          }
+
+    snapshotInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutSnapshot)
+    liftIO $
+      writeSignedJSON outputDirRoot repoLayoutTimestamp privateKeysTimestamp $
+        Timestamp
+          { timestampVersion = FileVersion 1,
+            timestampExpires = FileExpires expiryTime,
+            timestampInfoSnapshot = snapshotInfo
+          }
 
 getPackages :: FilePath -> Action [(PackageIdentifier, PackageVersionMeta)]
 getPackages inputDir = do
@@ -211,7 +219,7 @@ getPackages inputDir = do
     let Just version = simpleParsec pkgVersion
     let pkgId = PackageIdentifier name version
 
-    meta <- do
+    meta <-
       readPackageVersionMeta' (inputDir </> metaFile) >>= \case
         PackageVersionMeta {packageVersionRevisions, packageVersionTimestamp = Nothing}
           | not (null packageVersionRevisions) -> do
@@ -227,73 +235,31 @@ getPackages inputDir = do
           return meta
     return (pkgId, meta)
 
-prepareEntry ::
-  FilePath ->
-  Path Absolute ->
-  [Some Key] ->
-  UTCTime ->
-  Maybe UTCTime ->
-  PackageId ->
-  PackageVersionMeta ->
-  Action [Tar.Entry]
-prepareEntry
-  inputDir
-  outputDirRoot
-  keys
-  currentTime
-  expiryTime
-  pkgId@PackageIdentifier {pkgName, pkgVersion}
-  pkgMeta@PackageVersionMeta {packageVersionTimestamp, packageVersionRevisions} = do
-    srcDir <- prepareSource pkgId pkgMeta
+prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
+prepareIndexPkgCabal pkgId timestamp filePath = do
+  need [filePath]
+  contents <- liftIO $ BSL.readFile filePath
+  return $ mkTarEntry contents (IndexPkgCabal pkgId) timestamp
 
-    let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
-    cabalFileContents <- liftIO $ BSL.readFile cabalFilePath
+prepareIndexPkgMetadata :: UTCTime -> Maybe UTCTime -> [Some Key] -> PackageIdentifier -> PackageVersionMeta -> Action Tar.Entry
+prepareIndexPkgMetadata currentTime expiryTime keys pkgId pkgMeta = do
+  let PackageVersionMeta {packageVersionTimestamp} = pkgMeta
+  sdist <- prepareSdist pkgId pkgMeta
+  targetFileInfo <- computeFileInfoSimple' sdist
+  let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
+  let targets =
+        Targets
+          { targetsVersion = FileVersion 1,
+            targetsExpires = FileExpires expiryTime,
+            targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
+            targetsDelegations = Nothing
+          }
 
-    let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
-
-    sdist <- traced "cabal sdist" $ do
-      gpd <- readGenericPackageDescription Verbosity.normal cabalFilePath
-      let path = toFilePath $ anchorRepoPathLocally outputDirRoot packagePath
-      IO.createDirectoryIfMissing True (takeDirectory path)
-      packageDirToSdist Verbosity.normal gpd srcDir
-        >>= BSL.writeFile path
-      return path
-
-    -- original cabal file
-    let cabalEntry =
-          mkTarEntry
-            cabalFileContents
-            (IndexPkgCabal pkgId)
-            (fromMaybe currentTime packageVersionTimestamp)
-
-    -- package.json
-    targetFileInfo <- computeFileInfoSimple' sdist
-    let targets =
-          Targets
-            { targetsVersion = FileVersion 1,
-              targetsExpires = FileExpires expiryTime,
-              targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
-              targetsDelegations = Nothing
-            }
-
-    let packageEntry =
-          mkTarEntry
-            (renderSignedJSON keys targets)
-            (IndexPkgMetadata pkgId)
-            (fromMaybe currentTime packageVersionTimestamp)
-
-    -- revised cabal files
-    revisionEntries <-
-      for packageVersionRevisions $ \RevisionMeta {revisionNumber, revisionTimestamp} ->
-        liftIO $ do
-          contents <- BSL.readFile (inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal")
-          return $
-            mkTarEntry
-              contents
-              (IndexPkgCabal pkgId)
-              revisionTimestamp
-
-    return $ cabalEntry : packageEntry : revisionEntries
+  return $
+    mkTarEntry
+      (renderSignedJSON keys targets)
+      (IndexPkgMetadata pkgId)
+      (fromMaybe currentTime packageVersionTimestamp)
 
 mkTarEntry :: BSL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
 mkTarEntry contents indexFile timestamp =
@@ -314,3 +280,31 @@ mkTarEntry contents indexFile timestamp =
 anchorPath :: Path Absolute -> (RepoLayout -> RepoPath) -> FilePath
 anchorPath outputDirRoot p =
   toFilePath $ anchorRepoPathLocally outputDirRoot $ p hackageRepoLayout
+
+cabalFileRevisionPath :: FilePath -> PackageIdentifier -> Int -> FilePath
+cabalFileRevisionPath inputDir PackageIdentifier {pkgName, pkgVersion} revisionNumber =
+  inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal"
+
+prepareSdist :: PackageId -> PackageVersionMeta -> Action FilePath
+prepareSdist pkgId pkgMeta = apply1 $ PackageRule @"prepareSdist" pkgId pkgMeta
+
+addPrepareSdistRule :: Path Absolute -> Rules ()
+addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
+  where
+    run :: PackageRule "prepareSdist" FilePath -> p -> RunMode -> Action (RunResult FilePath)
+    run (PackageRule pkgId pkgMeta) _old =
+      let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
+          path = toFilePath $ anchorRepoPathLocally outputDirRoot packagePath
+       in \case
+            RunDependenciesSame ->
+              return $ RunResult ChangedNothing BS.empty path
+            RunDependenciesChanged -> do
+              srcDir <- prepareSource pkgId pkgMeta
+              let PackageIdentifier {pkgName} = pkgId
+              traced "cabal sdist" $ do
+                let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
+                gpd <- readGenericPackageDescription Verbosity.normal cabalFilePath
+                IO.createDirectoryIfMissing True (takeDirectory path)
+                packageDirToSdist Verbosity.normal gpd srcDir
+                  >>= BSL.writeFile path
+                return $ RunResult ChangedRecomputeDiff BS.empty path

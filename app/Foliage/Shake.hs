@@ -1,18 +1,27 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Foliage.Shake
   ( computeFileInfoSimple',
     readKeysAt,
     readPackageVersionMeta',
-    writeSignedJSON,
+    PackageRule (PackageRule),
   )
 where
 
 import Data.Traversable (for)
 import Development.Shake
+import Development.Shake.Classes
 import Development.Shake.FilePath
+import Distribution.Package (PackageId)
 import Foliage.HackageSecurity
 import Foliage.Meta
+import GHC.Generics (Generic)
+import GHC.TypeLits (Symbol)
 
 computeFileInfoSimple' :: FilePath -> Action FileInfo
 computeFileInfoSimple' fp = do
@@ -32,9 +41,8 @@ readPackageVersionMeta' fp = do
   need [fp]
   liftIO $ readPackageVersionMeta fp
 
-writeSignedJSON :: ToJSON WriteJSON a => Path Absolute -> (RepoLayout -> RepoPath) -> [Some Key] -> a -> Action ()
-writeSignedJSON outputDirRoot repoPath keys thing = do
-  putInfo $ "Writing " ++ show (repoPath hackageRepoLayout)
-  liftIO $ writeLazyByteString fp $ renderSignedJSON keys thing
-  where
-    fp = anchorRepoPathLocally outputDirRoot $ repoPath hackageRepoLayout
+data PackageRule (tag :: Symbol) a = PackageRule PackageId PackageVersionMeta
+  deriving (Show, Eq, Generic)
+  deriving (Hashable, Binary, NFData)
+
+type instance RuleResult (PackageRule tag a) = a
