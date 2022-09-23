@@ -18,7 +18,9 @@ import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
 import Development.Shake.Rule
+import Distribution.Client.HashValue (readFileHashValue)
 import Distribution.Client.SrcDist (packageDirToSdist)
+import Distribution.Compat.Binary (encode)
 import Distribution.Package
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
@@ -291,20 +293,24 @@ prepareSdist pkgId pkgMeta = apply1 $ PackageRule @"prepareSdist" pkgId pkgMeta
 addPrepareSdistRule :: Path Absolute -> Rules ()
 addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
   where
-    run :: PackageRule "prepareSdist" FilePath -> p -> RunMode -> Action (RunResult FilePath)
-    run (PackageRule pkgId pkgMeta) _old =
+    run :: PackageRule "prepareSdist" FilePath -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
+    run (PackageRule pkgId _pkgMeta) (Just old) RunDependenciesSame =
       let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
           path = toFilePath $ anchorRepoPathLocally outputDirRoot packagePath
-       in \case
-            RunDependenciesSame ->
-              return $ RunResult ChangedNothing BS.empty path
-            RunDependenciesChanged -> do
-              srcDir <- prepareSource pkgId pkgMeta
-              let PackageIdentifier {pkgName} = pkgId
-              traced "cabal sdist" $ do
-                let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
-                gpd <- readGenericPackageDescription Verbosity.normal cabalFilePath
-                IO.createDirectoryIfMissing True (takeDirectory path)
-                packageDirToSdist Verbosity.normal gpd srcDir
-                  >>= BSL.writeFile path
-                return $ RunResult ChangedRecomputeDiff BS.empty path
+       in return $ RunResult ChangedNothing old path
+    run (PackageRule pkgId pkgMeta) old _ = do
+      let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
+          path = toFilePath $ anchorRepoPathLocally outputDirRoot packagePath
+      srcDir <- prepareSource pkgId pkgMeta
+      let PackageIdentifier {pkgName} = pkgId
+      traced "cabal sdist" $ do
+        let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
+        gpd <- readGenericPackageDescription Verbosity.normal cabalFilePath
+        IO.createDirectoryIfMissing True (takeDirectory path)
+        packageDirToSdist Verbosity.normal gpd srcDir
+          >>= BSL.writeFile path
+        hash <- BSL.toStrict . encode <$> readFileHashValue path
+        return $
+          if old == Just hash
+            then RunResult ChangedRecomputeSame hash path
+            else RunResult ChangedRecomputeDiff hash path
