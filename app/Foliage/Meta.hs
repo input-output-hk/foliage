@@ -20,16 +20,21 @@ module Foliage.Meta
     revisionNumber,
     PackageVersionSource,
     pattern TarballSource,
+    pattern GitHubSource,
+    GitHubRepo (..),
+    GitHubRev (..),
     UTCTime,
     latestRevisionNumber,
     consolidateRanges,
   )
 where
 
+import Control.Applicative ((<|>))
 import Control.Monad (void)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Ord
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
 import Development.Shake.Classes
@@ -54,6 +59,8 @@ import Distribution.Version
   )
 import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
+import Network.URI
+import Network.URI.Orphans ()
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
@@ -105,23 +112,56 @@ _VersionRange = Toml._TextBy showVersion parseVersion
       Nothing -> Left $ T.pack $ "unable to parse version" ++ T.unpack t
       Just v -> Right v
 
+newtype GitHubRepo = GitHubRepo {unGitHubRepo :: Text}
+  deriving (Show, Eq, Binary, Hashable, NFData) via Text
+
+newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
+  deriving (Show, Eq, Binary, Hashable, NFData) via Text
+
 data PackageVersionSource
-  = TarballSource String (Maybe String)
+  = TarballSource URI (Maybe String)
+  | GitHubSource GitHubRepo GitHubRev (Maybe String)
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
 packageSourceCodec :: TomlCodec PackageVersionSource
 packageSourceCodec =
   Toml.dimatch matchTarballSource (uncurry TarballSource) tarballSourceCodec
+    <|> Toml.dimatch matchGitHubSource (\((repo, rev), mSubdir) -> GitHubSource repo rev mSubdir) githubSourceCodec
 
-tarballSourceCodec :: TomlCodec (String, Maybe String)
+uri :: Toml.Key -> TomlCodec URI
+uri = Toml.textBy to from
+  where
+    to = T.pack . show
+    from t = case parseURI (T.unpack t) of
+      Nothing -> Left $ "Invalid url: " <> t
+      Just uri' -> Right uri'
+
+tarballSourceCodec :: TomlCodec (URI, Maybe String)
 tarballSourceCodec =
   Toml.pair
-    (Toml.string "url")
+    (uri "url")
     (Toml.dioptional $ Toml.string "subdir")
 
-matchTarballSource :: PackageVersionSource -> Maybe (String, Maybe String)
+matchTarballSource :: PackageVersionSource -> Maybe (URI, Maybe String)
 matchTarballSource (TarballSource url mSubdir) = Just (url, mSubdir)
+matchTarballSource _ = Nothing
+
+gitHubRepo :: Toml.Key -> TomlCodec GitHubRepo
+gitHubRepo = Toml.dimap unGitHubRepo GitHubRepo . Toml.text
+
+gitHubRev :: Toml.Key -> TomlCodec GitHubRev
+gitHubRev = Toml.dimap unGitHubRev GitHubRev . Toml.text
+
+githubSourceCodec :: TomlCodec ((GitHubRepo, GitHubRev), Maybe String)
+githubSourceCodec =
+  Toml.pair
+    (Toml.table (Toml.pair (gitHubRepo "repo") (gitHubRev "rev")) "github")
+    (Toml.dioptional $ Toml.string "subdir")
+
+matchGitHubSource :: PackageVersionSource -> Maybe ((GitHubRepo, GitHubRev), Maybe String)
+matchGitHubSource (GitHubSource repo rev mSubdir) = Just ((repo, rev), mSubdir)
+matchGitHubSource _ = Nothing
 
 data PackageVersionMeta = PackageVersionMeta
   { -- | timestamp

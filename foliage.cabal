@@ -27,6 +27,7 @@ executable foliage
         Foliage.Shake.Oracle
         Foliage.Time
         Foliage.UpdateCabalFile
+        Network.URI.Orphans
 
     default-language:   Haskell2010
     default-extensions:
@@ -46,6 +47,7 @@ executable foliage
         directory            >=1.3.6.0    && <1.4,
         filepath             >=1.4.2.1    && <1.5,
         hackage-security     >=0.6.2.1    && <0.7,
+        network-uri         ^>=2.6.4.1,
         optparse-applicative >=0.17.0.0   && <0.18,
         shake                >=0.19.6     && <0.20,
         tar                  >=0.5.1.1    && <0.6,

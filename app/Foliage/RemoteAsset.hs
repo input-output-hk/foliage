@@ -8,6 +8,7 @@ module Foliage.RemoteAsset
   )
 where
 
+import Control.Monad (unless)
 import Data.ByteString qualified as BS
 import Data.Char (isAlpha)
 import Data.List (dropWhileEnd)
@@ -16,33 +17,38 @@ import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
+import Network.URI (URI (uriAuthority, uriFragment, uriQuery, uriScheme), URIAuth (uriRegName), pathSegments)
+import Network.URI.Orphans ()
 import System.Directory (createDirectoryIfMissing)
-import System.FilePath.Posix qualified as Posix
 
-type Url = String
-
-newtype RemoteAsset = RemoteAsset Url
+newtype RemoteAsset = RemoteAsset URI
   deriving (Show, Eq)
-  deriving (Hashable, Binary, NFData) via Url
+  deriving (Hashable, Binary, NFData) via URI
 
 type instance RuleResult RemoteAsset = FilePath
 
 data RemoteAssetRule = RemoteAssetRule RemoteAsset (Action FilePath)
 
-remoteAssetRule :: Url -> Action FilePath -> Rules ()
+remoteAssetRule :: URI -> Action FilePath -> Rules ()
 remoteAssetRule url act = addUserRule $ RemoteAssetRule (RemoteAsset url) act
 
-remoteAssetNeed :: Url -> Action FilePath
+remoteAssetNeed :: URI -> Action FilePath
 remoteAssetNeed = apply1 . RemoteAsset
 
 addBuiltinRemoteAssetRule :: FilePath -> Rules ()
 addBuiltinRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
   where
     run :: BuiltinRun RemoteAsset FilePath
-    run (RemoteAsset url) old _mode = do
-      let scheme : rest = Posix.splitPath url
-          scheme' = dropWhileEnd (not . isAlpha) scheme
-          path = cacheDir </> joinPath (scheme' : rest)
+    run (RemoteAsset uri) old _mode = do
+      unless (uriQuery uri == "") $
+        fail $ "Query elements in URI are not supported: " <> show uri
+
+      unless (uriFragment uri == "") $
+        fail $ "Fragments in URI are not supported: " <> show uri
+
+      let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
+          Just host = uriRegName <$> uriAuthority uri
+          path = cacheDir </> joinPath (scheme : host : pathSegments uri)
 
       -- parse etag from store
       let oldETag = fromMaybe BS.empty old
@@ -51,7 +57,7 @@ addBuiltinRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
         withTempFile $ \fp -> do
           liftIO $ BS.writeFile fp oldETag
           liftIO $ createDirectoryIfMissing True (takeDirectory path)
-          cmd_ Shell ["curl", "--silent", "--location", "--etag-compare", fp, "--etag-save", fp, "--output", path, url]
+          cmd_ Shell ["curl", "--silent", "--location", "--etag-compare", fp, "--etag-save", fp, "--output", path, show uri]
           liftIO $ BS.readFile fp
 
       let changed = if newETag == oldETag then ChangedNothing else ChangedRecomputeDiff

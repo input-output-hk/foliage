@@ -10,6 +10,7 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (for_)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
+import Data.Text qualified as T
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
@@ -27,6 +28,7 @@ import Foliage.Shake
 import Foliage.Shake.Oracle
 import Foliage.Time qualified as Time
 import Foliage.UpdateCabalFile (rewritePackageVersion)
+import Network.URI
 import System.Directory qualified as IO
 
 cmdBuild :: BuildOptions -> IO ()
@@ -123,6 +125,33 @@ cmdBuild
           TarballSource url mSubdir -> do
             tarballPath <- remoteAssetNeed url
 
+            withTempDir $ \tmpDir -> do
+              cmd_ ["tar", "xzf", tarballPath, "-C", tmpDir]
+
+              -- Special treatment of top-level directory: we remove it
+              --
+              -- Note: Don't let shake look into tmpDir! it will cause
+              -- unnecessary rework because tmpDir is always new
+              ls <- liftIO $ IO.getDirectoryContents tmpDir
+              let ls' = filter (not . all (== '.')) ls
+
+              let fix1 = case ls' of [l] -> (</> l); _ -> id
+                  fix2 = case mSubdir of Just s -> (</> s); _ -> id
+                  tdir = fix2 $ fix1 tmpDir
+
+              cmd_ ["cp", "--recursive", "--no-target-directory", "--dereference", tdir, srcDir]
+          --
+          -- This is almost identical to the above but we get to keep the
+          -- metadata.
+          --
+          GitHubSource repo rev mSubdir -> do
+            let url =
+                  nullURI
+                    { uriScheme = "https:",
+                      uriAuthority = Just nullURIAuth {uriRegName = "github.com"},
+                      uriPath = "/" </> T.unpack (unGitHubRepo repo) </> "tarball" </> T.unpack (unGitHubRev rev)
+                    }
+            tarballPath <- remoteAssetNeed url
             withTempDir $ \tmpDir -> do
               cmd_ ["tar", "xzf", tarballPath, "-C", tmpDir]
 

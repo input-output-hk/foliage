@@ -18,6 +18,7 @@ import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta
 import Foliage.Options
+import Network.URI hiding (path)
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (getEnv)
 import System.FilePath
@@ -78,9 +79,13 @@ importIndex _f Tar.Done m =
 importIndex _f (Tar.Fail e) _ =
   error $ show e
 
-pkgIdToHackageUrl :: PackageIdentifier -> String
+pkgIdToHackageUrl :: PackageIdentifier -> URI
 pkgIdToHackageUrl pkgId =
-  "https://hackage.haskell.org/package" </> prettyShow pkgId </> prettyShow pkgId <.> "tar.gz"
+  nullURI
+    { uriScheme = "https:",
+      uriAuthority = Just $ nullURIAuth {uriRegName = "hackage.haskell.org"},
+      uriPath = "/package" </> prettyShow pkgId </> prettyShow pkgId <.> "tar.gz"
+    }
 
 finalise ::
   PackageIdentifier ->
