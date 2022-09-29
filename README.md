@@ -81,11 +81,14 @@ file `packageA/1.2.3.4/meta.toml` with content:
 
 ```toml
 timestamp = 2022-03-29T06:19:50+00:00
-url = 'https://github.com/Company-XYZ/packageA/tarball/e76fdc753e660dfa615af6c8b6a2ad9ddf6afe70'
+github = { repo = "Company-XYZ/packageA", rev = "e76fdc753e660dfa615af6c8b6a2ad9ddf6afe70" }
 ```
 
-*Note*: Any other url would work here. E.g. one could use GitHub releases:
-`https://github.com/Company-XYZ/packageA/archive/refs/tags/v1.2.3.4.tar.gz`.
+*Note*: Rather than `github = ` one che use the more generic `url = `, e.g.
+
+```toml
+url = "https://hackage.haskell.org/package/shake-0.19.6/shake-0.19.6.tar.gz"
+```
 
 :information_source: Although the `timestamp` field in the package source metadata is
 optional, it is highly reccomended if you intend your repository users to
@@ -104,8 +107,8 @@ Let's add a package (say `typed-protocols-0.1.0.0` from https://github.com/input
 ```bash
 $ mkdir -p _sources/typed-protocols/0.1.0.0
 $ cat _sources/typed-protocols/0.1.0.0/meta.toml
-url = 'https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa'
-subdir = 'typed-protocols'
+github = { repo = "input-output-hk/ouroboros-network", rev = "fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa" }
+subdir = "typed-protocols"
 ```
 
 ### Building the repository
@@ -141,8 +144,8 @@ E.g.
 
 ```
 $ cat _sources/typed-protocols/0.1.0.0/meta.toml
-url = 'https://github.com/input-output-hk/ouroboros-network/tarball/fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa'
-subdir = 'typed-protocols'
+github = { repo = "input-output-hk/ouroboros-network", rev = "fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa" }
+subdir = "typed-protocols"
 timestamp = 2022-03-29T06:19:50+00:00
 ```
 
