@@ -151,7 +151,7 @@ timestamp = 2022-03-29T06:19:50+00:00
 
 :information_source: Foliage uses the metadata timestamps to determine the
 order of the entries in `01-index`. This allows you to create an index that
-1) can be updated incrementally and 2) can be used with cabal's
+can be updated incrementally and can be used with cabal's
 [index-state](https://cabal.readthedocs.io/en/3.6/cabal-project.html?highlight=index-state#cfg-field-index-state)
 feature.
 
