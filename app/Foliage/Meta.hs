@@ -27,7 +27,9 @@ module Foliage.Meta
 where
 
 import Control.Monad (void)
+import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
+import Data.Ord
 import Data.Text qualified as T
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
 import Development.Shake.Classes
@@ -166,9 +168,9 @@ timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime 
 
 latestRevisionNumber :: PackageVersionMeta -> Maybe Int
 latestRevisionNumber sm =
-  if null (packageVersionRevisions sm)
-    then Nothing
-    else Just $ maximum $ map revisionNumber (packageVersionRevisions sm)
+  case sortOn (Down . revisionNumber) (packageVersionRevisions sm) of
+    [] -> Nothing
+    rev : _ -> Just (revisionNumber rev)
 
 withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
 withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
