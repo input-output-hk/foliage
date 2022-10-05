@@ -22,9 +22,10 @@ executable foliage
         Foliage.HackageSecurity
         Foliage.Meta
         Foliage.Options
+        Foliage.PrepareSource
+        Foliage.PrepareSdist
         Foliage.RemoteAsset
         Foliage.Shake
-        Foliage.Shake.Oracle
         Foliage.Time
         Foliage.UpdateCabalFile
         Network.URI.Orphans
