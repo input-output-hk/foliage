@@ -54,5 +54,5 @@ addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
           cmd_ Shell ["curl", "--silent", "--location", "--etag-compare", fp, "--etag-save", fp, "--output", path, show uri]
           liftIO $ BS.readFile fp
 
-      let changed = if newETag == oldETag then ChangedNothing else ChangedRecomputeDiff
+      let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
       return $ RunResult {runChanged = changed, runStore = newETag, runValue = path}

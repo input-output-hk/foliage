@@ -38,7 +38,7 @@ cmdBuild buildOptions = do
     opts =
       shakeOptions
         { shakeFiles = cacheDir,
-          shakeVerbosity = Diagnostic
+          shakeVerbosity = Verbose
         }
 
 buildAction :: BuildOptions -> Action ()
@@ -233,7 +233,8 @@ prepareIndexPkgCabal pkgId timestamp filePath = do
 prepareIndexPkgMetadata :: UTCTime -> Maybe UTCTime -> [Some Key] -> PackageIdentifier -> PackageVersionMeta -> Action Tar.Entry
 prepareIndexPkgMetadata currentTime expiryTime keys pkgId pkgMeta = do
   let PackageVersionMeta {packageVersionTimestamp} = pkgMeta
-  sdist <- prepareSdist pkgId pkgMeta
+  srcDir <- prepareSource pkgId pkgMeta
+  sdist <- prepareSdist srcDir
   targetFileInfo <- computeFileInfoSimple' sdist
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
   let targets =
