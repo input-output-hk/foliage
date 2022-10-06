@@ -1,6 +1,6 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.PrepareSource where
@@ -10,26 +10,33 @@ import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Data.Text qualified as T
 import Development.Shake
+import Development.Shake.Classes
 import Development.Shake.Rule
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta
 import Foliage.RemoteAsset (fetchRemoteAsset)
-import Foliage.Shake (PackageRule (PackageRule))
 import Foliage.UpdateCabalFile (rewritePackageVersion)
+import GHC.Generics
 import Network.URI (URI (..), URIAuth (..), nullURI, nullURIAuth)
 import System.Directory qualified as IO
 import System.FilePath ((<.>), (</>))
 
+data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionMeta
+  deriving (Show, Eq, Generic)
+  deriving (Hashable, Binary, NFData)
+
+type instance RuleResult PrepareSourceRule = FilePath
+
 prepareSource :: PackageId -> PackageVersionMeta -> Action FilePath
-prepareSource pkgId pkgMeta = apply1 $ PackageRule @"prepareSource" pkgId pkgMeta
+prepareSource pkgId pkgMeta = apply1 $ PrepareSourceRule pkgId pkgMeta
 
 addPrepareSourceRule :: FilePath -> FilePath -> Rules ()
 addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
   where
-    run :: BuiltinRun (PackageRule "prepareSource" FilePath) FilePath
-    run (PackageRule pkgId pkgMeta) _old mode = do
+    run :: PrepareSourceRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
+    run (PrepareSourceRule pkgId pkgMeta) _old mode = do
       let PackageIdentifier {pkgName, pkgVersion} = pkgId
       let PackageVersionMeta {packageVersionSource, packageVersionForce} = pkgMeta
       let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
@@ -82,7 +89,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
               tarballPath <- fetchRemoteAsset url
 
               withTempDir $ \tmpDir -> do
-                cmd_ ["tar", "xzf", tarballPath, "-C", tmpDir]
+                cmd_ "tar xzf" [tarballPath] "-C" [tmpDir]
 
                 -- Special treatment of top-level directory: we remove it
                 --
@@ -95,7 +102,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
                     fix2 = case mSubdir of Just s -> (</> s); _ -> id
                     tdir = fix2 $ fix1 tmpDir
 
-                cmd_ ["cp", "--recursive", "--no-target-directory", "--dereference", tdir, srcDir]
+                cmd_ "cp --recursive --no-target-directory --dereference" [tdir, srcDir]
 
           let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
           hasPatches <- doesDirectoryExist patchesDir
