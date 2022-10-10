@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Foliage.Meta
   ( PackageMeta (PackageMeta),
@@ -31,6 +32,7 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (void)
+import Data.Aeson qualified as Aeson
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Ord
@@ -78,6 +80,14 @@ data PackageMetaEntry = PackageMetaEntry
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
+instance Aeson.ToJSON Version
+
+instance Aeson.ToJSON VersionRange
+
+instance Aeson.ToJSON PackageMetaEntry
+
+instance Aeson.ToJSON PackageMeta
+
 readPackageMeta :: FilePath -> IO PackageMeta
 readPackageMeta = Toml.decodeFile packageMetaCodec
 
@@ -115,14 +125,35 @@ _VersionRange = Toml._TextBy showVersion parseVersion
 newtype GitHubRepo = GitHubRepo {unGitHubRepo :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
 
+deriving via Text instance Aeson.ToJSON GitHubRepo
+
 newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
 
+deriving via Text instance Aeson.ToJSON GitHubRev
+
 data PackageVersionSource
-  = TarballSource URI (Maybe String)
-  | GitHubSource GitHubRepo GitHubRev (Maybe String)
+  = TarballSource
+      { tarballSourceURI :: URI,
+        subdirs :: Maybe String
+      }
+  | GitHubSource
+      { githubRepo :: GitHubRepo,
+        githubRev :: GitHubRev,
+        subdirs :: Maybe String
+      }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
+
+instance Aeson.ToJSON PackageVersionSource where
+  toJSON =
+    Aeson.genericToJSON
+      Aeson.defaultOptions
+        { Aeson.sumEncoding = Aeson.ObjectWithSingleField
+        }
+
+instance Aeson.ToJSON URI where
+  toJSON = Aeson.toJSON . show
 
 packageSourceCodec :: TomlCodec PackageVersionSource
 packageSourceCodec =
@@ -176,6 +207,8 @@ data PackageVersionMeta = PackageVersionMeta
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
+instance Aeson.ToJSON PackageVersionMeta
+
 sourceMetaCodec :: TomlCodec PackageVersionMeta
 sourceMetaCodec =
   PackageVersionMeta
@@ -196,6 +229,8 @@ data RevisionMeta = RevisionMeta
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
+
+instance Aeson.ToJSON RevisionMeta
 
 revisionMetaCodec :: TomlCodec RevisionMeta
 revisionMetaCodec =

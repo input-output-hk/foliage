@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Foliage.CmdBuild (cmdBuild) where
 
 import Codec.Archive.Tar qualified as Tar
@@ -13,7 +15,7 @@ import Development.Shake.FilePath
 import Distribution.Package
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
-import Foliage.HackageSecurity
+import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Options
 import Foliage.PrepareSdist
@@ -78,31 +80,30 @@ buildAction
 
     packages <- getPackages inputDir
 
-    allCabalFiles <-
-      concat
-        <$> for
-          packages
-          ( \(pkgId, pkgMeta) -> do
-              let PackageVersionMeta {packageVersionTimestamp, packageVersionRevisions} = pkgMeta
-              srcDir <- prepareSource pkgId pkgMeta
-              let cabalFilePath = srcDir </> unPackageName (pkgName pkgId) <.> "cabal"
-              let cabalFileTimestamp = fromMaybe currentTime packageVersionTimestamp
-              return $
-                (pkgId, cabalFileTimestamp, cabalFilePath) :
-                map
-                  ( \RevisionMeta {revisionTimestamp, revisionNumber} ->
-                      (pkgId, revisionTimestamp, cabalFileRevisionPath inputDir pkgId revisionNumber)
-                  )
-                  packageVersionRevisions
-          )
+    cabalEntries <-
+      foldMap
+        ( \(pkgId, pkgMeta) -> do
+            let PackageVersionMeta {packageVersionTimestamp, packageVersionRevisions} = pkgMeta
+            srcDir <- prepareSource pkgId pkgMeta
+            let cabalFilePath = srcDir </> unPackageName (pkgName pkgId) <.> "cabal"
+            let cabalFileTimestamp = fromMaybe currentTime packageVersionTimestamp
+            cf <- prepareIndexPkgCabal pkgId cabalFileTimestamp cabalFilePath
+            revcf <-
+              for packageVersionRevisions $
+                \RevisionMeta {revisionTimestamp, revisionNumber} ->
+                  prepareIndexPkgCabal
+                    pkgId
+                    revisionTimestamp
+                    (cabalFileRevisionPath inputDir pkgId revisionNumber)
 
-    entries1 <- for allCabalFiles $ \(pkgId, timestamp, filePath) ->
-      prepareIndexPkgCabal pkgId timestamp filePath
+            return $ cf : revcf
+        )
+        packages
 
     targetKeys <- maybeReadKeysAt "target"
-    entries2 <- for packages $ uncurry (prepareIndexPkgMetadata currentTime expiryTime targetKeys)
+    metadataEntries <- for packages $ uncurry (prepareIndexPkgMetadata currentTime expiryTime targetKeys)
 
-    let tarContents = Tar.write $ sortOn Tar.entryTime (entries1 ++ entries2)
+    let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries)
     traced "Writing index" $ do
       BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
       BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTarGz) $ GZip.compress tarContents
