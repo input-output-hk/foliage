@@ -23,13 +23,13 @@ import Network.URI (URI (..), URIAuth (..), nullURI, nullURIAuth)
 import System.Directory qualified as IO
 import System.FilePath ((<.>), (</>))
 
-data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionMeta
+data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionSpec
   deriving (Show, Eq, Generic)
   deriving (Hashable, Binary, NFData)
 
 type instance RuleResult PrepareSourceRule = FilePath
 
-prepareSource :: PackageId -> PackageVersionMeta -> Action FilePath
+prepareSource :: PackageId -> PackageVersionSpec -> Action FilePath
 prepareSource pkgId pkgMeta = apply1 $ PrepareSourceRule pkgId pkgMeta
 
 addPrepareSourceRule :: FilePath -> FilePath -> Rules ()
@@ -38,7 +38,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
     run :: PrepareSourceRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
     run (PrepareSourceRule pkgId pkgMeta) _old mode = do
       let PackageIdentifier {pkgName, pkgVersion} = pkgId
-      let PackageVersionMeta {packageVersionSource, packageVersionForce} = pkgMeta
+      let PackageVersionSpec {packageVersionSource, packageVersionForce} = pkgMeta
       let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
 
       case mode of

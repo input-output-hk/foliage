@@ -25,6 +25,7 @@ executable foliage
         Foliage.Meta
         Foliage.Meta.Aeson
         Foliage.Options
+        Foliage.Pages
         Foliage.PrepareSource
         Foliage.PrepareSdist
         Foliage.RemoteAsset

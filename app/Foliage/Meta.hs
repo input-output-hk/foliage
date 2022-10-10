@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Foliage.Meta
   ( PackageMeta (PackageMeta),
@@ -18,9 +19,9 @@ module Foliage.Meta
     packageVersionSource,
     packageVersionRevisions,
     packageVersionForce,
-    readPackageVersionMeta,
-    writePackageVersionMeta,
-    RevisionMeta (RevisionMeta),
+    readPackageVersionSpec,
+    writePackageVersionSpec,
+    RevisionSpec (RevisionSpec),
     revisionTimestamp,
     revisionNumber,
     PackageVersionSource,
@@ -28,6 +29,9 @@ module Foliage.Meta
     pattern GitHubSource,
     GitHubRepo (..),
     GitHubRev (..),
+    PackageMeta (PackageMeta),
+    readPackageMeta,
+    writePackageMeta,
     UTCTime,
     latestRevisionNumber,
     consolidateRanges,
@@ -39,7 +43,7 @@ import Control.Monad (void)
 import Data.Aeson qualified as Aeson
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Ord
+import Data.Ord (Down (Down))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
@@ -48,9 +52,11 @@ import Development.Shake.Classes
     Hashable,
     NFData,
   )
+import Distribution.Aeson ()
 import Distribution.Parsec (simpleParsec)
-import Distribution.Pretty
+import Distribution.Pretty (prettyShow)
 import Distribution.Types.Orphans ()
+import Distribution.Types.PackageId (PackageIdentifier)
 import Distribution.Types.Version (Version)
 import Distribution.Types.VersionRange
   ( VersionRange,
@@ -65,7 +71,7 @@ import Distribution.Version
   )
 import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
-import Network.URI
+import Network.URI (URI, parseURI)
 import Network.URI.Orphans ()
 import Toml (TomlCodec, (.=))
 import Toml qualified
@@ -84,9 +90,7 @@ data PackageMetaEntry = PackageMetaEntry
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-instance Aeson.ToJSON Version
-
-instance Aeson.ToJSON VersionRange
+instance Aeson.ToJSON PackageIdentifier
 
 instance Aeson.ToJSON PackageMetaEntry
 
@@ -139,12 +143,12 @@ deriving via Text instance Aeson.ToJSON GitHubRev
 data PackageVersionSource
   = TarballSource
       { tarballSourceURI :: URI,
-        subdirs :: Maybe String
+        subdir :: Maybe String
       }
   | GitHubSource
       { githubRepo :: GitHubRepo,
         githubRev :: GitHubRev,
-        subdirs :: Maybe String
+        subdir :: Maybe String
       }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
@@ -198,54 +202,54 @@ matchGitHubSource :: PackageVersionSource -> Maybe ((GitHubRepo, GitHubRev), May
 matchGitHubSource (GitHubSource repo rev mSubdir) = Just ((repo, rev), mSubdir)
 matchGitHubSource _ = Nothing
 
-data PackageVersionMeta = PackageVersionMeta
+data PackageVersionSpec = PackageVersionSpec
   { -- | timestamp
     packageVersionTimestamp :: Maybe UTCTime,
     -- | source parameters
     packageVersionSource :: PackageVersionSource,
     -- | revisions
-    packageVersionRevisions :: [RevisionMeta],
+    packageVersionRevisions :: [RevisionSpec],
     -- | force version
     packageVersionForce :: Bool
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-instance Aeson.ToJSON PackageVersionMeta
+instance Aeson.ToJSON PackageVersionSpec
 
-sourceMetaCodec :: TomlCodec PackageVersionMeta
+sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
-  PackageVersionMeta
+  PackageVersionSpec
     <$> Toml.dioptional (timeCodec "timestamp") .= packageVersionTimestamp
     <*> packageSourceCodec .= packageVersionSource
     <*> Toml.list revisionMetaCodec "revisions" .= packageVersionRevisions
     <*> withDefault False (Toml.bool "force-version") .= packageVersionForce
 
-readPackageVersionMeta :: FilePath -> IO PackageVersionMeta
-readPackageVersionMeta = Toml.decodeFile sourceMetaCodec
+readPackageVersionSpec :: FilePath -> IO PackageVersionSpec
+readPackageVersionSpec = Toml.decodeFile sourceMetaCodec
 
-writePackageVersionMeta :: FilePath -> PackageVersionMeta -> IO ()
-writePackageVersionMeta fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
+writePackageVersionSpec :: FilePath -> PackageVersionSpec -> IO ()
+writePackageVersionSpec fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
 
-data RevisionMeta = RevisionMeta
+data RevisionSpec = RevisionSpec
   { revisionTimestamp :: UTCTime,
     revisionNumber :: Int
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-instance Aeson.ToJSON RevisionMeta
+instance Aeson.ToJSON RevisionSpec
 
-revisionMetaCodec :: TomlCodec RevisionMeta
+revisionMetaCodec :: TomlCodec RevisionSpec
 revisionMetaCodec =
-  RevisionMeta
+  RevisionSpec
     <$> timeCodec "timestamp" .= revisionTimestamp
     <*> Toml.int "number" .= revisionNumber
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
 
-latestRevisionNumber :: PackageVersionMeta -> Maybe Int
+latestRevisionNumber :: PackageVersionSpec -> Maybe Int
 latestRevisionNumber sm =
   case sortOn (Down . revisionNumber) (packageVersionRevisions sm) of
     [] -> Nothing
@@ -264,3 +268,10 @@ consolidateRanges PackageMetaEntry {packageMetaEntryPreferred, packageMetaEntryD
     range =
       simplifyVersionRange $
         foldr intersectVersionRanges anyVersion (map notThisVersion packageMetaEntryDeprecated ++ packageMetaEntryPreferred)
+
+data PackageVersionMeta = PackageVersionMeta
+  { pkgId :: PackageIdentifier,
+    pkgSpec :: PackageVersionSpec
+  }
+  deriving (Generic)
+  deriving (Aeson.ToJSON)
