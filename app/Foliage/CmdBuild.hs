@@ -6,15 +6,21 @@ import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
+import Data.Aeson (object, (.=))
 import Data.ByteString.Lazy qualified as BSL
+import Data.Foldable (for_)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
+import Data.Text.Lazy.IO qualified as TL
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
+import Distribution.Aeson
 import Distribution.Package
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
+import Distribution.Simple.PackageDescription (readGenericPackageDescription)
+import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Options
@@ -24,6 +30,7 @@ import Foliage.RemoteAsset (addFetchRemoteAssetRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path (castRoot, toFilePath)
+import Text.Mustache (compileMustacheDir, renderMustache)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
@@ -79,6 +86,25 @@ buildAction
         return t
 
     packages <- getPackages inputDir
+
+    packageTemplate <- compileMustacheDir "package" "_templates"
+    for_ packages $ \(pkgId, pkgMeta) -> do
+      gpd <- case latestRevisionNumber pkgMeta of
+        Just n ->
+          liftIO $ readGenericPackageDescription Verbosity.normal (cabalFileRevisionPath inputDir pkgId n)
+        Nothing -> do
+          srcDir <- prepareSource pkgId pkgMeta
+          liftIO $ readGenericPackageDescription Verbosity.normal $ srcDir </> unPackageName (pkgName pkgId) <.> "cabal"
+
+      liftIO $
+        TL.putStrLn $
+          renderMustache packageTemplate $
+            object
+              [ "pkgName" .= prettyShow (pkgName pkgId),
+                "pkgVersion" .= prettyShow (pkgVersion pkgId),
+                "pkgVersionMeta" .= pkgMeta,
+                "packageDescription" .= jsonGenericPackageDescription gpd
+              ]
 
     cabalEntries <-
       foldMap
