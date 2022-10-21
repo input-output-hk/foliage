@@ -24,6 +24,7 @@ import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
+import Foliage.Meta.Aeson ()
 import Foliage.Options
 import Foliage.Pages (packageVersionPageTemplate)
 import Foliage.PrepareSdist
@@ -94,7 +95,7 @@ buildAction
 
     cabalEntries <-
       foldMap
-        ( \pkgMeta@PackageVersionMeta {pkgId, pkgSpec} -> do
+        ( \pkgMeta@PackageVersionMeta{pkgId, pkgSpec} -> do
             let PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions} = pkgSpec
 
             -- original cabal file, with its timestamp (if specified)

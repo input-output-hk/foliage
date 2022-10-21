@@ -3,7 +3,6 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Foliage.Meta
@@ -14,11 +13,12 @@ module Foliage.Meta
     packageMetaEntryTimestamp,
     readPackageMeta,
     writePackageMeta,
-    PackageVersionMeta (PackageVersionMeta),
+    PackageVersionMeta (PackageVersionMeta, pkgId, pkgSpec),
     packageVersionTimestamp,
     packageVersionSource,
     packageVersionRevisions,
     packageVersionForce,
+    PackageVersionSpec (PackageVersionSpec),
     readPackageVersionSpec,
     writePackageVersionSpec,
     RevisionSpec (RevisionSpec),
@@ -29,9 +29,6 @@ module Foliage.Meta
     pattern GitHubSource,
     GitHubRepo (..),
     GitHubRev (..),
-    PackageMeta (PackageMeta),
-    readPackageMeta,
-    writePackageMeta,
     UTCTime,
     latestRevisionNumber,
     consolidateRanges,
@@ -40,7 +37,6 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (void)
-import Data.Aeson qualified as Aeson
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down))
@@ -90,12 +86,6 @@ data PackageMetaEntry = PackageMetaEntry
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-instance Aeson.ToJSON PackageIdentifier
-
-instance Aeson.ToJSON PackageMetaEntry
-
-instance Aeson.ToJSON PackageMeta
-
 readPackageMeta :: FilePath -> IO PackageMeta
 readPackageMeta = Toml.decodeFile packageMetaCodec
 
@@ -133,12 +123,8 @@ _VersionRange = Toml._TextBy showVersion parseVersion
 newtype GitHubRepo = GitHubRepo {unGitHubRepo :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
 
-deriving via Text instance Aeson.ToJSON GitHubRepo
-
 newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
-
-deriving via Text instance Aeson.ToJSON GitHubRev
 
 data PackageVersionSource
   = TarballSource
@@ -152,16 +138,6 @@ data PackageVersionSource
       }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
-
-instance Aeson.ToJSON PackageVersionSource where
-  toJSON =
-    Aeson.genericToJSON
-      Aeson.defaultOptions
-        { Aeson.sumEncoding = Aeson.ObjectWithSingleField
-        }
-
-instance Aeson.ToJSON URI where
-  toJSON = Aeson.toJSON . show
 
 packageSourceCodec :: TomlCodec PackageVersionSource
 packageSourceCodec =
@@ -215,8 +191,6 @@ data PackageVersionSpec = PackageVersionSpec
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-instance Aeson.ToJSON PackageVersionSpec
-
 sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
   PackageVersionSpec
@@ -237,8 +211,6 @@ data RevisionSpec = RevisionSpec
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
-
-instance Aeson.ToJSON RevisionSpec
 
 revisionMetaCodec :: TomlCodec RevisionSpec
 revisionMetaCodec =
@@ -274,4 +246,3 @@ data PackageVersionMeta = PackageVersionMeta
     pkgSpec :: PackageVersionSpec
   }
   deriving (Generic)
-  deriving (Aeson.ToJSON)
