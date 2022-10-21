@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.1.3/css/bootstrap.min.css" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.1.3/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+    <!-- DataTables -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/v/bs5/dt-1.12.1/datatables.min.css" integrity="sha384-4+3RMUungd+Oh0juS2Jl3yQ7mPlVfsgr10NLSsqltLXIECi9ExY4d1cTtmf9aN8E" crossorigin="anonymous">
+    <script src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.12.1/datatables.min.js" integrity="sha384-eU1uLDC5C4YCIouMauJZjbrnSmIiICWWAPdnZjRkNnuDxG+eJFN/EhW5GlKPAIVl" crossorigin="anonymous"></script>
+    <title>
+      Repository's content
+    </title>
+  </head>
+  <body>
+    <div class="container px-4 py-5">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item active" aria-current="page"><a href="#">Home</a></li>
+        </ol>
+      </nav>
+      <h1 class="py-5">
+        Repository's entries
+      </h1>
+      <table id="entries" class="table table-hover">
+        <thead>
+          <tr>
+            <th>Package identifier</th>
+            <th>Type</th>
+            <th>Timestamp</th>
+            <th>Source</th>
+          </th>
+        </thead>
+        <tbody>
+        {{#entries}}
+          {{#IndexEntryPackage}}
+          <tr>
+            <td class="col-sm-2"><a href="package/{{indexEntryPkgId}}">{{indexEntryPkgId}}</a></td>
+            <td class="col-sm-1">package</td>
+            <td class="col-sm-3" data-order="{{indexEntryTimestampPosix}}">{{indexEntryTimestamp}}</td>
+            <td class="col-sm-6">
+              <dl class="row">
+              {{#indexEntrySource}}
+              {{> packageVersionSource}}
+              {{/indexEntrySource}}
+              </dl>
+            </td>
+          </tr>
+          {{/IndexEntryPackage}}
+          {{#IndexEntryRevision}}
+          <tr>
+            <td>{{indexEntryPkgId}}</td>
+            <td>revision</td>
+            <td data-order="{{indexEntryTimestampPosix}}">{{indexEntryTimestamp}}</td>
+            <td></td>
+          </tr>
+          {{/IndexEntryRevision}}
+        {{/entries}}
+        </tbody>
+      </table>
+    </div>
+    <script>
+      $(document).ready(function () {
+        $('#entries').DataTable({
+          order: [[2, 'desc']],
+          lengthMenu: [ [50, 100, 500, -1], [50, 100, 500, "All"] ],
+        });
+      });
+    </script>
+  </body>
+</html>

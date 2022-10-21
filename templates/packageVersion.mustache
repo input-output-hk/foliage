@@ -19,7 +19,7 @@
     <div class="container px-4 py-5">
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
-          <li class="breadcrumb-item"><a href="#">Home</a></li>
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="#">{{name}}</a></li>
           <li class="breadcrumb-item active" aria-current="page">{{version}}</li>
         </ol>
@@ -44,31 +44,7 @@
         <dt class="col-sm-3">Source</dt>
         <dd class="col-sm-9">
           <dl class="row">
-            {{#TarballSource}}
-            <dt class="col-sm-4">Tarball</dt>
-            <dd class="col-sm-8">{{tarballSourceURI}}</dd>
-            {{#subdir}}
-            <dt class="col-sm-4">Sub-directory</dt>
-            <dd class="col-sm-8">{{subdir}}</dd>
-            {{/subdir}}
-            {{/TarballSource}}
-            {{#GitHubSource}}
-            <dt class="col-sm-4">GitHub</dt>
-            <dd class="col-sm-8">
-            {{#subdir}}
-            <a href="https://github.com/{{githubRepo}}/tree/{{githubRev}}/{{subdir}}">https://github.com/{{githubRepo}}</a>
-            {{/subdir}}
-            {{^subdir}}
-            <a href="https://github.com/{{githubRepo}}/tree/{{githubRev}}">https://github.com/{{githubRepo}}</a>
-            {{/subdir}}
-            </dd>
-            <dt class="col-sm-4">Revision</dt>
-            <dd class="col-sm-8">{{githubRev}}</dd>
-            {{#subdir}}
-            <dt class="col-sm-4">Sub-directory</dt>
-            <dd class="col-sm-8">{{subdir}}</dd>
-            {{/subdir}}
-            {{/GitHubSource}}
+            {{> packageVersionSource}}
           </dl>
         </dd>
         {{/packageVersionSource}}

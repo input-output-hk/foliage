@@ -1,0 +1,25 @@
+{{#TarballSource}}
+<dt>URL</dt>
+<dd><a href="{{tarballSourceURI}}">{{tarballSourceURI}}</a></dd>
+{{#subdir}}
+<dt>Subdir</dt>
+<dd>{{subdir}}</dt>
+{{/subdir}}
+{{/TarballSource}}
+{{#GitHubSource}}
+<dt>URL</dt>
+<dd>
+{{#subdir}}
+<a href="https://github.com/{{githubRepo}}/tree/{{githubRev}}/{{subdir}}">https://github.com/{{githubRepo}}</a>
+{{/subdir}}
+{{^subdir}}
+<a href="https://github.com/{{githubRepo}}/tree/{{githubRev}}">https://github.com/{{githubRepo}}</a>
+{{/subdir}}
+</dd>
+<dt>Commit hash</dt>
+<dd>{{githubRev}}</dd>
+{{#subdir}}
+<dt>Subdir</dt>
+<dd>{{subdir}}</dt>
+{{/subdir}}
+{{/GitHubSource}}
