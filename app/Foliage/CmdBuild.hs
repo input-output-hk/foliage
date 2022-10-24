@@ -10,6 +10,7 @@ import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
 import Data.Aeson (object, (.=))
 import Data.Aeson.Types (ToJSON)
+import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (for_)
 import Data.List (sortOn)
@@ -31,6 +32,7 @@ import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Meta.Aeson ()
 import Foliage.Options
+import Foliage.Pages (indexPageTemplate, packageVersionPageTemplate)
 import Foliage.PrepareSdist
 import Foliage.PrepareSource (addPrepareSourceRule, prepareSource)
 import Foliage.RemoteAsset (addFetchRemoteAssetRule)
@@ -41,7 +43,6 @@ import GHC.Generics (Generic)
 import Hackage.Security.Util.Path (castRoot, toFilePath)
 import System.Directory qualified as IO
 import Text.Mustache (renderMustache)
-import Foliage.Pages (packageVersionPageTemplate, indexPageTemplate)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
@@ -102,6 +103,11 @@ buildAction
 
     for_ packages $ makePackageVersionPage inputDir outputDir
 
+    for_ packages $ \pkgMeta@PackageVersionMeta {pkgId} -> do
+      let PackageIdentifier {pkgName, pkgVersion} = pkgId
+      cabalFilePath <- maybe (originalCabalFile pkgMeta) pure (revisedCabalFile inputDir pkgMeta)
+      copyFileChanged cabalFilePath (outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> prettyShow pkgName <.> "cabal")
+
     cabalEntries <-
       foldMap
         ( \pkgMeta@PackageVersionMeta {pkgId, pkgSpec} -> do
@@ -127,8 +133,17 @@ buildAction
 
     targetKeys <- maybeReadKeysAt "target"
     metadataEntries <-
-      for packages $
-        prepareIndexPkgMetadata currentTime expiryTime targetKeys
+      for packages $ \pkg@PackageVersionMeta {pkgId, pkgSpec} -> do
+        let PackageIdentifier {pkgName, pkgVersion} = pkgId
+        let PackageVersionSpec {packageVersionTimestamp} = pkgSpec
+        targets <- prepareIndexPkgMetadata expiryTime pkg
+        let path = outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> "package.json"
+        liftIO $ BL.writeFile path $ renderSignedJSON targetKeys targets
+        return $
+          mkTarEntry
+            (renderSignedJSON targetKeys targets)
+            (IndexPkgMetadata pkgId)
+            (fromMaybe currentTime packageVersionTimestamp)
 
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries)
     traced "Writing index" $ do
@@ -328,26 +343,19 @@ prepareIndexPkgCabal pkgId timestamp filePath = do
   contents <- liftIO $ BSL.readFile filePath
   return $ mkTarEntry contents (IndexPkgCabal pkgId) timestamp
 
-prepareIndexPkgMetadata :: UTCTime -> Maybe UTCTime -> [Some Key] -> PackageVersionMeta -> Action Tar.Entry
-prepareIndexPkgMetadata currentTime expiryTime keys PackageVersionMeta {pkgId, pkgSpec} = do
-  let PackageVersionSpec {packageVersionTimestamp} = pkgSpec
+prepareIndexPkgMetadata :: Maybe UTCTime -> PackageVersionMeta -> Action Targets
+prepareIndexPkgMetadata expiryTime PackageVersionMeta {pkgId, pkgSpec} = do
   srcDir <- prepareSource pkgId pkgSpec
   sdist <- prepareSdist srcDir
   targetFileInfo <- computeFileInfoSimple' sdist
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
-  let targets =
-        Targets
-          { targetsVersion = FileVersion 1,
-            targetsExpires = FileExpires expiryTime,
-            targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
-            targetsDelegations = Nothing
-          }
-
-  return $
-    mkTarEntry
-      (renderSignedJSON keys targets)
-      (IndexPkgMetadata pkgId)
-      (fromMaybe currentTime packageVersionTimestamp)
+  return
+    Targets
+      { targetsVersion = FileVersion 1,
+        targetsExpires = FileExpires expiryTime,
+        targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
+        targetsDelegations = Nothing
+      }
 
 mkTarEntry :: BSL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
 mkTarEntry contents indexFile timestamp =
