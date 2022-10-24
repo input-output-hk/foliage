@@ -19,7 +19,7 @@
     <div class="container px-4 py-5">
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
-          <li class="breadcrumb-item active" aria-current="page"><a href="#">Home</a></li>
+          <li class="breadcrumb-item active" aria-current="page"><a href="/">Home</a></li>
         </ol>
       </nav>
       <h1 class="py-5">
@@ -64,9 +64,13 @@
     </div>
     <script>
       $(document).ready(function () {
+        const urlParams = new URLSearchParams(location.search);
         $('#entries').DataTable({
           order: [[2, 'desc']],
           lengthMenu: [ [50, 100, 500, -1], [50, 100, 500, "All"] ],
+          search: {
+            search: urlParams.has('q') ? urlParams.get('q') : null,
+          }
         });
       });
     </script>
