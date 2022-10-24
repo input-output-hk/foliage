@@ -1,11 +1,12 @@
-cabal-version: 2.4
-name:          foliage
-description:   Foliage is a tool to create custom Haskell package repositories, in a fully reproducible way.
-version:       0.6.0.0
-maintainer:    andrea@andreabedini.com
-author:        Andrea Bedini
-license:       MIT
-license-file:  LICENSE
+cabal-version:      2.4
+name:               foliage
+description:        Foliage is a tool to create custom Haskell package repositories, in a fully reproducible way.
+version:            0.6.0.0
+maintainer:         andrea@andreabedini.com
+author:             Andrea Bedini
+license:            MIT
+license-file:       LICENSE
+extra-source-files: templates/*.mustache
 
 source-repository head
   type:     git
