@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Foliage.Meta
   ( PackageMeta (PackageMeta),
@@ -12,14 +13,15 @@ module Foliage.Meta
     packageMetaEntryTimestamp,
     readPackageMeta,
     writePackageMeta,
-    PackageVersionMeta (PackageVersionMeta),
+    PackageVersionMeta (PackageVersionMeta, pkgId, pkgSpec),
     packageVersionTimestamp,
     packageVersionSource,
     packageVersionRevisions,
     packageVersionForce,
-    readPackageVersionMeta,
-    writePackageVersionMeta,
-    RevisionMeta (RevisionMeta),
+    PackageVersionSpec (PackageVersionSpec),
+    readPackageVersionSpec,
+    writePackageVersionSpec,
+    RevisionSpec (RevisionSpec),
     revisionTimestamp,
     revisionNumber,
     PackageVersionSource,
@@ -30,6 +32,8 @@ module Foliage.Meta
     UTCTime,
     latestRevisionNumber,
     consolidateRanges,
+    cabalFileRevisionPath,
+    revisedCabalFile,
   )
 where
 
@@ -37,34 +41,25 @@ import Control.Applicative ((<|>))
 import Control.Monad (void)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Ord
+import Data.Ord (Down (Down))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
-import Development.Shake.Classes
-  ( Binary,
-    Hashable,
-    NFData,
-  )
+import Development.Shake.Classes (Binary, Hashable, NFData)
+import Distribution.Aeson ()
 import Distribution.Parsec (simpleParsec)
-import Distribution.Pretty
+import Distribution.Pretty (prettyShow)
 import Distribution.Types.Orphans ()
+import Distribution.Types.PackageId (PackageIdentifier (..))
+import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.Version (Version)
-import Distribution.Types.VersionRange
-  ( VersionRange,
-    anyVersion,
-    intersectVersionRanges,
-    notThisVersion,
-  )
-import Distribution.Version
-  ( isAnyVersion,
-    isNoVersion,
-    simplifyVersionRange,
-  )
+import Distribution.Types.VersionRange (VersionRange, anyVersion, intersectVersionRanges, notThisVersion)
+import Distribution.Version (isAnyVersion, isNoVersion, simplifyVersionRange)
 import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
-import Network.URI
+import Network.URI (URI, parseURI)
 import Network.URI.Orphans ()
+import System.FilePath ((<.>), (</>))
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
@@ -125,12 +120,12 @@ newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
 data PackageVersionSource
   = TarballSource
       { tarballSourceURI :: URI,
-        subdirs :: Maybe String
+        subdir :: Maybe String
       }
   | GitHubSource
       { githubRepo :: GitHubRepo,
         githubRev :: GitHubRev,
-        subdirs :: Maybe String
+        subdir :: Maybe String
       }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
@@ -174,50 +169,50 @@ matchGitHubSource :: PackageVersionSource -> Maybe ((GitHubRepo, GitHubRev), May
 matchGitHubSource (GitHubSource repo rev mSubdir) = Just ((repo, rev), mSubdir)
 matchGitHubSource _ = Nothing
 
-data PackageVersionMeta = PackageVersionMeta
+data PackageVersionSpec = PackageVersionSpec
   { -- | timestamp
     packageVersionTimestamp :: Maybe UTCTime,
     -- | source parameters
     packageVersionSource :: PackageVersionSource,
     -- | revisions
-    packageVersionRevisions :: [RevisionMeta],
+    packageVersionRevisions :: [RevisionSpec],
     -- | force version
     packageVersionForce :: Bool
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-sourceMetaCodec :: TomlCodec PackageVersionMeta
+sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
-  PackageVersionMeta
+  PackageVersionSpec
     <$> Toml.dioptional (timeCodec "timestamp") .= packageVersionTimestamp
     <*> packageSourceCodec .= packageVersionSource
     <*> Toml.list revisionMetaCodec "revisions" .= packageVersionRevisions
     <*> withDefault False (Toml.bool "force-version") .= packageVersionForce
 
-readPackageVersionMeta :: FilePath -> IO PackageVersionMeta
-readPackageVersionMeta = Toml.decodeFile sourceMetaCodec
+readPackageVersionSpec :: FilePath -> IO PackageVersionSpec
+readPackageVersionSpec = Toml.decodeFile sourceMetaCodec
 
-writePackageVersionMeta :: FilePath -> PackageVersionMeta -> IO ()
-writePackageVersionMeta fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
+writePackageVersionSpec :: FilePath -> PackageVersionSpec -> IO ()
+writePackageVersionSpec fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
 
-data RevisionMeta = RevisionMeta
+data RevisionSpec = RevisionSpec
   { revisionTimestamp :: UTCTime,
     revisionNumber :: Int
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
-revisionMetaCodec :: TomlCodec RevisionMeta
+revisionMetaCodec :: TomlCodec RevisionSpec
 revisionMetaCodec =
-  RevisionMeta
+  RevisionSpec
     <$> timeCodec "timestamp" .= revisionTimestamp
     <*> Toml.int "number" .= revisionNumber
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
 
-latestRevisionNumber :: PackageVersionMeta -> Maybe Int
+latestRevisionNumber :: PackageVersionSpec -> Maybe Int
 latestRevisionNumber sm =
   case sortOn (Down . revisionNumber) (packageVersionRevisions sm) of
     [] -> Nothing
@@ -236,3 +231,18 @@ consolidateRanges PackageMetaEntry {packageMetaEntryPreferred, packageMetaEntryD
     range =
       simplifyVersionRange $
         foldr intersectVersionRanges anyVersion (map notThisVersion packageMetaEntryDeprecated ++ packageMetaEntryPreferred)
+
+data PackageVersionMeta = PackageVersionMeta
+  { pkgId :: PackageIdentifier,
+    pkgSpec :: PackageVersionSpec
+  }
+  deriving (Show, Eq)
+  deriving (Generic)
+
+cabalFileRevisionPath :: FilePath -> PackageIdentifier -> Int -> FilePath
+cabalFileRevisionPath inputDir PackageIdentifier {pkgName, pkgVersion} revisionNumber =
+  inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal"
+
+revisedCabalFile :: FilePath -> PackageVersionMeta -> Maybe FilePath
+revisedCabalFile inputDir PackageVersionMeta {pkgId, pkgSpec} = do
+  cabalFileRevisionPath inputDir pkgId <$> latestRevisionNumber pkgSpec

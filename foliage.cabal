@@ -1,11 +1,12 @@
-cabal-version: 2.4
-name:          foliage
-description:   Foliage is a tool to create custom Haskell package repositories, in a fully reproducible way.
-version:       0.6.0.0
-maintainer:    andrea@andreabedini.com
-author:        Andrea Bedini
-license:       MIT
-license-file:  LICENSE
+cabal-version:      2.4
+name:               foliage
+description:        Foliage is a tool to create custom Haskell package repositories, in a fully reproducible way.
+version:            0.6.0.0
+maintainer:         andrea@andreabedini.com
+author:             Andrea Bedini
+license:            MIT
+license-file:       LICENSE
+extra-source-files: templates/*.mustache
 
 source-repository head
   type:     git
@@ -15,6 +16,8 @@ executable foliage
     main-is:            Main.hs
     hs-source-dirs:     app
     other-modules:
+        Distribution.Aeson
+        Distribution.PackageDescription.FieldGrammar.Copy
         Distribution.Types.Orphans
         Foliage.CmdBuild
         Foliage.CmdCreateKeys
@@ -23,6 +26,7 @@ executable foliage
         Foliage.Meta
         Foliage.Meta.Aeson
         Foliage.Options
+        Foliage.Pages
         Foliage.PrepareSource
         Foliage.PrepareSdist
         Foliage.RemoteAsset
@@ -41,6 +45,7 @@ executable foliage
         base                 >=4.14.3.0   && <4.18,
         aeson                >=2.0.3.0    && <2.2,
         base64               >=0.4.2.3    && <0.5,
+        binary,
         bytestring           >=0.10.12.0  && <0.12,
         Cabal                >=3.8        && <3.9,
         Cabal-syntax         >=3.8        && <3.9,
@@ -53,6 +58,7 @@ executable foliage
         network-uri         ^>=2.6.4.1,
         optparse-applicative >=0.17.0.0   && <0.18,
         shake                >=0.19.6     && <0.20,
+        stache,
         tar                  >=0.5.1.1    && <0.6,
         text                 >=1.2.4.1    && <2.1,
         time                 >=1.9.3      && <1.13,

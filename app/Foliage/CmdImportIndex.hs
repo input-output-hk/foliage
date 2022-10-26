@@ -42,8 +42,8 @@ importIndex ::
   Show e =>
   (PackageIdentifier -> Bool) ->
   Tar.Entries e ->
-  Map PackageIdentifier PackageVersionMeta ->
-  IO (Map PackageIdentifier PackageVersionMeta)
+  Map PackageIdentifier PackageVersionSpec ->
+  IO (Map PackageIdentifier PackageVersionSpec)
 importIndex f (Tar.Next e es) m =
   case isCabalFile e of
     Just (pkgId, contents, time)
@@ -54,7 +54,7 @@ importIndex f (Tar.Next e es) m =
               go Nothing =
                 pure $
                   Just $
-                    PackageVersionMeta
+                    PackageVersionSpec
                       { packageVersionSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
                         packageVersionTimestamp = Just time,
                         packageVersionRevisions = [],
@@ -63,7 +63,7 @@ importIndex f (Tar.Next e es) m =
               -- Existing package, new revision
               go (Just sm) = do
                 let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
-                    newRevision = RevisionMeta {revisionNumber = revnum, revisionTimestamp = time}
+                    newRevision = RevisionSpec {revisionNumber = revnum, revisionTimestamp = time}
                 -- Repeatedly adding at the end of a list is bad performance but good for the moment.
                 let sm' = sm {packageVersionRevisions = packageVersionRevisions sm ++ [newRevision]}
                 let PackageIdentifier pkgName pkgVersion = pkgId
@@ -89,12 +89,12 @@ pkgIdToHackageUrl pkgId =
 
 finalise ::
   PackageIdentifier ->
-  PackageVersionMeta ->
+  PackageVersionSpec ->
   IO ()
 finalise PackageIdentifier {pkgName, pkgVersion} meta = do
   let dir = "_sources" </> unPackageName pkgName </> prettyShow pkgVersion
   createDirectoryIfMissing True dir
-  writePackageVersionMeta (dir </> "meta.toml") meta
+  writePackageVersionSpec (dir </> "meta.toml") meta
 
 isCabalFile ::
   Tar.Entry ->

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+
+    <title>
+      {{#pkgDesc}}
+      {{name}}-{{version}}
+      {{/pkgDesc}}
+    </title>
+  </head>
+  <body>
+    {{#pkgDesc}}
+    <div class="container px-4 py-5">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/timeline/">Timeline</a></li>
+          <li class="breadcrumb-item"><a href="/timeline/?q={{name}}">{{name}}</a></li>
+          <li class="breadcrumb-item active" aria-current="page">{{version}}</li>
+        </ol>
+      </nav>
+      <h1 class="py-5">
+        {{name}}-{{version}}
+      </h1>
+      <dl class="row class="px-4 py-5">
+        <dt class="col-sm-3">Synopsis</dt>
+        <dd class="col-sm-9"><p>{{synopsis}}</p></dd>
+        <dt class="col-sm-3">Description</dt>
+        <dd class="col-sm-9"><p>{{description}}</p></dd>
+        <dt class="col-sm-3">Author</dt>
+        <dd class="col-sm-9"><p>{{author}}</p></dd>
+        <dt class="col-sm-3">Maintainer</dt>
+        <dd class="col-sm-9"><p>{{maintainer}}</p></dd>
+        <dt class="col-sm-3">License</dt>
+        <dd class="col-sm-9"><p>{{license}}</p></dd>
+        {{/pkgDesc}}
+        {{#pkgSpec}}
+        {{#packageVersionSource}}
+        <dt class="col-sm-3">Source</dt>
+        <dd class="col-sm-9">
+          <dl class="row">
+            {{> packageVersionSource}}
+          </dl>
+        </dd>
+        {{/packageVersionSource}}
+        <dt class="col-sm-3">Timestamp</dt>
+        <dd class="col-sm-9"><p>{{packageVersionTimestamp}}</p></dd>
+        <dt class="col-sm-3">Revisions</dt>
+        <dd class="col-sm-9">
+          {{#packageVersionRevisions}}
+          <p>{{revisionTimestamp}}</p>
+          {{/packageVersionRevisions}}
+          {{^packageVersionRevisions}}
+          <p>None</p>
+          {{/packageVersionRevisions}}
+        </dd>
+      </dl>
+    </div>
+    {{/pkgSpec}}
+  </body>
+</html>

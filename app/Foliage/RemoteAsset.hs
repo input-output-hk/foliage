@@ -48,11 +48,11 @@ addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
       let oldETag = fromMaybe BS.empty old
 
       newETag <-
-        withTempFile $ \fp -> do
-          liftIO $ BS.writeFile fp oldETag
-          liftIO $ createDirectoryIfMissing True (takeDirectory path)
+        withTempFile $ \fp -> traced "curl" $ do
+          BS.writeFile fp oldETag
+          createDirectoryIfMissing True (takeDirectory path)
           cmd_ Shell ["curl", "--silent", "--location", "--etag-compare", fp, "--etag-save", fp, "--output", path, show uri]
-          liftIO $ BS.readFile fp
+          BS.readFile fp
 
       let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
       return $ RunResult {runChanged = changed, runStore = newETag, runValue = path}

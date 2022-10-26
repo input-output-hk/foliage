@@ -1,9 +1,11 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Foliage.Meta.Aeson where
 
+import Distribution.Types.Orphans ()
 import Data.Aeson
 import Data.Text
 import Foliage.Meta
@@ -14,7 +16,9 @@ deriving via MyAesonEncoding PackageMeta instance ToJSON PackageMeta
 
 deriving via MyAesonEncoding PackageMetaEntry instance ToJSON PackageMetaEntry
 
-deriving via MyAesonEncoding RevisionMeta instance ToJSON RevisionMeta
+deriving via MyAesonEncoding RevisionSpec instance ToJSON RevisionSpec
+
+deriving via MyAesonEncoding PackageVersionSpec instance ToJSON PackageVersionSpec
 
 deriving via MyAesonEncoding PackageVersionMeta instance ToJSON PackageVersionMeta
 
@@ -27,7 +31,9 @@ instance ToJSON PackageVersionSource where
     genericToJSON
       defaultOptions
         { sumEncoding = ObjectWithSingleField
+        , omitNothingFields = True
         }
 
 instance ToJSON URI where
+  toJSON :: URI -> Value
   toJSON = toJSON . show

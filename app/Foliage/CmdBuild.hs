@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Foliage.CmdBuild (cmdBuild) where
@@ -6,7 +7,9 @@ import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
+import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy qualified as BSL
+import Data.Foldable (for_)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
@@ -17,7 +20,9 @@ import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
+import Foliage.Meta.Aeson ()
 import Foliage.Options
+import Foliage.Pages
 import Foliage.PrepareSdist
 import Foliage.PrepareSource (addPrepareSourceRule, prepareSource)
 import Foliage.RemoteAsset (addFetchRemoteAssetRule)
@@ -78,19 +83,33 @@ buildAction
         putInfo $ "Current time set to " <> Time.iso8601Show t <> "."
         return t
 
-    packages <- getPackages inputDir
+    packageVersions <- getPackageVersions inputDir
+
+    makeSummaryPage currentTime outputDir packageVersions
+
+    makeTimelinePage currentTime outputDir packageVersions
+
+    for_ packageVersions $ makePackageVersionPage inputDir outputDir
+
+    for_ packageVersions $ \pkgMeta@PackageVersionMeta {pkgId} -> do
+      let PackageIdentifier {pkgName, pkgVersion} = pkgId
+      cabalFilePath <- maybe (originalCabalFile pkgMeta) pure (revisedCabalFile inputDir pkgMeta)
+      copyFileChanged cabalFilePath (outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> prettyShow pkgName <.> "cabal")
 
     cabalEntries <-
       foldMap
-        ( \(pkgId, pkgMeta) -> do
-            let PackageVersionMeta {packageVersionTimestamp, packageVersionRevisions} = pkgMeta
-            srcDir <- prepareSource pkgId pkgMeta
-            let cabalFilePath = srcDir </> unPackageName (pkgName pkgId) <.> "cabal"
+        ( \pkgMeta@PackageVersionMeta {pkgId, pkgSpec} -> do
+            let PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions} = pkgSpec
+
+            -- original cabal file, with its timestamp (if specified)
+            cabalFilePath <- originalCabalFile pkgMeta
             let cabalFileTimestamp = fromMaybe currentTime packageVersionTimestamp
             cf <- prepareIndexPkgCabal pkgId cabalFileTimestamp cabalFilePath
+
+            -- all revised cabal files, with their timestamp
             revcf <-
               for packageVersionRevisions $
-                \RevisionMeta {revisionTimestamp, revisionNumber} ->
+                \RevisionSpec {revisionTimestamp, revisionNumber} ->
                   prepareIndexPkgCabal
                     pkgId
                     revisionTimestamp
@@ -98,10 +117,21 @@ buildAction
 
             return $ cf : revcf
         )
-        packages
+        packageVersions
 
     targetKeys <- maybeReadKeysAt "target"
-    metadataEntries <- for packages $ uncurry (prepareIndexPkgMetadata currentTime expiryTime targetKeys)
+    metadataEntries <-
+      for packageVersions $ \pkg@PackageVersionMeta {pkgId, pkgSpec} -> do
+        let PackageIdentifier {pkgName, pkgVersion} = pkgId
+        let PackageVersionSpec {packageVersionTimestamp} = pkgSpec
+        targets <- prepareIndexPkgMetadata expiryTime pkg
+        let path = outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> "package.json"
+        liftIO $ BL.writeFile path $ renderSignedJSON targetKeys targets
+        return $
+          mkTarEntry
+            (renderSignedJSON targetKeys targets)
+            (IndexPkgMetadata pkgId)
+            (fromMaybe currentTime packageVersionTimestamp)
 
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries)
     traced "Writing index" $ do
@@ -191,8 +221,8 @@ buildAction
             timestampInfoSnapshot = snapshotInfo
           }
 
-getPackages :: FilePath -> Action [(PackageIdentifier, PackageVersionMeta)]
-getPackages inputDir = do
+getPackageVersions :: FilePath -> Action [PackageVersionMeta]
+getPackageVersions inputDir = do
   metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
 
   when (null metaFiles) $ do
@@ -209,21 +239,28 @@ getPackages inputDir = do
     let Just version = simpleParsec pkgVersion
     let pkgId = PackageIdentifier name version
 
-    meta <-
-      readPackageVersionMeta' (inputDir </> metaFile) >>= \case
-        PackageVersionMeta {packageVersionRevisions, packageVersionTimestamp = Nothing}
+    pkgSpec <-
+      readPackageVersionSpec' (inputDir </> metaFile) >>= \case
+        PackageVersionSpec {packageVersionRevisions, packageVersionTimestamp = Nothing}
           | not (null packageVersionRevisions) -> do
             putError $
-              inputDir </> metaFile <> " has cabal file revisions but the original package has no timestamp. This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
+              unlines
+                [ inputDir </> metaFile <> " has cabal file revisions but the original package has no timestamp.",
+                  "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
+                ]
             fail "invalid package metadata"
-        PackageVersionMeta {packageVersionRevisions, packageVersionTimestamp = Just pkgTs}
+        PackageVersionSpec {packageVersionRevisions, packageVersionTimestamp = Just pkgTs}
           | any ((< pkgTs) . revisionTimestamp) packageVersionRevisions -> do
             putError $
-              inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself. Adjust the timestamps so that all revisions come after the original package"
+              unlines
+                [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself.",
+                  "Adjust the timestamps so that all revisions come after the original package"
+                ]
             fail "invalid package metadata"
         meta ->
           return meta
-    return (pkgId, meta)
+
+    return $ PackageVersionMeta pkgId pkgSpec
 
 prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 prepareIndexPkgCabal pkgId timestamp filePath = do
@@ -231,26 +268,19 @@ prepareIndexPkgCabal pkgId timestamp filePath = do
   contents <- liftIO $ BSL.readFile filePath
   return $ mkTarEntry contents (IndexPkgCabal pkgId) timestamp
 
-prepareIndexPkgMetadata :: UTCTime -> Maybe UTCTime -> [Some Key] -> PackageIdentifier -> PackageVersionMeta -> Action Tar.Entry
-prepareIndexPkgMetadata currentTime expiryTime keys pkgId pkgMeta = do
-  let PackageVersionMeta {packageVersionTimestamp} = pkgMeta
-  srcDir <- prepareSource pkgId pkgMeta
+prepareIndexPkgMetadata :: Maybe UTCTime -> PackageVersionMeta -> Action Targets
+prepareIndexPkgMetadata expiryTime PackageVersionMeta {pkgId, pkgSpec} = do
+  srcDir <- prepareSource pkgId pkgSpec
   sdist <- prepareSdist srcDir
   targetFileInfo <- computeFileInfoSimple' sdist
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
-  let targets =
-        Targets
-          { targetsVersion = FileVersion 1,
-            targetsExpires = FileExpires expiryTime,
-            targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
-            targetsDelegations = Nothing
-          }
-
-  return $
-    mkTarEntry
-      (renderSignedJSON keys targets)
-      (IndexPkgMetadata pkgId)
-      (fromMaybe currentTime packageVersionTimestamp)
+  return
+    Targets
+      { targetsVersion = FileVersion 1,
+        targetsExpires = FileExpires expiryTime,
+        targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
+        targetsDelegations = Nothing
+      }
 
 mkTarEntry :: BSL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
 mkTarEntry contents indexFile timestamp =
@@ -271,7 +301,3 @@ mkTarEntry contents indexFile timestamp =
 anchorPath :: Path Absolute -> (RepoLayout -> RepoPath) -> FilePath
 anchorPath outputDirRoot p =
   toFilePath $ anchorRepoPathLocally outputDirRoot $ p hackageRepoLayout
-
-cabalFileRevisionPath :: FilePath -> PackageIdentifier -> Int -> FilePath
-cabalFileRevisionPath inputDir PackageIdentifier {pkgName, pkgVersion} revisionNumber =
-  inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal"
