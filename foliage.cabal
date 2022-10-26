@@ -45,6 +45,7 @@ executable foliage
         base                 >=4.14.3.0   && <4.18,
         aeson                >=2.0.3.0    && <2.2,
         base64               >=0.4.2.3    && <0.5,
+        binary,
         bytestring           >=0.10.12.0  && <0.12,
         Cabal                >=3.8        && <3.9,
         Cabal-syntax         >=3.8        && <3.9,

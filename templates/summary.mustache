@@ -12,66 +12,66 @@
     <link rel="stylesheet" href="https://cdn.datatables.net/v/bs5/dt-1.12.1/datatables.min.css" integrity="sha384-4+3RMUungd+Oh0juS2Jl3yQ7mPlVfsgr10NLSsqltLXIECi9ExY4d1cTtmf9aN8E" crossorigin="anonymous">
     <script src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.12.1/datatables.min.js" integrity="sha384-eU1uLDC5C4YCIouMauJZjbrnSmIiICWWAPdnZjRkNnuDxG+eJFN/EhW5GlKPAIVl" crossorigin="anonymous"></script>
     <title>
-      Repository's content
+      Index summary
     </title>
   </head>
   <body>
     <div class="container px-4 py-5">
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
-          <li class="breadcrumb-item active" aria-current="page"><a href="/">Home</a></li>
+          <li class="breadcrumb-item active" aria-current="page"><a href="/summary/">Summary</a></li>
         </ol>
       </nav>
       <h1 class="py-5">
-        Repository's entries
+        Index summary
       </h1>
-      <table id="entries" class="table table-hover">
+      <p>
+        This page lists the latest version and revision of all packages in the index.
+      </p>
+      <table class="table table-hover">
         <thead>
           <tr>
-            <th>Package identifier</th>
-            <th>Type</th>
-            <th>Timestamp</th>
+            <th>Package</th>
+            <th>Added on</th>
             <th>Source</th>
+            <th>Revision</th>
           </th>
         </thead>
         <tbody>
-        {{#entries}}
-          {{#IndexEntryPackage}}
+        {{#packages}}
           <tr>
-            <td class="col-sm-2"><a href="package/{{indexEntryPkgId}}">{{indexEntryPkgId}}</a></td>
-            <td class="col-sm-1">package</td>
-            <td class="col-sm-3" data-order="{{indexEntryTimestampPosix}}">{{indexEntryTimestamp}}</td>
+            <td class="col-sm-2"><a href="/package/{{summaryPageEntryPkgId}}">{{summaryPageEntryPkgId}}</a></td>
+            <td class="col-sm-3" data-order="{{summaryPageEntryTimestampPosix}}">{{summaryPageEntryTimestamp}}</td>
             <td class="col-sm-6">
               <dl class="row">
-              {{#indexEntrySource}}
+              {{#summaryPageEntrySource}}
               {{> packageVersionSource}}
-              {{/indexEntrySource}}
+              {{/summaryPageEntrySource}}
               </dl>
             </td>
+            <td class="col-sm-3">
+              {{#summaryPageEntryRevision}}
+              Last revision at {{revisionTimestamp}}
+              {{/summaryPageEntryRevision}}
+              {{^summaryPageEntryRevision}}
+              No revision
+              {{/summaryPageEntryRevision}}
+            </td>
           </tr>
-          {{/IndexEntryPackage}}
-          {{#IndexEntryRevision}}
-          <tr>
-            <td>{{indexEntryPkgId}}</td>
-            <td>revision</td>
-            <td data-order="{{indexEntryTimestampPosix}}">{{indexEntryTimestamp}}</td>
-            <td></td>
-          </tr>
-          {{/IndexEntryRevision}}
-        {{/entries}}
+        {{/packages}}
         </tbody>
       </table>
     </div>
     <script>
       $(document).ready(function () {
-        const urlParams = new URLSearchParams(location.search);
-        $('#entries').DataTable({
-          order: [[2, 'desc']],
-          lengthMenu: [ [50, 100, 500, -1], [50, 100, 500, "All"] ],
-          search: {
-            search: urlParams.has('q') ? urlParams.get('q') : null,
-          }
-        });
+        const table = $('table').DataTable({
+          order: [[0, 'asc']],
+          lengthMenu: [ [50, 100, 500, -1], [50, 100, 500, "All"] ]
+        })
+        const urlParams = new URLSearchParams(location.search)
+        if (urlParams.has('q')) {
+          table.search(urlParams.get('q')).draw()
+        }
       });
     </script>
   </body>

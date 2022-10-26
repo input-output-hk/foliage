@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Foliage.Meta.Aeson where
 
@@ -30,7 +31,9 @@ instance ToJSON PackageVersionSource where
     genericToJSON
       defaultOptions
         { sumEncoding = ObjectWithSingleField
+        , omitNothingFields = True
         }
 
 instance ToJSON URI where
+  toJSON :: URI -> Value
   toJSON = toJSON . show

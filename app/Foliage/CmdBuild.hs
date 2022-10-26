@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -8,41 +7,28 @@ import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when)
-import Data.Aeson (object, (.=))
-import Data.Aeson.Types (ToJSON)
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (for_)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Ord
-import Data.Text.Lazy.IO qualified as TL
-import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
-import Distribution.Aeson
 import Distribution.Package
-import Distribution.PackageDescription (GenericPackageDescription)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
-import Distribution.Simple.PackageDescription (readGenericPackageDescription)
-import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Meta.Aeson ()
 import Foliage.Options
-import Foliage.Pages (indexPageTemplate, packageVersionPageTemplate)
+import Foliage.Pages
 import Foliage.PrepareSdist
 import Foliage.PrepareSource (addPrepareSourceRule, prepareSource)
 import Foliage.RemoteAsset (addFetchRemoteAssetRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
-import Foliage.Utils.Aeson
-import GHC.Generics (Generic)
 import Hackage.Security.Util.Path (castRoot, toFilePath)
-import System.Directory qualified as IO
-import Text.Mustache (renderMustache)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
@@ -97,13 +83,15 @@ buildAction
         putInfo $ "Current time set to " <> Time.iso8601Show t <> "."
         return t
 
-    packages <- getPackages inputDir
+    packageVersions <- getPackageVersions inputDir
 
-    makeIndexPage currentTime outputDir packages
+    makeSummaryPage currentTime outputDir packageVersions
 
-    for_ packages $ makePackageVersionPage inputDir outputDir
+    makeTimelinePage currentTime outputDir packageVersions
 
-    for_ packages $ \pkgMeta@PackageVersionMeta {pkgId} -> do
+    for_ packageVersions $ makePackageVersionPage inputDir outputDir
+
+    for_ packageVersions $ \pkgMeta@PackageVersionMeta {pkgId} -> do
       let PackageIdentifier {pkgName, pkgVersion} = pkgId
       cabalFilePath <- maybe (originalCabalFile pkgMeta) pure (revisedCabalFile inputDir pkgMeta)
       copyFileChanged cabalFilePath (outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> prettyShow pkgName <.> "cabal")
@@ -129,11 +117,11 @@ buildAction
 
             return $ cf : revcf
         )
-        packages
+        packageVersions
 
     targetKeys <- maybeReadKeysAt "target"
     metadataEntries <-
-      for packages $ \pkg@PackageVersionMeta {pkgId, pkgSpec} -> do
+      for packageVersions $ \pkg@PackageVersionMeta {pkgId, pkgSpec} -> do
         let PackageIdentifier {pkgName, pkgVersion} = pkgId
         let PackageVersionSpec {packageVersionTimestamp} = pkgSpec
         targets <- prepareIndexPkgMetadata expiryTime pkg
@@ -233,66 +221,8 @@ buildAction
             timestampInfoSnapshot = snapshotInfo
           }
 
-data IndexEntry
-  = IndexEntryPackage
-      { indexEntryPkgId :: PackageIdentifier,
-        indexEntryTimestamp :: UTCTime,
-        indexEntryTimestampPosix :: POSIXTime,
-        indexEntrySource :: PackageVersionSource
-      }
-  | IndexEntryRevision
-      { indexEntryPkgId :: PackageIdentifier,
-        indexEntryTimestamp :: UTCTime,
-        indexEntryTimestampPosix :: POSIXTime
-      }
-  deriving stock (Generic)
-  deriving (ToJSON) via MyAesonEncoding IndexEntry
-
-makeIndexPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
-makeIndexPage currentTime outputDir packages = do
-  let entries =
-        sortOn (Down . indexEntryTimestamp) $
-          foldMap
-            ( \PackageVersionMeta {pkgId, pkgSpec = PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}} ->
-                IndexEntryPackage
-                  { indexEntryPkgId = pkgId,
-                    indexEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
-                    indexEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
-                    indexEntrySource = packageVersionSource
-                  } :
-                map
-                  ( \RevisionSpec {revisionTimestamp} ->
-                      IndexEntryRevision
-                        { indexEntryPkgId = pkgId,
-                          indexEntryTimestamp = revisionTimestamp,
-                          indexEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                        }
-                  )
-                  packageVersionRevisions
-            )
-            packages
-
-  liftIO $ do
-    IO.createDirectoryIfMissing True outputDir
-    TL.writeFile (outputDir </> "index.html") $
-      renderMustache indexPageTemplate $
-        object ["entries" .= entries]
-
-makePackageVersionPage :: FilePath -> FilePath -> PackageVersionMeta -> Action ()
-makePackageVersionPage inputDir outputDir pkgMeta@PackageVersionMeta {pkgId, pkgSpec} = do
-  cabalFilePath <- maybe (originalCabalFile pkgMeta) pure (revisedCabalFile inputDir pkgMeta)
-  pkgDesc <- readGenericPackageDescription' cabalFilePath
-  liftIO $ do
-    IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
-    TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
-      renderMustache packageVersionPageTemplate $
-        object
-          [ "pkgSpec" .= pkgSpec,
-            "pkgDesc" .= jsonGenericPackageDescription pkgDesc
-          ]
-
-getPackages :: FilePath -> Action [PackageVersionMeta]
-getPackages inputDir = do
+getPackageVersions :: FilePath -> Action [PackageVersionMeta]
+getPackageVersions inputDir = do
   metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
 
   when (null metaFiles) $ do
@@ -331,11 +261,6 @@ getPackages inputDir = do
           return meta
 
     return $ PackageVersionMeta pkgId pkgSpec
-
-readGenericPackageDescription' :: FilePath -> Action GenericPackageDescription
-readGenericPackageDescription' fp = do
-  need [fp]
-  liftIO $ readGenericPackageDescription Verbosity.silent fp
 
 prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 prepareIndexPkgCabal pkgId timestamp filePath = do
@@ -376,16 +301,3 @@ mkTarEntry contents indexFile timestamp =
 anchorPath :: Path Absolute -> (RepoLayout -> RepoPath) -> FilePath
 anchorPath outputDirRoot p =
   toFilePath $ anchorRepoPathLocally outputDirRoot $ p hackageRepoLayout
-
-cabalFileRevisionPath :: FilePath -> PackageIdentifier -> Int -> FilePath
-cabalFileRevisionPath inputDir PackageIdentifier {pkgName, pkgVersion} revisionNumber =
-  inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal"
-
-originalCabalFile :: PackageVersionMeta -> Action FilePath
-originalCabalFile PackageVersionMeta {pkgId, pkgSpec} = do
-  srcDir <- prepareSource pkgId pkgSpec
-  return $ srcDir </> unPackageName (pkgName pkgId) <.> "cabal"
-
-revisedCabalFile :: FilePath -> PackageVersionMeta -> Maybe FilePath
-revisedCabalFile inputDir PackageVersionMeta {pkgId, pkgSpec} = do
-  cabalFileRevisionPath inputDir pkgId <$> latestRevisionNumber pkgSpec
