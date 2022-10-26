@@ -85,7 +85,7 @@ buildAction
 
     packageVersions <- getPackageVersions inputDir
 
-    makeSummaryPage currentTime outputDir packageVersions
+    makeContentsPage currentTime outputDir packageVersions
 
     makeTimelinePage currentTime outputDir packageVersions
 

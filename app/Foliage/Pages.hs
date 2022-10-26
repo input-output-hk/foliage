@@ -4,10 +4,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Foliage.Pages
-  ( summaryPageTemplate,
+  ( contentsPageTemplate,
     timelinePageTemplate,
     packageVersionPageTemplate,
-    makeSummaryPage,
+    makeContentsPage,
     makePackageVersionPage,
     makeTimelinePage,
   )
@@ -36,28 +36,28 @@ import Text.Mustache (Template)
 import Text.Mustache.Compile.TH (compileMustacheDir)
 import Text.Mustache.Render (renderMustache)
 
-data SummaryPageEntry = SummaryPageEntry
-  { summaryPageEntryPkgId :: PackageIdentifier,
-    summaryPageEntryTimestamp :: UTCTime,
-    summaryPageEntryTimestampPosix :: POSIXTime,
-    summaryPageEntrySource :: PackageVersionSource,
-    summaryPageEntryRevision :: Maybe RevisionSpec
+data ContentsPageEntry = ContentsPageEntry
+  { contentsPageEntryPkgId :: PackageIdentifier,
+    contentsPageEntryTimestamp :: UTCTime,
+    contentsPageEntryTimestampPosix :: POSIXTime,
+    contentsPageEntrySource :: PackageVersionSource,
+    contentsPageEntryRevision :: Maybe RevisionSpec
   }
   deriving stock (Generic)
-  deriving (ToJSON) via MyAesonEncoding SummaryPageEntry
+  deriving (ToJSON) via MyAesonEncoding ContentsPageEntry
 
-makeSummaryPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
-makeSummaryPage currentTime outputDir packageVersions = do
+makeContentsPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
+makeContentsPage currentTime outputDir packageVersions = do
   let packages =
-        sortOn summaryPageEntryPkgId $
+        sortOn contentsPageEntryPkgId $
           map
             ( ( \PackageVersionMeta {pkgId, pkgSpec = PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}} ->
-                  SummaryPageEntry
-                    { summaryPageEntryPkgId = pkgId,
-                      summaryPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
-                      summaryPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
-                      summaryPageEntrySource = packageVersionSource,
-                      summaryPageEntryRevision = listToMaybe packageVersionRevisions
+                  ContentsPageEntry
+                    { contentsPageEntryPkgId = pkgId,
+                      contentsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
+                      contentsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
+                      contentsPageEntrySource = packageVersionSource,
+                      contentsPageEntryRevision = listToMaybe packageVersionRevisions
                     }
               )
                 . head
@@ -66,9 +66,9 @@ makeSummaryPage currentTime outputDir packageVersions = do
             $ groupBy ((==) `on` (pkgName . pkgId)) packageVersions
   liftIO $ do
     IO.createDirectoryIfMissing True outputDir
-    IO.createDirectoryIfMissing True (outputDir </> "summary")
-    TL.writeFile (outputDir </> "summary" </> "index.html") $
-      renderMustache summaryPageTemplate $
+    IO.createDirectoryIfMissing True (outputDir </> "contents")
+    TL.writeFile (outputDir </> "contents" </> "index.html") $
+      renderMustache contentsPageTemplate $
         object ["packages" .= packages]
 
 data TimelinePageEntry
@@ -130,8 +130,8 @@ makePackageVersionPage inputDir outputDir pkgMeta@PackageVersionMeta {pkgId, pkg
             "pkgDesc" .= jsonGenericPackageDescription pkgDesc
           ]
 
-summaryPageTemplate :: Template
-summaryPageTemplate = $(compileMustacheDir "summary" "templates")
+contentsPageTemplate :: Template
+contentsPageTemplate = $(compileMustacheDir "contents" "templates")
 
 timelinePageTemplate :: Template
 timelinePageTemplate = $(compileMustacheDir "timeline" "templates")
