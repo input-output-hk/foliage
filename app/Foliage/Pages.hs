@@ -4,12 +4,13 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module Foliage.Pages
-  ( contentsPageTemplate,
-    timelinePageTemplate,
+  ( allPackagesPageTemplate,
+    allPackageVersionsPageTemplate,
     packageVersionPageTemplate,
-    makeContentsPage,
+    makeAllPackagesPage,
     makePackageVersionPage,
-    makeTimelinePage,
+    makeAllPackageVersionsPage,
+    makeIndexPage,
   )
 where
 
@@ -21,7 +22,7 @@ import Data.Ord (Down (Down))
 import Data.Text.Lazy.IO.Utf8 qualified as TL
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
-import Development.Shake (Action, liftIO)
+import Development.Shake (Action, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
 import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
@@ -36,92 +37,98 @@ import Text.Mustache (Template)
 import Text.Mustache.Compile.TH (compileMustacheDir)
 import Text.Mustache.Render (renderMustache)
 
-data ContentsPageEntry = ContentsPageEntry
-  { contentsPageEntryPkgId :: PackageIdentifier,
-    contentsPageEntryTimestamp :: UTCTime,
-    contentsPageEntryTimestampPosix :: POSIXTime,
-    contentsPageEntrySource :: PackageVersionSource,
-    contentsPageEntryRevision :: Maybe RevisionSpec
+makeIndexPage :: FilePath -> Action ()
+makeIndexPage outputDir =
+  traced "webpages / index" $ do
+    IO.createDirectoryIfMissing True outputDir
+    TL.writeFile (outputDir </> "index.html") $
+      renderMustache indexPageTemplate $
+        object []
+
+data AllPackagesPageEntry = AllPackagesPageEntry
+  { allPackagesPageEntryPkgId :: PackageIdentifier,
+    allPackagesPageEntryTimestamp :: UTCTime,
+    allPackagesPageEntryTimestampPosix :: POSIXTime,
+    allPackagesPageEntrySource :: PackageVersionSource,
+    allPackagesPageEntryRevision :: Maybe RevisionSpec
   }
   deriving stock (Generic)
-  deriving (ToJSON) via MyAesonEncoding ContentsPageEntry
+  deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeContentsPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
-makeContentsPage currentTime outputDir packageVersions = do
+makeAllPackagesPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
+makeAllPackagesPage currentTime outputDir packageVersions = do
   let packages =
-        sortOn contentsPageEntryPkgId $
+        sortOn allPackagesPageEntryPkgId $
           map
             ( ( \PackageVersionMeta {pkgId, pkgSpec = PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}} ->
-                  ContentsPageEntry
-                    { contentsPageEntryPkgId = pkgId,
-                      contentsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
-                      contentsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
-                      contentsPageEntrySource = packageVersionSource,
-                      contentsPageEntryRevision = listToMaybe packageVersionRevisions
+                  AllPackagesPageEntry
+                    { allPackagesPageEntryPkgId = pkgId,
+                      allPackagesPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
+                      allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
+                      allPackagesPageEntrySource = packageVersionSource,
+                      allPackagesPageEntryRevision = listToMaybe packageVersionRevisions
                     }
               )
                 . head
                 . sortOn (Down . pkgVersion . pkgId)
             )
             $ groupBy ((==) `on` (pkgName . pkgId)) packageVersions
-  liftIO $ do
-    IO.createDirectoryIfMissing True outputDir
-    IO.createDirectoryIfMissing True (outputDir </> "contents")
-    TL.writeFile (outputDir </> "contents" </> "index.html") $
-      renderMustache contentsPageTemplate $
+  traced "webpages / all-packages" $ do
+    IO.createDirectoryIfMissing True (outputDir </> "all-packages")
+    TL.writeFile (outputDir </> "all-packages" </> "index.html") $
+      renderMustache allPackagesPageTemplate $
         object ["packages" .= packages]
 
-data TimelinePageEntry
-  = TimelinePageEntryPackage
-      { timelinePageEntryPkgId :: PackageIdentifier,
-        timelinePageEntryTimestamp :: UTCTime,
-        timelinePageEntryTimestampPosix :: POSIXTime,
-        timelinePageEntrySource :: PackageVersionSource
+data AllPackageVersionsPageEntry
+  = AllPackageVersionsPageEntryPackage
+      { allPackageVersionsPageEntryPkgId :: PackageIdentifier,
+        allPackageVersionsPageEntryTimestamp :: UTCTime,
+        allPackageVersionsPageEntryTimestampPosix :: POSIXTime,
+        allPackageVersionsPageEntrySource :: PackageVersionSource
       }
-  | TimelinePageEntryRevision
-      { timelinePageEntryPkgId :: PackageIdentifier,
-        timelinePageEntryTimestamp :: UTCTime,
-        timelinePageEntryTimestampPosix :: POSIXTime
+  | AllPackageVersionsPageEntryRevision
+      { allPackageVersionsPageEntryPkgId :: PackageIdentifier,
+        allPackageVersionsPageEntryTimestamp :: UTCTime,
+        allPackageVersionsPageEntryTimestampPosix :: POSIXTime
       }
   deriving stock (Generic)
-  deriving (ToJSON) via MyAesonEncoding TimelinePageEntry
+  deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeTimelinePage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
-makeTimelinePage currentTime outputDir packageVersions = do
+makeAllPackageVersionsPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
+makeAllPackageVersionsPage currentTime outputDir packageVersions = do
   let entries =
-        sortOn (Down . timelinePageEntryTimestamp) $
+        sortOn (Down . allPackageVersionsPageEntryTimestamp) $
           foldMap
             ( \PackageVersionMeta {pkgId, pkgSpec = PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}} ->
-                TimelinePageEntryPackage
-                  { timelinePageEntryPkgId = pkgId,
-                    timelinePageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
-                    timelinePageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
-                    timelinePageEntrySource = packageVersionSource
+                AllPackageVersionsPageEntryPackage
+                  { allPackageVersionsPageEntryPkgId = pkgId,
+                    allPackageVersionsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
+                    allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
+                    allPackageVersionsPageEntrySource = packageVersionSource
                   } :
                 map
                   ( \RevisionSpec {revisionTimestamp} ->
-                      TimelinePageEntryRevision
-                        { timelinePageEntryPkgId = pkgId,
-                          timelinePageEntryTimestamp = revisionTimestamp,
-                          timelinePageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                      AllPackageVersionsPageEntryRevision
+                        { allPackageVersionsPageEntryPkgId = pkgId,
+                          allPackageVersionsPageEntryTimestamp = revisionTimestamp,
+                          allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
                         }
                   )
                   packageVersionRevisions
             )
             packageVersions
 
-  liftIO $ do
-    IO.createDirectoryIfMissing True outputDir
-    IO.createDirectoryIfMissing True (outputDir </> "timeline")
-    TL.writeFile (outputDir </> "timeline" </> "index.html") $
-      renderMustache timelinePageTemplate $
+  traced "webpages / all-package-versions" $ do
+    IO.createDirectoryIfMissing True (outputDir </> "all-package-versions")
+    TL.writeFile (outputDir </> "all-package-versions" </> "index.html") $
+      renderMustache allPackageVersionsPageTemplate $
         object ["entries" .= entries]
 
 makePackageVersionPage :: FilePath -> FilePath -> PackageVersionMeta -> Action ()
 makePackageVersionPage inputDir outputDir pkgMeta@PackageVersionMeta {pkgId, pkgSpec} = do
   cabalFilePath <- maybe (originalCabalFile pkgMeta) pure (revisedCabalFile inputDir pkgMeta)
   pkgDesc <- readGenericPackageDescription' cabalFilePath
-  liftIO $ do
+  traced ("webpages / package / " ++ prettyShow pkgId) $ do
     IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
     TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
       renderMustache packageVersionPageTemplate $
@@ -130,11 +137,14 @@ makePackageVersionPage inputDir outputDir pkgMeta@PackageVersionMeta {pkgId, pkg
             "pkgDesc" .= jsonGenericPackageDescription pkgDesc
           ]
 
-contentsPageTemplate :: Template
-contentsPageTemplate = $(compileMustacheDir "contents" "templates")
+indexPageTemplate :: Template
+indexPageTemplate = $(compileMustacheDir "index" "templates")
 
-timelinePageTemplate :: Template
-timelinePageTemplate = $(compileMustacheDir "timeline" "templates")
+allPackagesPageTemplate :: Template
+allPackagesPageTemplate = $(compileMustacheDir "allPackages" "templates")
+
+allPackageVersionsPageTemplate :: Template
+allPackageVersionsPageTemplate = $(compileMustacheDir "allPackageVersions" "templates")
 
 packageVersionPageTemplate :: Template
 packageVersionPageTemplate = $(compileMustacheDir "packageVersion" "templates")

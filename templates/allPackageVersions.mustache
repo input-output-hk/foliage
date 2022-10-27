@@ -14,21 +14,27 @@
     -->
     <script src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.12.1/datatables.js"></script>
     <title>
-      Index timeline
+      All package versions
     </title>
   </head>
   <body>
-    <div class="container px-4 py-5">
-      <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-          <li class="breadcrumb-item active" aria-current="page"><a href="/timeline/">Timeline</a></li>
-        </ol>
-      </nav>
+    <div class="container px-3 py-5">
+      <ul class="nav">
+        <li class="nav-item">
+          <a class="nav-link" href="../index.html">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="../all-packages/index.html">All packages</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link active" aria-current="page" href="#">All package versions</a>
+        </li>
+      </ul>
       <h1 class="py-5">
-        Index timeline
+        All package versions
       </h1>
       <p>
-        This page lists all package versions and revisions in the index.
+        This page lists all package versions and revisions in the repository.
       </p>
       <table class="table table-hover">
         <thead>
@@ -41,28 +47,28 @@
         </thead>
         <tbody>
         {{#entries}}
-          {{#TimelinePageEntryPackage}}
+          {{#AllPackageVersionsPageEntryPackage}}
           <tr>
-            <td class="col-sm-2"><a href="/package/{{timelinePageEntryPkgId}}">{{timelinePageEntryPkgId}}</a></td>
+            <td class="col-sm-2"><a href="../package/{{allPackageVersionsPageEntryPkgId}}">{{allPackageVersionsPageEntryPkgId}}</a></td>
             <td class="col-sm-1">Version</td>
-            <td class="col-sm-3" data-order="{{timelinePageEntryTimestampPosix}}">{{timelinePageEntryTimestamp}}</td>
+            <td class="col-sm-3" data-order="{{allPackageVersionsPageEntryTimestampPosix}}">{{allPackageVersionsPageEntryTimestamp}}</td>
             <td class="col-sm-6">
               <dl class="row">
-              {{#timelinePageEntrySource}}
+              {{#allPackageVersionsPageEntrySource}}
               {{> packageVersionSource}}
-              {{/timelinePageEntrySource}}
+              {{/allPackageVersionsPageEntrySource}}
               </dl>
             </td>
           </tr>
-          {{/TimelinePageEntryPackage}}
-          {{#TimelinePageEntryRevision}}
+          {{/AllPackageVersionsPageEntryPackage}}
+          {{#AllPackageVersionsPageEntryRevision}}
           <tr>
-            <td>{{timelinePageEntryPkgId}}</td>
+            <td>{{allPackageVersionsPageEntryPkgId}}</td>
             <td>Revision</td>
-            <td data-order="{{timelinePageEntryTimestampPosix}}">{{timelinePageEntryTimestamp}}</td>
+            <td data-order="{{allPackageVersionsPageEntryTimestampPosix}}">{{allPackageVersionsPageEntryTimestamp}}</td>
             <td></td>
           </tr>
-          {{/TimelinePageEntryRevision}}
+          {{/AllPackageVersionsPageEntryRevision}}
         {{/entries}}
         </tbody>
       </table>

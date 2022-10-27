@@ -85,9 +85,11 @@ buildAction
 
     packageVersions <- getPackageVersions inputDir
 
-    makeContentsPage currentTime outputDir packageVersions
+    makeIndexPage outputDir
 
-    makeTimelinePage currentTime outputDir packageVersions
+    makeAllPackagesPage currentTime outputDir packageVersions
+
+    makeAllPackageVersionsPage currentTime outputDir packageVersions
 
     for_ packageVersions $ makePackageVersionPage inputDir outputDir
 

@@ -17,14 +17,17 @@
   <body>
     {{#pkgDesc}}
     <div class="container px-4 py-5">
-      <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-          <li class="breadcrumb-item"><a href="/timeline/">Timeline</a></li>
-          <li class="breadcrumb-item"><a href="/timeline/?q={{name}}">{{name}}</a></li>
-          <li class="breadcrumb-item active" aria-current="page">{{version}}</li>
-        </ol>
-      </nav>
-      <h1 class="py-5">
+      <ul class="nav">
+        <li class="nav-item">
+          <a class="nav-link" href="../../index.html">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="../../all-packages/index.html">All packages</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="../../all-package-versions/index.html">All package versions</a>
+        </li>
+      </ul>      <h1 class="py-5">
         {{name}}-{{version}}
       </h1>
       <dl class="row class="px-4 py-5">

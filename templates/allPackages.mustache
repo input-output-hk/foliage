@@ -12,18 +12,24 @@
     <link rel="stylesheet" href="https://cdn.datatables.net/v/bs5/dt-1.12.1/datatables.min.css" integrity="sha384-4+3RMUungd+Oh0juS2Jl3yQ7mPlVfsgr10NLSsqltLXIECi9ExY4d1cTtmf9aN8E" crossorigin="anonymous">
     <script src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.12.1/datatables.min.js" integrity="sha384-eU1uLDC5C4YCIouMauJZjbrnSmIiICWWAPdnZjRkNnuDxG+eJFN/EhW5GlKPAIVl" crossorigin="anonymous"></script>
     <title>
-      Index contents
+      All packages
     </title>
   </head>
   <body>
     <div class="container px-4 py-5">
-      <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-          <li class="breadcrumb-item active" aria-current="page"><a href="/contents/">Contents</a></li>
-        </ol>
-      </nav>
+      <ul class="nav">
+        <li class="nav-item">
+          <a class="nav-link" href="../index.html">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link active" aria-current="page" href="#">All packages</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="../all-package-versions/index.html">All package versions</a>
+        </li>
+      </ul>
       <h1 class="py-5">
-        Index contents
+        All packages
       </h1>
       <p>
         This page lists the latest version and revision of all packages in the index.
@@ -40,22 +46,22 @@
         <tbody>
         {{#packages}}
           <tr>
-            <td class="col-sm-2"><a href="/package/{{contentsPageEntryPkgId}}">{{contentsPageEntryPkgId}}</a></td>
-            <td class="col-sm-3" data-order="{{contentsPageEntryTimestampPosix}}">{{contentsPageEntryTimestamp}}</td>
+            <td class="col-sm-2"><a href="../package/{{allPackagesPageEntryPkgId}}">{{allPackagesPageEntryPkgId}}</a></td>
+            <td class="col-sm-3" data-order="{{allPackagesPageEntryTimestampPosix}}">{{allPackagesPageEntryTimestamp}}</td>
             <td class="col-sm-6">
               <dl class="row">
-              {{#contentsPageEntrySource}}
+              {{#allPackagesPageEntrySource}}
               {{> packageVersionSource}}
-              {{/contentsPageEntrySource}}
+              {{/allPackagesPageEntrySource}}
               </dl>
             </td>
             <td class="col-sm-3">
-              {{#contentsPageEntryRevision}}
+              {{#allPackagesPageEntryRevision}}
               Last revision at {{revisionTimestamp}}
-              {{/contentsPageEntryRevision}}
-              {{^contentsPageEntryRevision}}
+              {{/allPackagesPageEntryRevision}}
+              {{^allPackagesPageEntryRevision}}
               No revision
-              {{/contentsPageEntryRevision}}
+              {{/allPackagesPageEntryRevision}}
             </td>
           </tr>
         {{/packages}}
