@@ -77,7 +77,8 @@
       $(document).ready(function () {
         const table = $('table').DataTable({
           order: [[2, 'desc']],
-          lengthMenu: [ [50, 100, 500, -1], [50, 100, 500, "All"] ]
+          lengthMenu: [ [50, 100, 500, -1], [50, 100, 500, "All"] ],
+          paging: false
         })
         const urlParams = new URLSearchParams(location.search)
         if (urlParams.has('q')) {
