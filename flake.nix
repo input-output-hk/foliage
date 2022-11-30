@@ -16,7 +16,7 @@
           inherit (haskell-nix) config;
           overlays = [ haskell-nix.overlay ];
         };
-        project = pkgs.haskell-nix.cabalProject {
+        project = pkgs.pkgsCross.musl64.haskell-nix.cabalProject {
           src = ./.;
           compiler-nix-name = "ghc8107";
           shell.tools = {
