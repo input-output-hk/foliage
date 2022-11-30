@@ -24,16 +24,12 @@
             hlint = { };
             haskell-language-server = { };
           };
-          shell.buildInputs = with pkgs; [ nixpkgs-fmt fsatrace ];
           modules =
             [{ packages.foliage.components.exes.foliage.dontStrip = false; }];
+
         };
       in {
         packages.default = project.foliage.components.exes.foliage;
-        devShell = pkgs.mkShell {
-          name = "foliage-dev-shell";
-          buildInputs = with pkgs; [ fsatrace ];
-        };
       });
 
   nixConfig = {
