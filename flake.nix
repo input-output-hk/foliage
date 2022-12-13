@@ -9,6 +9,7 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, haskell-nix }:
+
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -17,7 +18,13 @@
           overlays = [ haskell-nix.overlay ];
         };
 
-        static-pkgs = pkgs.pkgsCross.musl64;
+        static-pkgs = if pkgs.stdenv.hostPlatform.isLinux then
+          if pkgs.stdenv.hostPlatform.isAarch64 then
+            pkgs.pkgsCross.aarch64-multiplatform-musl
+          else
+            pkgs.pkgsCross.musl64
+        else
+          pkgs;
 
         mkFoliage = haskell-nix:
           let
@@ -43,7 +50,7 @@
           foliage-static = mkFoliage static-pkgs.haskell-nix;
         };
 
-        hydraJobs =  packages;
+        hydraJobs = packages;
       });
 
   nixConfig = {
