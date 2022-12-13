@@ -16,21 +16,34 @@
           inherit (haskell-nix) config;
           overlays = [ haskell-nix.overlay ];
         };
-        project = pkgs.pkgsCross.musl64.haskell-nix.cabalProject {
-          src = ./.;
-          compiler-nix-name = "ghc8107";
-          shell.tools = {
-            cabal = { };
-            hlint = { };
-            haskell-language-server = { };
-          };
-          modules =
-            [{ packages.foliage.components.exes.foliage.dontStrip = false; }];
 
+        static-pkgs = pkgs.pkgsCross.musl64;
+
+        mkFoliage = haskell-nix:
+          let
+            project = haskell-nix.cabalProject {
+              src = ./.;
+              compiler-nix-name = "ghc8107";
+              shell.tools = {
+                cabal = { };
+                hlint = { };
+                haskell-language-server = { };
+              };
+              modules = [{
+                packages.foliage.components.exes.foliage.dontStrip = false;
+              }];
+            };
+          in project.foliage.components.exes.foliage;
+
+      in rec {
+        packages = rec {
+          default = foliage;
+          foliage = mkFoliage pkgs.haskell-nix;
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          foliage-static = mkFoliage static-pkgs.haskell-nix;
         };
-      in {
-        packages.default = project.foliage.components.exes.foliage;
-        hydraJobs.foliage = project.foliage.components.exes.foliage;
+
+        hydraJobs =  packages;
       });
 
   nixConfig = {
@@ -38,7 +51,7 @@
       "https://cache.iog.io"
       "https://foliage.cachix.org"
       "https://cache.zw3rk.com"
-     ];
+    ];
     extra-trusted-public-keys = [
       "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
       "foliage.cachix.org-1:kAFyYLnk8JcRURWReWZCatM9v3Rk24F5wNMpEj14Q/g="
