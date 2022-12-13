@@ -30,14 +30,19 @@
         };
       in {
         packages.default = project.foliage.components.exes.foliage;
+        hydraJobs.foliage = project.foliage.components.exes.foliage;
       });
 
   nixConfig = {
-    extra-substituters =
-      [ "https://cache.iog.io" "https://foliage.cachix.org" ];
+    extra-substituters = [
+      "https://cache.iog.io"
+      "https://foliage.cachix.org"
+      "https://ci.zw3rk.com"
+     ];
     extra-trusted-public-keys = [
       "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
       "foliage.cachix.org-1:kAFyYLnk8JcRURWReWZCatM9v3Rk24F5wNMpEj14Q/g="
+      "loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk="
     ];
   };
 }
