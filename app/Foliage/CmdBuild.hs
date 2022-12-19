@@ -6,10 +6,9 @@ module Foliage.CmdBuild (cmdBuild) where
 import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
-import Control.Monad (unless, when)
+import Control.Monad (unless, when, void)
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy qualified as BSL
-import Data.Foldable (for_)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
@@ -45,7 +44,8 @@ cmdBuild buildOptions = do
     opts =
       shakeOptions
         { shakeFiles = cacheDir,
-          shakeVerbosity = Verbose
+          shakeVerbosity = Verbose,
+          shakeThreads = buildOptsNumThreads buildOptions
         }
 
 buildAction :: BuildOptions -> Action ()
@@ -91,9 +91,9 @@ buildAction
 
     makeAllPackageVersionsPage currentTime outputDir packageVersions
 
-    for_ packageVersions $ makePackageVersionPage inputDir outputDir
+    void $ forP packageVersions $ makePackageVersionPage inputDir outputDir
 
-    for_ packageVersions $ \pkgMeta@PackageVersionMeta {pkgId} -> do
+    void $ forP packageVersions $ \pkgMeta@PackageVersionMeta {pkgId} -> do
       let PackageIdentifier {pkgName, pkgVersion} = pkgId
       cabalFilePath <- maybe (originalCabalFile pkgMeta) pure (revisedCabalFile inputDir pkgMeta)
       copyFileChanged cabalFilePath (outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> prettyShow pkgName <.> "cabal")
@@ -123,7 +123,7 @@ buildAction
 
     targetKeys <- maybeReadKeysAt "target"
     metadataEntries <-
-      for packageVersions $ \pkg@PackageVersionMeta {pkgId, pkgSpec} -> do
+      forP packageVersions $ \pkg@PackageVersionMeta {pkgId, pkgSpec} -> do
         let PackageIdentifier {pkgName, pkgVersion} = pkgId
         let PackageVersionSpec {packageVersionTimestamp} = pkgSpec
         targets <- prepareIndexPkgMetadata expiryTime pkg
@@ -235,7 +235,7 @@ getPackageVersions inputDir = do
         ]
     fail "no package metadata found"
 
-  for metaFiles $ \metaFile -> do
+  forP metaFiles $ \metaFile -> do
     let [pkgName, pkgVersion, _] = splitDirectories metaFile
     let Just name = simpleParsec pkgName
     let Just version = simpleParsec pkgVersion
