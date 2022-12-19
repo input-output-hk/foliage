@@ -34,7 +34,7 @@ cmdBuild buildOptions = do
   outputDirRoot <- liftIO $ makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
   shake opts $
     do
-      addFetchRemoteAssetRule cacheDir
+      addFetchRemoteAssetRule cacheDir (buildNetrcFile buildOptions)
       addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
       addPrepareSdistRule outputDirRoot
       phony "buildAction" (buildAction buildOptions)

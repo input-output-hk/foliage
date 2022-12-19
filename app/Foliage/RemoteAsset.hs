@@ -16,6 +16,7 @@ import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
+import Foliage.Options (NetrcOptions (..))
 import Network.URI (URI (..), URIAuth (..), pathSegments)
 import Network.URI.Orphans ()
 import System.Directory (createDirectoryIfMissing)
@@ -29,8 +30,8 @@ type instance RuleResult RemoteAsset = FilePath
 fetchRemoteAsset :: URI -> Action FilePath
 fetchRemoteAsset = apply1 . RemoteAsset
 
-addFetchRemoteAssetRule :: FilePath -> Rules ()
-addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
+addFetchRemoteAssetRule :: FilePath -> NetrcOptions -> Rules ()
+addFetchRemoteAssetRule cacheDir netrcOpt = addBuiltinRule noLint noIdentity run
   where
     run :: BuiltinRun RemoteAsset FilePath
     run (RemoteAsset uri) old _mode = do
@@ -51,7 +52,11 @@ addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
         withTempFile $ \fp -> traced "curl" $ do
           BS.writeFile fp oldETag
           createDirectoryIfMissing True (takeDirectory path)
-          cmd_ Shell ["curl", "--silent", "--location", "--etag-compare", fp, "--etag-save", fp, "--output", path, show uri]
+          let netrc = case netrcOpt of
+                NoNetrc -> []
+                UseNetrc Nothing -> ["--netrc"]
+                UseNetrc (Just netrcPath) -> ["--netrc-file", netrcPath]
+          cmd_ Shell $ ["curl", "--silent", "--location", "--etag-compare", fp, "--etag-save", fp, "--output", path] ++ netrc ++ [show uri]
           BS.readFile fp
 
       let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff

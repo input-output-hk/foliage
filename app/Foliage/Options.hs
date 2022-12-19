@@ -7,6 +7,7 @@ module Foliage.Options
     Command (..),
     BuildOptions (..),
     SignOptions (..),
+    NetrcOptions (..),
     ImportIndexOptions (..),
     ImportFilter (..),
   )
@@ -46,13 +47,20 @@ data SignOptions
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
+data NetrcOptions
+  = NoNetrc
+  | UseNetrc (Maybe FilePath)
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
 data BuildOptions = BuildOptions
   { buildOptsSignOpts :: SignOptions,
     buildOptsCurrentTime :: Maybe UTCTime,
     buildOptsExpireSignaturesOn :: Maybe UTCTime,
     buildOptsInputDir :: FilePath,
     buildOptsOutputDir :: FilePath,
-    buildOptsNumThreads :: Int
+    buildOptsNumThreads :: Int,
+    buildNetrcFile :: NetrcOptions
   }
 
 buildCommand :: Parser Command
@@ -100,6 +108,7 @@ buildCommand =
                   <> showDefault
                   <> value 1
               )
+            <*> netrcOpts
         )
   where
     signOpts =
@@ -115,6 +124,18 @@ buildCommand =
         <|> ( SignOptsDon'tSign
                 <$ switch (long "no-signatures" <> help "Don't sign the repository")
             )
+
+    netrcOpts = maybe NoNetrc UseNetrc <$> parser
+      where
+        parser = optional (parserWithFile <|> parserWithoutFile)
+        parserWithoutFile =
+          flag'
+            Nothing
+            (long "use-netrc" <> help "Pass --netrc-file to curl")
+        parserWithFile =
+          Just
+            <$> strOption
+              (long "use-netrc-file" <> metavar "NETRC_FILE" <> help "Pass --netrc-file NETRC_FILE to curl")
 
 createKeysCommand :: Parser Command
 createKeysCommand =
