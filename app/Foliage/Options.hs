@@ -131,11 +131,11 @@ buildCommand =
         parserWithoutFile =
           flag'
             Nothing
-            (long "use-netrc" <> help "Pass --netrc-file to curl")
+            (long "netrc" <> help "Pass --netrc to curl")
         parserWithFile =
           Just
             <$> strOption
-              (long "use-netrc-file" <> metavar "NETRC_FILE" <> help "Pass --netrc-file NETRC_FILE to curl")
+              (long "netrc-file" <> metavar "NETRC_FILE" <> help "Pass --netrc-file NETRC_FILE to curl")
 
 createKeysCommand :: Parser Command
 createKeysCommand =
