@@ -1,3 +1,6 @@
 packages: .
 index-state: 2022-08-29T00:00:00Z
-with-compiler: ghc-8.10.7
+with-compiler: ghc-9.2.4
+allow-newer:
+  , tomland:base
+  , tomland:text

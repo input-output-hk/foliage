@@ -30,7 +30,7 @@
           let
             project = haskell-nix.cabalProject {
               src = ./.;
-              compiler-nix-name = "ghc8107";
+              compiler-nix-name = "ghc924";
               shell.tools = {
                 cabal = { };
                 hlint = { };
