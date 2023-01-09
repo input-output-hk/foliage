@@ -5,7 +5,7 @@
   inputs = {
     nixpkgs.follows = "haskell-nix/nixpkgs-unstable";
     haskell-nix.url = "github:input-output-hk/haskell.nix";
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-utils.follows = "haskell-nix/flake-utils";
   };
 
   outputs = { self, nixpkgs, flake-utils, haskell-nix }:
@@ -18,7 +18,7 @@
           overlays = [ haskell-nix.overlay ];
         };
 
-        static-pkgs = if pkgs.stdenv.hostPlatform.isLinux then
+        pkgs-static-where-possible = if pkgs.stdenv.hostPlatform.isLinux then
           if pkgs.stdenv.hostPlatform.isAarch64 then
             pkgs.pkgsCross.aarch64-multiplatform-musl
           else
@@ -26,28 +26,20 @@
         else
           pkgs;
 
-        mkFoliage = haskell-nix:
-          let
-            project = haskell-nix.cabalProject {
-              src = ./.;
-              compiler-nix-name = "ghc924";
-              shell.tools = {
-                cabal = { };
-                hlint = { };
-                haskell-language-server = { };
-              };
-              modules = [{
-                packages.foliage.components.exes.foliage.dontStrip = false;
-              }];
-            };
-          in project.foliage.components.exes.foliage;
+        project = pkgs-static-where-possible.haskell-nix.cabalProject {
+          src = ./.;
+          compiler-nix-name = "ghc924";
+          shell.tools = {
+            cabal = { };
+            hlint = { };
+            haskell-language-server = { };
+          };
+        };
 
       in rec {
         packages = rec {
           default = foliage;
-          foliage = mkFoliage pkgs.haskell-nix;
-        } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          foliage-static = mkFoliage static-pkgs.haskell-nix;
+          foliage = project.foliage.components.exes.foliage;
         };
 
         hydraJobs = packages;
