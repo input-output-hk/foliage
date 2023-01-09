@@ -28,7 +28,7 @@
 
         project = pkgs-static-where-possible.haskell-nix.cabalProject {
           src = ./.;
-          compiler-nix-name = "ghc924";
+          compiler-nix-name = "ghc8107";
           shell.tools = {
             cabal = { };
             hlint = { };
