@@ -26,7 +26,7 @@
         else
           pkgs;
 
-        project = pkgs-static-where-possible.haskell-nix.cabalProject {
+        project = pkgs-static-where-possible.haskell-nix.cabalProject' {
           src = ./.;
           compiler-nix-name = "ghc8107";
           shell.tools = {
@@ -36,14 +36,9 @@
           };
         };
 
-      in rec {
-        packages = rec {
-          default = foliage;
-          foliage = project.foliage.components.exes.foliage;
-        };
+        flake = project.flake { };
 
-        hydraJobs = packages;
-      });
+      in flake // { packages.default = flake.packages."foliage:exe:foliage"; });
 
   nixConfig = {
     extra-substituters = [
