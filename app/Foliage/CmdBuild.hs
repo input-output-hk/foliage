@@ -6,9 +6,8 @@ module Foliage.CmdBuild (cmdBuild) where
 import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
-import Control.Monad (unless, when, void)
+import Control.Monad (unless, void, when)
 import Data.ByteString.Lazy qualified as BL
-import Data.ByteString.Lazy qualified as BSL
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
@@ -137,8 +136,8 @@ buildAction
 
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries)
     traced "Writing index" $ do
-      BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
-      BSL.writeFile (anchorPath outputDirRoot repoLayoutIndexTarGz) $ GZip.compress tarContents
+      BL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
+      BL.writeFile (anchorPath outputDirRoot repoLayoutIndexTarGz) $ GZip.compress tarContents
 
     privateKeysRoot <- maybeReadKeysAt "root"
     privateKeysTarget <- maybeReadKeysAt "target"
@@ -245,20 +244,20 @@ getPackageVersions inputDir = do
       readPackageVersionSpec' (inputDir </> metaFile) >>= \case
         PackageVersionSpec {packageVersionRevisions, packageVersionTimestamp = Nothing}
           | not (null packageVersionRevisions) -> do
-            putError $
-              unlines
-                [ inputDir </> metaFile <> " has cabal file revisions but the original package has no timestamp.",
-                  "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
-                ]
-            fail "invalid package metadata"
+              putError $
+                unlines
+                  [ inputDir </> metaFile <> " has cabal file revisions but the original package has no timestamp.",
+                    "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
+                  ]
+              fail "invalid package metadata"
         PackageVersionSpec {packageVersionRevisions, packageVersionTimestamp = Just pkgTs}
           | any ((< pkgTs) . revisionTimestamp) packageVersionRevisions -> do
-            putError $
-              unlines
-                [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself.",
-                  "Adjust the timestamps so that all revisions come after the original package"
-                ]
-            fail "invalid package metadata"
+              putError $
+                unlines
+                  [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself.",
+                    "Adjust the timestamps so that all revisions come after the original package"
+                  ]
+              fail "invalid package metadata"
         meta ->
           return meta
 
@@ -267,7 +266,7 @@ getPackageVersions inputDir = do
 prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 prepareIndexPkgCabal pkgId timestamp filePath = do
   need [filePath]
-  contents <- liftIO $ BSL.readFile filePath
+  contents <- liftIO $ BL.readFile filePath
   return $ mkTarEntry contents (IndexPkgCabal pkgId) timestamp
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PackageVersionMeta -> Action Targets
@@ -284,7 +283,7 @@ prepareIndexPkgMetadata expiryTime PackageVersionMeta {pkgId, pkgSpec} = do
         targetsDelegations = Nothing
       }
 
-mkTarEntry :: BSL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
+mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
 mkTarEntry contents indexFile timestamp =
   (Tar.fileEntry tarPath contents)
     { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp,
