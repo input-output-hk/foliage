@@ -58,8 +58,8 @@ data AllPackagesPageEntry = AllPackagesPageEntry
 makeAllPackagesPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
 makeAllPackagesPage currentTime outputDir packageVersions = do
   let packages =
-        sortOn allPackagesPageEntryPkgId $
-          map
+        sortOn allPackagesPageEntryPkgId
+          $ map
             ( ( \PackageVersionMeta {pkgId, pkgSpec = PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}} ->
                   AllPackagesPageEntry
                     { allPackagesPageEntryPkgId = pkgId,
@@ -72,7 +72,7 @@ makeAllPackagesPage currentTime outputDir packageVersions = do
                 . head
                 . sortOn (Down . pkgVersion . pkgId)
             )
-            $ groupBy ((==) `on` (pkgName . pkgId)) packageVersions
+          $ groupBy ((==) `on` (pkgName . pkgId)) packageVersions
   traced "webpages / all-packages" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-packages")
     TL.writeFile (outputDir </> "all-packages" </> "index.html") $
@@ -105,16 +105,16 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions = do
                     allPackageVersionsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
                     allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
                     allPackageVersionsPageEntrySource = packageVersionSource
-                  } :
-                map
-                  ( \RevisionSpec {revisionTimestamp} ->
-                      AllPackageVersionsPageEntryRevision
-                        { allPackageVersionsPageEntryPkgId = pkgId,
-                          allPackageVersionsPageEntryTimestamp = revisionTimestamp,
-                          allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                        }
-                  )
-                  packageVersionRevisions
+                  }
+                  : map
+                    ( \RevisionSpec {revisionTimestamp} ->
+                        AllPackageVersionsPageEntryRevision
+                          { allPackageVersionsPageEntryPkgId = pkgId,
+                            allPackageVersionsPageEntryTimestamp = revisionTimestamp,
+                            allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                          }
+                    )
+                    packageVersionRevisions
             )
             packageVersions
 

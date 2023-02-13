@@ -7,8 +7,10 @@ import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, void, when)
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.List (sortOn)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Development.Shake
@@ -26,6 +28,7 @@ import Foliage.PrepareSource (addPrepareSourceRule, prepareSource)
 import Foliage.RemoteAsset (addFetchRemoteAssetRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
+import Foliage.Utils.GitHub (githubRepoUrl)
 import Hackage.Security.Util.Path (castRoot, toFilePath)
 
 cmdBuild :: BuildOptions -> IO ()
@@ -89,6 +92,8 @@ buildAction
     makeAllPackagesPage currentTime outputDir packageVersions
 
     makeAllPackageVersionsPage currentTime outputDir packageVersions
+
+    makeMetadataFile outputDir packageVersions
 
     void $ forP packageVersions $ makePackageVersionPage inputDir outputDir
 
@@ -221,6 +226,42 @@ buildAction
             timestampExpires = FileExpires expiryTime,
             timestampInfoSnapshot = snapshotInfo
           }
+
+makeMetadataFile :: FilePath -> [PackageVersionMeta] -> Action ()
+makeMetadataFile outputDir packageVersions =
+  liftIO $
+    Aeson.encodeFile
+      (outputDir </> "metadata.json")
+      ( Map.fromList
+          [ (prettyShow pkgId, encodeMetadataSpec pkgSpec)
+            | PackageVersionMeta pkgId pkgSpec <- packageVersions
+          ]
+      )
+
+encodeMetadataSpec :: PackageVersionSpec -> Aeson.Value
+encodeMetadataSpec
+  PackageVersionSpec
+    { packageVersionSource,
+      packageVersionForce,
+      packageVersionTimestamp
+    } =
+    Aeson.object
+      ( ("source" Aeson..= source)
+          : ["forced-version" Aeson..= True | packageVersionForce]
+          ++ (case packageVersionTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
+      )
+    where
+      source = case packageVersionSource of
+        TarballSource uri mSubdir ->
+          Aeson.object
+            ( ("url" Aeson..= show uri)
+                : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
+            )
+        GitHubSource repo rev mSubdir ->
+          Aeson.object
+            ( ("url" Aeson..= show (githubRepoUrl repo rev))
+                : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
+            )
 
 getPackageVersions :: FilePath -> Action [PackageVersionMeta]
 getPackageVersions inputDir = do
