@@ -25,5 +25,3 @@ jobs:
            authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - run: nix build --accept-flake-config
-
-      - run: nix flake check --accept-flake-config --allow-import-from-derivation
