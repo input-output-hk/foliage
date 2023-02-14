@@ -52,7 +52,8 @@ data BuildOptions = BuildOptions
     buildOptsExpireSignaturesOn :: Maybe UTCTime,
     buildOptsInputDir :: FilePath,
     buildOptsOutputDir :: FilePath,
-    buildOptsNumThreads :: Int
+    buildOptsNumThreads :: Int,
+    buildOptsWriteMetadata :: Bool
   }
 
 buildCommand :: Parser Command
@@ -99,6 +100,11 @@ buildCommand =
                   <> help "Number of jobs to run in parallel, 0 is 'all available cores'"
                   <> showDefault
                   <> value 1
+              )
+            <*> switch
+              ( long "write-metadata"
+                  <> help "Write metadata in the output-directory"
+                  <> showDefault
               )
         )
   where

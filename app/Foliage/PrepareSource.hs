@@ -17,7 +17,7 @@ import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta
 import Foliage.RemoteAsset (fetchRemoteAsset)
 import Foliage.UpdateCabalFile (rewritePackageVersion)
-import Foliage.Utils.GitHub (githubRepoUrl)
+import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
 import System.Directory qualified as IO
 import System.FilePath ((<.>), (</>))
@@ -78,7 +78,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             -- metadata.
             --
             GitHubSource repo rev mSubdir -> do
-              let url = githubRepoUrl repo rev
+              let url = githubRepoTarballUrl repo rev
 
               tarballPath <- fetchRemoteAsset url
 

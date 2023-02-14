@@ -30,6 +30,7 @@ import Foliage.Shake
 import Foliage.Time qualified as Time
 import Foliage.Utils.GitHub (githubRepoUrl)
 import Hackage.Security.Util.Path (castRoot, toFilePath)
+import System.Directory (createDirectoryIfMissing)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
@@ -57,7 +58,8 @@ buildAction
       buildOptsCurrentTime = mCurrentTime,
       buildOptsExpireSignaturesOn = mExpireSignaturesOn,
       buildOptsInputDir = inputDir,
-      buildOptsOutputDir = outputDir
+      buildOptsOutputDir = outputDir,
+      buildOptsWriteMetadata = doWritePackageMeta
     } = do
     outputDirRoot <- liftIO $ makeAbsolute (fromFilePath outputDir)
 
@@ -93,7 +95,8 @@ buildAction
 
     makeAllPackageVersionsPage currentTime outputDir packageVersions
 
-    makeMetadataFile outputDir packageVersions
+    when doWritePackageMeta $
+      makeMetadataFile outputDir packageVersions
 
     void $ forP packageVersions $ makePackageVersionPage inputDir outputDir
 
@@ -228,15 +231,15 @@ buildAction
           }
 
 makeMetadataFile :: FilePath -> [PackageVersionMeta] -> Action ()
-makeMetadataFile outputDir packageVersions =
-  liftIO $
-    Aeson.encodeFile
-      (outputDir </> "metadata.json")
-      ( Map.fromList
-          [ (prettyShow pkgId, encodeMetadataSpec pkgSpec)
-            | PackageVersionMeta pkgId pkgSpec <- packageVersions
-          ]
-      )
+makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
+  createDirectoryIfMissing True (outputDir </> "foliage")
+  Aeson.encodeFile
+    (outputDir </> "foliage" </> "packages.json")
+    ( Map.fromList
+        [ (prettyShow pkgId, encodeMetadataSpec pkgSpec)
+          | PackageVersionMeta pkgId pkgSpec <- packageVersions
+        ]
+    )
 
 encodeMetadataSpec :: PackageVersionSpec -> Aeson.Value
 encodeMetadataSpec
@@ -259,7 +262,7 @@ encodeMetadataSpec
             )
         GitHubSource repo rev mSubdir ->
           Aeson.object
-            ( ("url" Aeson..= show (githubRepoUrl repo rev))
+            ( ("url" Aeson..= githubRepoUrl repo rev)
                 : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
             )
 
