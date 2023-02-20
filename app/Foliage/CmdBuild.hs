@@ -235,36 +235,38 @@ makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
   createDirectoryIfMissing True (outputDir </> "foliage")
   Aeson.encodeFile
     (outputDir </> "foliage" </> "packages.json")
-    ( Map.fromList
-        [ (prettyShow pkgId, encodeMetadataSpec pkgSpec)
-          | PackageVersionMeta pkgId pkgSpec <- packageVersions
-        ]
-    )
-
-encodeMetadataSpec :: PackageVersionSpec -> Aeson.Value
-encodeMetadataSpec
-  PackageVersionSpec
-    { packageVersionSource,
-      packageVersionForce,
-      packageVersionTimestamp
-    } =
-    Aeson.object
-      ( ("source" Aeson..= source)
-          : ["forced-version" Aeson..= True | packageVersionForce]
-          ++ (case packageVersionTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
-      )
-    where
-      source = case packageVersionSource of
-        TarballSource uri mSubdir ->
-          Aeson.object
-            ( ("url" Aeson..= show uri)
-                : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
-            )
-        GitHubSource repo rev mSubdir ->
-          Aeson.object
-            ( ("url" Aeson..= githubRepoUrl repo rev)
-                : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
-            )
+    (map encodePackageVersionMeta packageVersions)
+  where
+    encodePackageVersionMeta
+      PackageVersionMeta
+        { pkgId = PackageIdentifier {pkgName, pkgVersion},
+          pkgSpec =
+            PackageVersionSpec
+              { packageVersionSource,
+                packageVersionForce,
+                packageVersionTimestamp
+              }
+        } =
+        Aeson.object
+          ( [ "pkg-name" Aeson..= pkgName,
+              "pkg-version" Aeson..= pkgVersion,
+              "source" Aeson..= source
+            ]
+              ++ ["forced-version" Aeson..= True | packageVersionForce]
+              ++ (case packageVersionTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
+          )
+        where
+          source = case packageVersionSource of
+            TarballSource uri mSubdir ->
+              Aeson.object
+                ( ("url" Aeson..= show uri)
+                    : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
+                )
+            GitHubSource repo rev mSubdir ->
+              Aeson.object
+                ( ("url" Aeson..= githubRepoUrl repo rev)
+                    : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
+                )
 
 getPackageVersions :: FilePath -> Action [PackageVersionMeta]
 getPackageVersions inputDir = do
