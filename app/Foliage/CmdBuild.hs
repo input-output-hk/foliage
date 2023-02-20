@@ -10,8 +10,8 @@ import Control.Monad (unless, void, when)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.List (sortOn)
-import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Text qualified as T
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
@@ -28,8 +28,8 @@ import Foliage.PrepareSource (addPrepareSourceRule, prepareSource)
 import Foliage.RemoteAsset (addFetchRemoteAssetRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
-import Foliage.Utils.GitHub (githubRepoUrl)
 import Hackage.Security.Util.Path (castRoot, toFilePath)
+import Network.URI (URI (uriPath, uriQuery, uriScheme), nullURI)
 import System.Directory (createDirectoryIfMissing)
 
 cmdBuild :: BuildOptions -> IO ()
@@ -250,23 +250,26 @@ makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
         Aeson.object
           ( [ "pkg-name" Aeson..= pkgName,
               "pkg-version" Aeson..= pkgVersion,
-              "source" Aeson..= source
+              "url" Aeson..= sourceUrl packageVersionSource
             ]
               ++ ["forced-version" Aeson..= True | packageVersionForce]
               ++ (case packageVersionTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
           )
-        where
-          source = case packageVersionSource of
-            TarballSource uri mSubdir ->
-              Aeson.object
-                ( ("url" Aeson..= show uri)
-                    : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
-                )
-            GitHubSource repo rev mSubdir ->
-              Aeson.object
-                ( ("url" Aeson..= githubRepoUrl repo rev)
-                    : case mSubdir of Nothing -> []; Just s -> ["subdir" Aeson..= s]
-                )
+
+    sourceUrl :: PackageVersionSource -> URI
+    sourceUrl (TarballSource uri Nothing) = uri
+    sourceUrl (TarballSource uri (Just subdir)) = uri {uriQuery = "?dir=" ++ subdir}
+    sourceUrl (GitHubSource repo rev Nothing) =
+      nullURI
+        { uriScheme = "github:",
+          uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev)
+        }
+    sourceUrl (GitHubSource repo rev (Just subdir)) =
+      nullURI
+        { uriScheme = "github:",
+          uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev),
+          uriQuery = "?dir=" ++ subdir
+        }
 
 getPackageVersions :: FilePath -> Action [PackageVersionMeta]
 getPackageVersions inputDir = do

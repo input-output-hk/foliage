@@ -1,6 +1,5 @@
 module Foliage.Utils.GitHub
   ( githubRepoTarballUrl,
-    githubRepoUrl,
   )
 where
 
@@ -15,11 +14,4 @@ githubRepoTarballUrl repo rev =
     { uriScheme = "https:",
       uriAuthority = Just nullURIAuth {uriRegName = "github.com"},
       uriPath = "/" </> T.unpack (unGitHubRepo repo) </> "tarball" </> T.unpack (unGitHubRev rev)
-    }
-
-githubRepoUrl :: GitHubRepo -> GitHubRev -> URI
-githubRepoUrl repo rev =
-  nullURI
-    { uriScheme = "github:",
-      uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev)
     }
