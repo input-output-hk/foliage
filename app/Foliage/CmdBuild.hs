@@ -7,9 +7,11 @@ import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, void, when)
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
+import Data.Text qualified as T
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
@@ -27,6 +29,8 @@ import Foliage.RemoteAsset (addFetchRemoteAssetRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path (castRoot, toFilePath)
+import Network.URI (URI (uriPath, uriQuery, uriScheme), nullURI)
+import System.Directory (createDirectoryIfMissing)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
@@ -54,7 +58,8 @@ buildAction
       buildOptsCurrentTime = mCurrentTime,
       buildOptsExpireSignaturesOn = mExpireSignaturesOn,
       buildOptsInputDir = inputDir,
-      buildOptsOutputDir = outputDir
+      buildOptsOutputDir = outputDir,
+      buildOptsWriteMetadata = doWritePackageMeta
     } = do
     outputDirRoot <- liftIO $ makeAbsolute (fromFilePath outputDir)
 
@@ -89,6 +94,9 @@ buildAction
     makeAllPackagesPage currentTime outputDir packageVersions
 
     makeAllPackageVersionsPage currentTime outputDir packageVersions
+
+    when doWritePackageMeta $
+      makeMetadataFile outputDir packageVersions
 
     void $ forP packageVersions $ makePackageVersionPage inputDir outputDir
 
@@ -221,6 +229,47 @@ buildAction
             timestampExpires = FileExpires expiryTime,
             timestampInfoSnapshot = snapshotInfo
           }
+
+makeMetadataFile :: FilePath -> [PackageVersionMeta] -> Action ()
+makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
+  createDirectoryIfMissing True (outputDir </> "foliage")
+  Aeson.encodeFile
+    (outputDir </> "foliage" </> "packages.json")
+    (map encodePackageVersionMeta packageVersions)
+  where
+    encodePackageVersionMeta
+      PackageVersionMeta
+        { pkgId = PackageIdentifier {pkgName, pkgVersion},
+          pkgSpec =
+            PackageVersionSpec
+              { packageVersionSource,
+                packageVersionForce,
+                packageVersionTimestamp
+              }
+        } =
+        Aeson.object
+          ( [ "pkg-name" Aeson..= pkgName,
+              "pkg-version" Aeson..= pkgVersion,
+              "url" Aeson..= sourceUrl packageVersionSource
+            ]
+              ++ ["forced-version" Aeson..= True | packageVersionForce]
+              ++ (case packageVersionTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
+          )
+
+    sourceUrl :: PackageVersionSource -> URI
+    sourceUrl (TarballSource uri Nothing) = uri
+    sourceUrl (TarballSource uri (Just subdir)) = uri {uriQuery = "?dir=" ++ subdir}
+    sourceUrl (GitHubSource repo rev Nothing) =
+      nullURI
+        { uriScheme = "github:",
+          uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev)
+        }
+    sourceUrl (GitHubSource repo rev (Just subdir)) =
+      nullURI
+        { uriScheme = "github:",
+          uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev),
+          uriQuery = "?dir=" ++ subdir
+        }
 
 getPackageVersions :: FilePath -> Action [PackageVersionMeta]
 getPackageVersions inputDir = do
