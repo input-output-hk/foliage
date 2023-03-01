@@ -8,6 +8,7 @@ import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, void, when)
 import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
@@ -315,8 +316,8 @@ getPackageVersions inputDir = do
 prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 prepareIndexPkgCabal pkgId timestamp filePath = do
   need [filePath]
-  contents <- liftIO $ BL.readFile filePath
-  return $ mkTarEntry contents (IndexPkgCabal pkgId) timestamp
+  contents <- liftIO $ BS.readFile filePath
+  return $ mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PackageVersionMeta -> Action Targets
 prepareIndexPkgMetadata expiryTime PackageVersionMeta {pkgId, pkgSpec} = do
