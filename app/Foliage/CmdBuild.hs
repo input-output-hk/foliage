@@ -137,11 +137,10 @@ buildAction
         targets <- prepareIndexPkgMetadata expiryTime pkg
         let path = outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> "package.json"
         liftIO $ BL.writeFile path $ renderSignedJSON targetKeys targets
-        return $
-          mkTarEntry
-            (renderSignedJSON targetKeys targets)
-            (IndexPkgMetadata pkgId)
-            (fromMaybe currentTime packageVersionTimestamp)
+        mkTarEntry
+          (renderSignedJSON targetKeys targets)
+          (IndexPkgMetadata pkgId)
+          (fromMaybe currentTime packageVersionTimestamp)
 
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries)
     traced "Writing index" $ do
@@ -285,9 +284,15 @@ getPackageVersions inputDir = do
     fail "no package metadata found"
 
   forP metaFiles $ \metaFile -> do
-    let [pkgName, pkgVersion, _] = splitDirectories metaFile
-    let Just name = simpleParsec pkgName
-    let Just version = simpleParsec pkgVersion
+    (pkgName, pkgVersion) <- case splitDirectories metaFile of
+      [pkgName, pkgVersion, _] -> pure (pkgName, pkgVersion)
+      _else -> fail $ "internal error: I should not be looking at " ++ metaFile
+    name <- case simpleParsec pkgName of
+      Nothing -> fail $ "invalid package name: " ++ pkgName
+      Just name -> pure name
+    version <- case simpleParsec pkgVersion of
+      Nothing -> fail $ "invalid package version: " ++ pkgVersion
+      Just version -> pure version
     let pkgId = PackageIdentifier name version
 
     pkgSpec <-
@@ -317,7 +322,7 @@ prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 prepareIndexPkgCabal pkgId timestamp filePath = do
   need [filePath]
   contents <- liftIO $ BS.readFile filePath
-  return $ mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
+  mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PackageVersionMeta -> Action Targets
 prepareIndexPkgMetadata expiryTime PackageVersionMeta {pkgId, pkgSpec} = do
@@ -333,21 +338,25 @@ prepareIndexPkgMetadata expiryTime PackageVersionMeta {pkgId, pkgSpec} = do
         targetsDelegations = Nothing
       }
 
-mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
-mkTarEntry contents indexFile timestamp =
-  (Tar.fileEntry tarPath contents)
-    { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp,
-      Tar.entryOwnership =
-        Tar.Ownership
-          { Tar.ownerName = "foliage",
-            Tar.groupName = "foliage",
-            Tar.ownerId = 0,
-            Tar.groupId = 0
-          }
-    }
+mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Action Tar.Entry
+mkTarEntry contents indexFile timestamp = do
+  tarPath <- case Tar.toTarPath False indexPath of
+    Left e -> fail $ "Invalid tar path " ++ indexPath ++ "(" ++ e ++ ")"
+    Right tarPath -> pure tarPath
+
+  pure
+    (Tar.fileEntry tarPath contents)
+      { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp,
+        Tar.entryOwnership =
+          Tar.Ownership
+            { Tar.ownerName = "foliage",
+              Tar.groupName = "foliage",
+              Tar.ownerId = 0,
+              Tar.groupId = 0
+            }
+      }
   where
     indexPath = toFilePath $ castRoot $ indexFileToPath hackageIndexLayout indexFile
-    Right tarPath = Tar.toTarPath False indexPath
 
 anchorPath :: Path Absolute -> (RepoLayout -> RepoPath) -> FilePath
 anchorPath outputDirRoot p =
