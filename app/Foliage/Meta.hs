@@ -31,8 +31,6 @@ module Foliage.Meta
     UTCTime,
     latestRevisionNumber,
     consolidateRanges,
-    cabalFileRevisionPath,
-    revisedCabalFile,
   )
 where
 
@@ -49,8 +47,6 @@ import Distribution.Aeson ()
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.Orphans ()
-import Distribution.Types.PackageId (PackageId, PackageIdentifier (..))
-import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.Version (Version)
 import Distribution.Types.VersionRange (VersionRange, anyVersion, intersectVersionRanges, notThisVersion)
 import Distribution.Version (isAnyVersion, isNoVersion, simplifyVersionRange)
@@ -58,7 +54,6 @@ import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
 import Network.URI (URI, parseURI)
 import Network.URI.Orphans ()
-import System.FilePath ((<.>), (</>))
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
@@ -240,11 +235,3 @@ consolidateRanges PackageMetaEntry {packageMetaEntryPreferred, packageMetaEntryD
     range =
       simplifyVersionRange $
         foldr intersectVersionRanges anyVersion (map notThisVersion packageMetaEntryDeprecated ++ packageMetaEntryPreferred)
-
-cabalFileRevisionPath :: FilePath -> PackageIdentifier -> Int -> FilePath
-cabalFileRevisionPath inputDir PackageIdentifier {pkgName, pkgVersion} revisionNumber =
-  inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal"
-
-revisedCabalFile :: FilePath -> PackageId -> PackageVersionSpec -> Maybe FilePath
-revisedCabalFile inputDir pkgId pkgSpec = do
-  cabalFileRevisionPath inputDir pkgId <$> latestRevisionNumber pkgSpec

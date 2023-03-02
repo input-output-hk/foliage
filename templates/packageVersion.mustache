@@ -42,28 +42,26 @@
         <dt class="col-sm-3">License</dt>
         <dd class="col-sm-9"><p>{{license}}</p></dd>
         {{/pkgDesc}}
-        {{#pkgSpec}}
-        {{#packageVersionSource}}
+        {{#pkgVersionSource}}
         <dt class="col-sm-3">Source</dt>
         <dd class="col-sm-9">
           <dl class="row">
             {{> packageVersionSource}}
           </dl>
         </dd>
-        {{/packageVersionSource}}
+        {{/pkgVersionSource}}
         <dt class="col-sm-3">Timestamp</dt>
-        <dd class="col-sm-9"><p>{{packageVersionTimestamp}}</p></dd>
+        <dd class="col-sm-9"><p>{{pkgTimestamp}}</p></dd>
         <dt class="col-sm-3">Revisions</dt>
         <dd class="col-sm-9">
-          {{#packageVersionRevisions}}
+          {{#cabalFileRevisions}}
           <p>{{revisionTimestamp}}</p>
-          {{/packageVersionRevisions}}
-          {{^packageVersionRevisions}}
+          {{/cabalFileRevisions}}
+          {{^cabalFileRevisions}}
           <p>None</p>
-          {{/packageVersionRevisions}}
+          {{/cabalFileRevisions}}
         </dd>
       </dl>
     </div>
-    {{/pkgSpec}}
   </body>
 </html>

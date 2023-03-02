@@ -1,3 +1,5 @@
+{-# LANGUAGE ViewPatterns #-}
+
 module Foliage.CmdImportIndex
   ( cmdImportIndex,
   )

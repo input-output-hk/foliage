@@ -15,7 +15,7 @@ module Foliage.Pages
 where
 
 import Data.Aeson (KeyValue ((.=)), ToJSON, object)
-import Data.Function (on)
+import Data.Function (on, (&))
 import Data.List (groupBy, sortOn)
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Ord (Down (Down))
@@ -24,11 +24,12 @@ import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
 import Development.Shake (Action, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
-import Distribution.Package (PackageId, PackageIdentifier (pkgName, pkgVersion))
+import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
-import Foliage.Meta (PackageVersionSource, PackageVersionSpec (PackageVersionSpec, packageVersionRevisions, packageVersionSource, packageVersionTimestamp), RevisionSpec (RevisionSpec, revisionTimestamp), revisedCabalFile)
+import Foliage.Meta (PackageVersionSource)
 import Foliage.Meta.Aeson ()
-import Foliage.Shake (originalCabalFile, readGenericPackageDescription')
+import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
+import Foliage.Shake (readGenericPackageDescription')
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
 import System.Directory qualified as IO
@@ -50,29 +51,32 @@ data AllPackagesPageEntry = AllPackagesPageEntry
     allPackagesPageEntryTimestamp :: UTCTime,
     allPackagesPageEntryTimestampPosix :: POSIXTime,
     allPackagesPageEntrySource :: PackageVersionSource,
-    allPackagesPageEntryRevision :: Maybe RevisionSpec
+    allPackagesPageEntryLatestRevisionTimestamp :: Maybe UTCTime
   }
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeAllPackagesPage :: UTCTime -> FilePath -> [(PackageId, PackageVersionSpec)] -> Action ()
+makeAllPackagesPage :: UTCTime -> FilePath -> [PreparedPackageVersion] -> Action ()
 makeAllPackagesPage currentTime outputDir packageVersions = do
   let packages =
-        sortOn allPackagesPageEntryPkgId
-          $ map
-            ( ( \(pkgId, PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}) ->
-                  AllPackagesPageEntry
-                    { allPackagesPageEntryPkgId = pkgId,
-                      allPackagesPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
-                      allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
-                      allPackagesPageEntrySource = packageVersionSource,
-                      allPackagesPageEntryRevision = listToMaybe packageVersionRevisions
-                    }
-              )
-                . head
-                . sortOn (Down . pkgVersion . fst)
+        packageVersions
+          & groupBy ((==) `on` (pkgName . pkgId))
+          & map
+            ( \group ->
+                group
+                  & sortOn (Down . pkgVersion . pkgId)
+                  & head
+                  & ( \(PreparedPackageVersion {pkgId, pkgTimestamp, cabalFileRevisions, pkgVersionSource}) ->
+                        AllPackagesPageEntry
+                          { allPackagesPageEntryPkgId = pkgId,
+                            allPackagesPageEntryTimestamp = fromMaybe currentTime pkgTimestamp,
+                            allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp),
+                            allPackagesPageEntrySource = pkgVersionSource,
+                            allPackagesPageEntryLatestRevisionTimestamp = fst <$> listToMaybe cabalFileRevisions
+                          }
+                    )
             )
-          $ groupBy ((==) `on` (pkgName . fst)) packageVersions
+          & sortOn allPackagesPageEntryPkgId
   traced "webpages / all-packages" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-packages")
     TL.writeFile (outputDir </> "all-packages" </> "index.html") $
@@ -94,29 +98,29 @@ data AllPackageVersionsPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeAllPackageVersionsPage :: UTCTime -> FilePath -> [(PackageId, PackageVersionSpec)] -> Action ()
+makeAllPackageVersionsPage :: UTCTime -> FilePath -> [PreparedPackageVersion] -> Action ()
 makeAllPackageVersionsPage currentTime outputDir packageVersions = do
   let entries =
-        sortOn (Down . allPackageVersionsPageEntryTimestamp) $
-          foldMap
-            ( \(pkgId, PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}) ->
-                AllPackageVersionsPageEntryPackage
-                  { allPackageVersionsPageEntryPkgId = pkgId,
-                    allPackageVersionsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
-                    allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp),
-                    allPackageVersionsPageEntrySource = packageVersionSource
-                  }
-                  : map
-                    ( \RevisionSpec {revisionTimestamp} ->
-                        AllPackageVersionsPageEntryRevision
-                          { allPackageVersionsPageEntryPkgId = pkgId,
-                            allPackageVersionsPageEntryTimestamp = revisionTimestamp,
-                            allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                          }
-                    )
-                    packageVersionRevisions
-            )
-            packageVersions
+        foldMap
+          ( \PreparedPackageVersion {pkgId, pkgTimestamp, pkgVersionSource, cabalFileRevisions} ->
+              AllPackageVersionsPageEntryPackage
+                { allPackageVersionsPageEntryPkgId = pkgId,
+                  allPackageVersionsPageEntryTimestamp = fromMaybe currentTime pkgTimestamp,
+                  allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp),
+                  allPackageVersionsPageEntrySource = pkgVersionSource
+                }
+                : map
+                  ( \(revisionTimestamp, _) ->
+                      AllPackageVersionsPageEntryRevision
+                        { allPackageVersionsPageEntryPkgId = pkgId,
+                          allPackageVersionsPageEntryTimestamp = revisionTimestamp,
+                          allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                        }
+                  )
+                  cabalFileRevisions
+          )
+          packageVersions
+          & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
   traced "webpages / all-package-versions" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-package-versions")
@@ -124,17 +128,18 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions = do
       renderMustache allPackageVersionsPageTemplate $
         object ["entries" .= entries]
 
-makePackageVersionPage :: FilePath -> FilePath -> PackageId -> PackageVersionSpec -> Action ()
-makePackageVersionPage inputDir outputDir pkgId pkgSpec = do
-  cabalFilePath <- maybe (originalCabalFile pkgId pkgSpec) pure (revisedCabalFile inputDir pkgId pkgSpec)
+makePackageVersionPage :: FilePath -> PreparedPackageVersion -> Action ()
+makePackageVersionPage outputDir PreparedPackageVersion {pkgId, pkgTimestamp, pkgVersionSource, cabalFilePath, cabalFileRevisions} = do
   pkgDesc <- readGenericPackageDescription' cabalFilePath
   traced ("webpages / package / " ++ prettyShow pkgId) $ do
     IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
     TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
       renderMustache packageVersionPageTemplate $
         object
-          [ "pkgSpec" .= pkgSpec,
-            "pkgDesc" .= jsonGenericPackageDescription pkgDesc
+          [ "pkgVersionSource" .= pkgVersionSource,
+            "cabalFileRevisions" .= cabalFileRevisions,
+            "pkgDesc" .= jsonGenericPackageDescription pkgDesc,
+            "pkgTimestamp" .= pkgTimestamp
           ]
 
 indexPageTemplate :: Template

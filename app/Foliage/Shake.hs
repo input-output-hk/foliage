@@ -3,7 +3,6 @@ module Foliage.Shake
     readKeysAt,
     readPackageVersionSpec',
     readGenericPackageDescription',
-    originalCabalFile,
   )
 where
 
@@ -12,12 +11,9 @@ import Development.Shake
 import Development.Shake.FilePath
 import Distribution.Simple.PackageDescription
 import Distribution.Types.GenericPackageDescription
-import Distribution.Types.PackageId
-import Distribution.Types.PackageName
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta
-import Foliage.PrepareSource
 
 computeFileInfoSimple' :: FilePath -> Action FileInfo
 computeFileInfoSimple' fp = do
@@ -41,8 +37,3 @@ readGenericPackageDescription' :: FilePath -> Action GenericPackageDescription
 readGenericPackageDescription' fp = do
   need [fp]
   liftIO $ readGenericPackageDescription Verbosity.silent fp
-
-originalCabalFile :: PackageId -> PackageVersionSpec -> Action FilePath
-originalCabalFile pkgId pkgSpec = do
-  srcDir <- prepareSource pkgId pkgSpec
-  return $ srcDir </> unPackageName (pkgName pkgId) <.> "cabal"
