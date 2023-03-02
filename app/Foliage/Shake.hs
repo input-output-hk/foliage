@@ -42,7 +42,7 @@ readGenericPackageDescription' fp = do
   need [fp]
   liftIO $ readGenericPackageDescription Verbosity.silent fp
 
-originalCabalFile :: PackageVersionMeta -> Action FilePath
-originalCabalFile PackageVersionMeta {pkgId, pkgSpec} = do
+originalCabalFile :: PackageId -> PackageVersionSpec -> Action FilePath
+originalCabalFile pkgId pkgSpec = do
   srcDir <- prepareSource pkgId pkgSpec
   return $ srcDir </> unPackageName (pkgName pkgId) <.> "cabal"

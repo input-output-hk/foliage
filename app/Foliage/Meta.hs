@@ -13,7 +13,6 @@ module Foliage.Meta
     packageMetaEntryTimestamp,
     readPackageMeta,
     writePackageMeta,
-    PackageVersionMeta (PackageVersionMeta, pkgId, pkgSpec),
     packageVersionTimestamp,
     packageVersionSource,
     packageVersionRevisions,
@@ -50,7 +49,7 @@ import Distribution.Aeson ()
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.Orphans ()
-import Distribution.Types.PackageId (PackageIdentifier (..))
+import Distribution.Types.PackageId (PackageId, PackageIdentifier (..))
 import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.Version (Version)
 import Distribution.Types.VersionRange (VersionRange, anyVersion, intersectVersionRanges, notThisVersion)
@@ -242,17 +241,10 @@ consolidateRanges PackageMetaEntry {packageMetaEntryPreferred, packageMetaEntryD
       simplifyVersionRange $
         foldr intersectVersionRanges anyVersion (map notThisVersion packageMetaEntryDeprecated ++ packageMetaEntryPreferred)
 
-data PackageVersionMeta = PackageVersionMeta
-  { pkgId :: PackageIdentifier,
-    pkgSpec :: PackageVersionSpec
-  }
-  deriving (Show, Eq)
-  deriving (Generic)
-
 cabalFileRevisionPath :: FilePath -> PackageIdentifier -> Int -> FilePath
 cabalFileRevisionPath inputDir PackageIdentifier {pkgName, pkgVersion} revisionNumber =
   inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal"
 
-revisedCabalFile :: FilePath -> PackageVersionMeta -> Maybe FilePath
-revisedCabalFile inputDir PackageVersionMeta {pkgId, pkgSpec} = do
+revisedCabalFile :: FilePath -> PackageId -> PackageVersionSpec -> Maybe FilePath
+revisedCabalFile inputDir pkgId pkgSpec = do
   cabalFileRevisionPath inputDir pkgId <$> latestRevisionNumber pkgSpec

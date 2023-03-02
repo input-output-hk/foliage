@@ -24,9 +24,9 @@ import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
 import Development.Shake (Action, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
-import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
+import Distribution.Package (PackageId, PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
-import Foliage.Meta (PackageVersionMeta (..), PackageVersionSource, PackageVersionSpec (PackageVersionSpec, packageVersionRevisions, packageVersionSource, packageVersionTimestamp), RevisionSpec (RevisionSpec, revisionTimestamp), revisedCabalFile)
+import Foliage.Meta (PackageVersionSource, PackageVersionSpec (PackageVersionSpec, packageVersionRevisions, packageVersionSource, packageVersionTimestamp), RevisionSpec (RevisionSpec, revisionTimestamp), revisedCabalFile)
 import Foliage.Meta.Aeson ()
 import Foliage.Shake (originalCabalFile, readGenericPackageDescription')
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
@@ -55,12 +55,12 @@ data AllPackagesPageEntry = AllPackagesPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeAllPackagesPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
+makeAllPackagesPage :: UTCTime -> FilePath -> [(PackageId, PackageVersionSpec)] -> Action ()
 makeAllPackagesPage currentTime outputDir packageVersions = do
   let packages =
         sortOn allPackagesPageEntryPkgId
           $ map
-            ( ( \PackageVersionMeta {pkgId, pkgSpec = PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}} ->
+            ( ( \(pkgId, PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}) ->
                   AllPackagesPageEntry
                     { allPackagesPageEntryPkgId = pkgId,
                       allPackagesPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
@@ -70,9 +70,9 @@ makeAllPackagesPage currentTime outputDir packageVersions = do
                     }
               )
                 . head
-                . sortOn (Down . pkgVersion . pkgId)
+                . sortOn (Down . pkgVersion . fst)
             )
-          $ groupBy ((==) `on` (pkgName . pkgId)) packageVersions
+          $ groupBy ((==) `on` (pkgName . fst)) packageVersions
   traced "webpages / all-packages" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-packages")
     TL.writeFile (outputDir </> "all-packages" </> "index.html") $
@@ -94,12 +94,12 @@ data AllPackageVersionsPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeAllPackageVersionsPage :: UTCTime -> FilePath -> [PackageVersionMeta] -> Action ()
+makeAllPackageVersionsPage :: UTCTime -> FilePath -> [(PackageId, PackageVersionSpec)] -> Action ()
 makeAllPackageVersionsPage currentTime outputDir packageVersions = do
   let entries =
         sortOn (Down . allPackageVersionsPageEntryTimestamp) $
           foldMap
-            ( \PackageVersionMeta {pkgId, pkgSpec = PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}} ->
+            ( \(pkgId, PackageVersionSpec {packageVersionTimestamp, packageVersionRevisions, packageVersionSource}) ->
                 AllPackageVersionsPageEntryPackage
                   { allPackageVersionsPageEntryPkgId = pkgId,
                     allPackageVersionsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp,
@@ -124,9 +124,9 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions = do
       renderMustache allPackageVersionsPageTemplate $
         object ["entries" .= entries]
 
-makePackageVersionPage :: FilePath -> FilePath -> PackageVersionMeta -> Action ()
-makePackageVersionPage inputDir outputDir pkgMeta@PackageVersionMeta {pkgId, pkgSpec} = do
-  cabalFilePath <- maybe (originalCabalFile pkgMeta) pure (revisedCabalFile inputDir pkgMeta)
+makePackageVersionPage :: FilePath -> FilePath -> PackageId -> PackageVersionSpec -> Action ()
+makePackageVersionPage inputDir outputDir pkgId pkgSpec = do
+  cabalFilePath <- maybe (originalCabalFile pkgId pkgSpec) pure (revisedCabalFile inputDir pkgId pkgSpec)
   pkgDesc <- readGenericPackageDescription' cabalFilePath
   traced ("webpages / package / " ++ prettyShow pkgId) $ do
     IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)

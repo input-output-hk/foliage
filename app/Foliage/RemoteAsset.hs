@@ -43,8 +43,10 @@ addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
           "Fragments in URI are not supported: " <> show uri
 
       let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
-          Just host = uriRegName <$> uriAuthority uri
-          path = cacheDir </> joinPath (scheme : host : pathSegments uri)
+      host <- case uriRegName <$> uriAuthority uri of
+        Nothing -> fail $ "invalid uri " ++ show uri
+        Just host -> pure host
+      let path = cacheDir </> joinPath (scheme : host : pathSegments uri)
 
       -- parse etag from store
       let oldETag = fromMaybe BS.empty old
