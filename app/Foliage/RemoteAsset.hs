@@ -35,10 +35,12 @@ addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
     run :: BuiltinRun RemoteAsset FilePath
     run (RemoteAsset uri) old _mode = do
       unless (uriQuery uri == "") $
-        fail $ "Query elements in URI are not supported: " <> show uri
+        fail $
+          "Query elements in URI are not supported: " <> show uri
 
       unless (uriFragment uri == "") $
-        fail $ "Fragments in URI are not supported: " <> show uri
+        fail $
+          "Fragments in URI are not supported: " <> show uri
 
       let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
           Just host = uriRegName <$> uriAuthority uri

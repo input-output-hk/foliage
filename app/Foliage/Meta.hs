@@ -86,14 +86,18 @@ writePackageMeta fp a = void $ Toml.encodeToFile packageMetaCodec fp a
 packageMetaCodec :: TomlCodec PackageMeta
 packageMetaCodec =
   PackageMeta
-    <$> Toml.list packageMetaEntryCodec "entries" .= packageMetaEntries
+    <$> Toml.list packageMetaEntryCodec "entries"
+    .= packageMetaEntries
 
 packageMetaEntryCodec :: TomlCodec PackageMetaEntry
 packageMetaEntryCodec =
   PackageMetaEntry
-    <$> timeCodec "timestamp" .= packageMetaEntryTimestamp
-    <*> Toml.arrayOf _VersionRange "preferred-versions" .= packageMetaEntryPreferred
-    <*> Toml.arrayOf _Version "deprecated-versions" .= packageMetaEntryDeprecated
+    <$> timeCodec "timestamp"
+    .= packageMetaEntryTimestamp
+    <*> Toml.arrayOf _VersionRange "preferred-versions"
+    .= packageMetaEntryPreferred
+    <*> Toml.arrayOf _Version "deprecated-versions"
+    .= packageMetaEntryDeprecated
 
 _Version :: Toml.TomlBiMap Version Toml.AnyValue
 _Version = Toml._TextBy showVersion parseVersion
@@ -185,10 +189,14 @@ data PackageVersionSpec = PackageVersionSpec
 sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
   PackageVersionSpec
-    <$> Toml.dioptional (timeCodec "timestamp") .= packageVersionTimestamp
-    <*> packageSourceCodec .= packageVersionSource
-    <*> Toml.list revisionMetaCodec "revisions" .= packageVersionRevisions
-    <*> withDefault False (Toml.bool "force-version") .= packageVersionForce
+    <$> Toml.dioptional (timeCodec "timestamp")
+    .= packageVersionTimestamp
+    <*> packageSourceCodec
+    .= packageVersionSource
+    <*> Toml.list revisionMetaCodec "revisions"
+    .= packageVersionRevisions
+    <*> withDefault False (Toml.bool "force-version")
+    .= packageVersionForce
 
 readPackageVersionSpec :: FilePath -> IO PackageVersionSpec
 readPackageVersionSpec = Toml.decodeFile sourceMetaCodec
@@ -206,8 +214,10 @@ data RevisionSpec = RevisionSpec
 revisionMetaCodec :: TomlCodec RevisionSpec
 revisionMetaCodec =
   RevisionSpec
-    <$> timeCodec "timestamp" .= revisionTimestamp
-    <*> Toml.int "number" .= revisionNumber
+    <$> timeCodec "timestamp"
+    .= revisionTimestamp
+    <*> Toml.int "number"
+    .= revisionNumber
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key

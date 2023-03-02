@@ -53,7 +53,7 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
       case ehvExisting of
         Right hvExisting
           | hvExisting == hvExpected ->
-            return RunResult {runChanged = ChangedNothing, runStore = old, runValue = path}
+              return RunResult {runChanged = ChangedNothing, runStore = old, runValue = path}
         Right hvExisting -> do
           putWarn $ "Changed " ++ path ++ " (expecting hash " ++ showHashValue hvExpected ++ " found " ++ showHashValue hvExisting ++ "). I will rebuild it."
           run (PrepareSdistRule srcDir) (Just old) RunDependenciesChanged
@@ -71,10 +71,12 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
             _differentOrMissing -> ChangedRecomputeDiff
 
       when (changed == ChangedRecomputeSame) $
-        putInfo $ "Wrote " ++ path ++ " (same hash " ++ showHashValue hv ++ ")"
+        putInfo $
+          "Wrote " ++ path ++ " (same hash " ++ showHashValue hv ++ ")"
 
       when (changed == ChangedRecomputeDiff) $
-        putInfo $ "Wrote " ++ path ++ " (new hash " ++ showHashValue hv ++ ")"
+        putInfo $
+          "Wrote " ++ path ++ " (new hash " ++ showHashValue hv ++ ")"
 
       return $ RunResult {runChanged = changed, runStore = new, runValue = path}
 

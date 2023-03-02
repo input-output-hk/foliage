@@ -1,13 +1,13 @@
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE InstanceSigs #-}
 
 module Foliage.Meta.Aeson where
 
-import Distribution.Types.Orphans ()
 import Data.Aeson
 import Data.Text
+import Distribution.Types.Orphans ()
 import Foliage.Meta
 import Foliage.Utils.Aeson
 import Network.URI (URI)
@@ -30,8 +30,8 @@ instance ToJSON PackageVersionSource where
   toJSON =
     genericToJSON
       defaultOptions
-        { sumEncoding = ObjectWithSingleField
-        , omitNothingFields = True
+        { sumEncoding = ObjectWithSingleField,
+          omitNothingFields = True
         }
 
 instance ToJSON URI where
