@@ -30,7 +30,6 @@ import Distribution.Pretty (prettyShow)
 import Foliage.Meta (PackageVersionSource)
 import Foliage.Meta.Aeson ()
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
-import Foliage.Shake (readGenericPackageDescription')
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
 import System.Directory qualified as IO
@@ -139,8 +138,7 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
         & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
 makePackageVersionPage :: FilePath -> PreparedPackageVersion -> Action ()
-makePackageVersionPage outputDir PreparedPackageVersion {pkgId, pkgTimestamp, pkgVersionSource, cabalFilePath, cabalFileRevisions} = do
-  pkgDesc <- readGenericPackageDescription' cabalFilePath
+makePackageVersionPage outputDir PreparedPackageVersion {pkgId, pkgTimestamp, pkgVersionSource, pkgDesc, cabalFileRevisions} = do
   traced ("webpages / package / " ++ prettyShow pkgId) $ do
     IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
     TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $

@@ -6,6 +6,7 @@ module Foliage.PreparePackageVersion
         pkgTimestamp,
         pkgVersionSource,
         pkgVersionForce,
+        pkgDesc,
         sdistPath,
         cabalFilePath,
         originalCabalFilePath,
@@ -21,10 +22,12 @@ import Data.List (sortOn)
 import Data.Ord (Down (Down))
 import Development.Shake (Action)
 import Distribution.Client.Compat.Prelude (prettyShow)
+import Distribution.PackageDescription (GenericPackageDescription)
 import Distribution.Types.PackageId
 import Foliage.Meta (PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber)
 import Foliage.PrepareSdist (prepareSdist)
 import Foliage.PrepareSource (prepareSource)
+import Foliage.Shake (readGenericPackageDescription')
 import System.FilePath (takeBaseName, takeFileName, (<.>), (</>))
 
 data PreparedPackageVersion = PreparedPackageVersion
@@ -32,6 +35,7 @@ data PreparedPackageVersion = PreparedPackageVersion
     pkgTimestamp :: Maybe UTCTime,
     pkgVersionSource :: PackageVersionSource,
     pkgVersionForce :: Bool,
+    pkgDesc :: GenericPackageDescription,
     sdistPath :: FilePath,
     cabalFilePath :: FilePath,
     originalCabalFilePath :: FilePath,
@@ -51,6 +55,8 @@ preparePackageVersion inputDir pkgId pkgSpec = do
           originalCabalFilePath
           cabalFileRevisionPath
           (latestRevisionNumber pkgSpec)
+
+  pkgDesc <- readGenericPackageDescription' cabalFilePath
 
   sdistPath <- prepareSdist srcDir
 
@@ -77,6 +83,7 @@ preparePackageVersion inputDir pkgId pkgSpec = do
         pkgTimestamp = packageVersionTimestamp pkgSpec,
         pkgVersionSource = packageVersionSource pkgSpec,
         pkgVersionForce = packageVersionForce pkgSpec,
+        pkgDesc,
         sdistPath,
         cabalFilePath,
         originalCabalFilePath,
