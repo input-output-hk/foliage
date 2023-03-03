@@ -30,11 +30,6 @@
         project = pkgs-static-where-possible.haskell-nix.cabalProject' {
           src = ./.;
           compiler-nix-name = "ghc925";
-          shell.tools = {
-            cabal = { };
-            hlint = { };
-            haskell-language-server = { };
-          };
         };
 
         flake = project.flake { };
