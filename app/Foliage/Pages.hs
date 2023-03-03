@@ -16,9 +16,10 @@ where
 
 import Data.Aeson (KeyValue ((.=)), ToJSON, object)
 import Data.Function (on, (&))
-import Data.List (groupBy, sortOn)
+import Data.List (sortOn)
+import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe)
-import Data.Ord (Down (Down))
+import Data.Ord (Down (Down), comparing)
 import Data.Text.Lazy.IO.Utf8 qualified as TL
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
@@ -60,12 +61,12 @@ makeAllPackagesPage :: UTCTime -> FilePath -> [PreparedPackageVersion] -> Action
 makeAllPackagesPage currentTime outputDir packageVersions = do
   let packages =
         packageVersions
-          & groupBy ((==) `on` (pkgName . pkgId))
+          & NE.groupBy ((==) `on` (pkgName . pkgId))
           & map
             ( \group ->
                 group
-                  & sortOn (Down . pkgVersion . pkgId)
-                  & head
+                  & NE.sortBy (comparing $ Down . pkgVersion . pkgId)
+                  & NE.head
                   & ( \(PreparedPackageVersion {pkgId, pkgTimestamp, cabalFileRevisions, pkgVersionSource}) ->
                         AllPackagesPageEntry
                           { allPackagesPageEntryPkgId = pkgId,
