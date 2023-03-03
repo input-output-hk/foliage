@@ -1,5 +1,4 @@
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Foliage.CmdBuild (cmdBuild) where
@@ -18,7 +17,6 @@ import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
 import Distribution.Package
-import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
@@ -128,10 +126,11 @@ buildAction
         targets <- prepareIndexPkgMetadata expiryTime ppv
         let path = outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> "package.json"
         liftIO $ BL.writeFile path $ renderSignedJSON targetKeys targets
-        mkTarEntry
-          (renderSignedJSON targetKeys targets)
-          (IndexPkgMetadata pkgId)
-          (fromMaybe currentTime pkgTimestamp)
+        pure $
+          mkTarEntry
+            (renderSignedJSON targetKeys targets)
+            (IndexPkgMetadata pkgId)
+            (fromMaybe currentTime pkgTimestamp)
 
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries)
     traced "Writing index" $ do
@@ -264,53 +263,19 @@ getPackageVersions inputDir = do
   metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
 
   when (null metaFiles) $ do
-    putError $
+    error $
       unlines
         [ "We could not find any package metadata file (i.e. _sources/<name>/<version>/meta.toml)",
           "Make sure you are passing the right input directory. The default input directory is _sources"
         ]
-    fail "no package metadata found"
 
-  forP metaFiles $ \metaFile -> do
-    (pkgName, pkgVersion) <- case splitDirectories metaFile of
-      [pkgName, pkgVersion, _] -> pure (pkgName, pkgVersion)
-      _else -> fail $ "internal error: I should not be looking at " ++ metaFile
-    name <- case simpleParsec pkgName of
-      Nothing -> fail $ "invalid package name: " ++ pkgName
-      Just name -> pure name
-    version <- case simpleParsec pkgVersion of
-      Nothing -> fail $ "invalid package version: " ++ pkgVersion
-      Just version -> pure version
-    let pkgId = PackageIdentifier name version
-
-    pkgSpec <-
-      readPackageVersionSpec' (inputDir </> metaFile) >>= \case
-        PackageVersionSpec {packageVersionRevisions, packageVersionTimestamp = Nothing}
-          | not (null packageVersionRevisions) -> do
-              putError $
-                unlines
-                  [ inputDir </> metaFile <> " has cabal file revisions but the original package has no timestamp.",
-                    "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
-                  ]
-              fail "invalid package metadata"
-        PackageVersionSpec {packageVersionRevisions, packageVersionTimestamp = Just pkgTs}
-          | any ((< pkgTs) . revisionTimestamp) packageVersionRevisions -> do
-              putError $
-                unlines
-                  [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself.",
-                    "Adjust the timestamps so that all revisions come after the original package"
-                  ]
-              fail "invalid package metadata"
-        meta ->
-          return meta
-
-    preparePackageVersion inputDir pkgId pkgSpec
+  forP metaFiles $ preparePackageVersion inputDir
 
 prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 prepareIndexPkgCabal pkgId timestamp filePath = do
   need [filePath]
   contents <- liftIO $ BS.readFile filePath
-  mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
+  pure $ mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PreparedPackageVersion -> Action Targets
 prepareIndexPkgMetadata expiryTime PreparedPackageVersion {pkgId, sdistPath} = do
@@ -324,24 +289,23 @@ prepareIndexPkgMetadata expiryTime PreparedPackageVersion {pkgId, sdistPath} = d
         targetsDelegations = Nothing
       }
 
-mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Action Tar.Entry
-mkTarEntry contents indexFile timestamp = do
-  tarPath <- case Tar.toTarPath False indexPath of
-    Left e -> fail $ "Invalid tar path " ++ indexPath ++ "(" ++ e ++ ")"
-    Right tarPath -> pure tarPath
-
-  pure
-    (Tar.fileEntry tarPath contents)
-      { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp,
-        Tar.entryOwnership =
-          Tar.Ownership
-            { Tar.ownerName = "foliage",
-              Tar.groupName = "foliage",
-              Tar.ownerId = 0,
-              Tar.groupId = 0
-            }
-      }
+mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
+mkTarEntry contents indexFile timestamp =
+  (Tar.fileEntry tarPath contents)
+    { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp,
+      Tar.entryOwnership =
+        Tar.Ownership
+          { Tar.ownerName = "foliage",
+            Tar.groupName = "foliage",
+            Tar.ownerId = 0,
+            Tar.groupId = 0
+          }
+    }
   where
+    tarPath = case Tar.toTarPath False indexPath of
+      Left e -> error $ "Invalid tar path " ++ indexPath ++ "(" ++ e ++ ")"
+      Right tp -> tp
+
     indexPath = toFilePath $ castRoot $ indexFileToPath hackageIndexLayout indexFile
 
 anchorPath :: Path Absolute -> (RepoLayout -> RepoPath) -> FilePath

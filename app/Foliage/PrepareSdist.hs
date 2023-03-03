@@ -70,20 +70,24 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
             _differentOrMissing -> ChangedRecomputeDiff
 
       when (changed == ChangedRecomputeSame) $
-        putInfo $
-          "Wrote " ++ path ++ " (same hash " ++ showHashValue hv ++ ")"
+        putInfo ("Wrote " ++ path ++ " (same hash " ++ showHashValue hv ++ ")")
 
       when (changed == ChangedRecomputeDiff) $
-        putInfo $
-          "Wrote " ++ path ++ " (new hash " ++ showHashValue hv ++ ")"
+        putInfo ("Wrote " ++ path ++ " (new hash " ++ showHashValue hv ++ ")")
 
       return $ RunResult {runChanged = changed, runStore = new, runValue = path}
 
     makeSdist srcDir = do
-      cabalFile <- do
-        getDirectoryFiles srcDir ["*.cabal"] >>= \case
-          [f] -> pure f
-          fs -> fail $ "Invalid srcDir: " ++ srcDir ++ ". It contains multiple cabal files: " ++ unwords fs
+      cabalFiles <- getDirectoryFiles srcDir ["*.cabal"]
+      let cabalFile = case cabalFiles of
+            [f] -> f
+            fs ->
+              error $
+                unlines
+                  [ "Invalid source directory: " ++ srcDir,
+                    "It contains multiple cabal files, while only one is allowed",
+                    unwords fs
+                  ]
 
       traced "cabal sdist" $ do
         gpd <- readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
