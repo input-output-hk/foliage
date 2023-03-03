@@ -29,7 +29,7 @@
 
         project = pkgs-static-where-possible.haskell-nix.cabalProject' {
           src = ./.;
-          compiler-nix-name = "ghc925";
+          compiler-nix-name = "ghc926";
         };
 
         flake = project.flake { };
