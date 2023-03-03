@@ -145,7 +145,7 @@ makePackageVersionPage outputDir PreparedPackageVersion {pkgId, pkgTimestamp, pk
       renderMustache packageVersionPageTemplate $
         object
           [ "pkgVersionSource" .= pkgVersionSource,
-            "cabalFileRevisions" .= cabalFileRevisions,
+            "cabalFileRevisions" .= map fst cabalFileRevisions,
             "pkgDesc" .= jsonGenericPackageDescription pkgDesc,
             "pkgTimestamp" .= pkgTimestamp
           ]
