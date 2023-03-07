@@ -18,7 +18,7 @@ module Distribution.PackageDescription.FieldGrammar.Copy
 where
 
 import Distribution.CabalSpecVersion
-import qualified Distribution.Compat.CharParsing as P
+import Distribution.Compat.CharParsing qualified as P
 import Distribution.Compat.Newtype (Newtype, pack', unpack')
 import Distribution.Compat.Prelude
 import Distribution.Compiler (CompilerFlavor (..))
@@ -29,8 +29,8 @@ import Distribution.PackageDescription
 import Distribution.PackageDescription.FieldGrammar hiding (packageDescriptionFieldGrammar)
 import Distribution.Parsec
 import Distribution.Pretty (Pretty (..), showToken)
-import qualified Distribution.SPDX as SPDX
-import qualified Distribution.Types.Lens as L
+import Distribution.SPDX qualified as SPDX
+import Distribution.Types.Lens qualified as L
 import Distribution.Utils.Path
 import Distribution.Version (Version, VersionRange)
 import Prelude ()

@@ -1,3 +1,5 @@
+{-# LANGUAGE ViewPatterns #-}
+
 module Foliage.CmdImportIndex
   ( cmdImportIndex,
   )
@@ -48,31 +50,31 @@ importIndex f (Tar.Next e es) m =
   case isCabalFile e of
     Just (pkgId, contents, time)
       | f pkgId ->
-        do
-          putStrLn $ "Found cabal file " ++ prettyShow pkgId ++ " with timestamp " ++ show time
-          let -- new package
-              go Nothing =
-                pure $
-                  Just $
-                    PackageVersionSpec
-                      { packageVersionSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
-                        packageVersionTimestamp = Just time,
-                        packageVersionRevisions = [],
-                        packageVersionForce = False
-                      }
-              -- Existing package, new revision
-              go (Just sm) = do
-                let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
-                    newRevision = RevisionSpec {revisionNumber = revnum, revisionTimestamp = time}
-                -- Repeatedly adding at the end of a list is bad performance but good for the moment.
-                let sm' = sm {packageVersionRevisions = packageVersionRevisions sm ++ [newRevision]}
-                let PackageIdentifier pkgName pkgVersion = pkgId
-                let outDir = "_sources" </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions"
-                createDirectoryIfMissing True outDir
-                BSL.writeFile (outDir </> show revnum <.> "cabal") contents
-                return $ Just sm'
-          m' <- M.alterF go pkgId m
-          importIndex f es m'
+          do
+            putStrLn $ "Found cabal file " ++ prettyShow pkgId ++ " with timestamp " ++ show time
+            let -- new package
+                go Nothing =
+                  pure $
+                    Just $
+                      PackageVersionSpec
+                        { packageVersionSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
+                          packageVersionTimestamp = Just time,
+                          packageVersionRevisions = [],
+                          packageVersionForce = False
+                        }
+                -- Existing package, new revision
+                go (Just sm) = do
+                  let revnum = 1 + fromMaybe 0 (latestRevisionNumber sm)
+                      newRevision = RevisionSpec {revisionNumber = revnum, revisionTimestamp = time}
+                  -- Repeatedly adding at the end of a list is bad performance but good for the moment.
+                  let sm' = sm {packageVersionRevisions = packageVersionRevisions sm ++ [newRevision]}
+                  let PackageIdentifier pkgName pkgVersion = pkgId
+                  let outDir = "_sources" </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions"
+                  createDirectoryIfMissing True outDir
+                  BSL.writeFile (outDir </> show revnum <.> "cabal") contents
+                  return $ Just sm'
+            m' <- M.alterF go pkgId m
+            importIndex f es m'
     _ -> importIndex f es m
 importIndex _f Tar.Done m =
   return m
@@ -106,9 +108,9 @@ isCabalFile
       Tar.entryTime = posixSecondsToUTCTime . fromIntegral -> time
     }
     | ".cabal" `isSuffixOf` path =
-      let [pkgName, pkgVersion, _] = splitDirectories path
-          Just name = simpleParsec pkgName
-          Just version = simpleParsec pkgVersion
-          packageId = PackageIdentifier name version
-       in Just (packageId, contents, time)
+        let [pkgName, pkgVersion, _] = splitDirectories path
+            Just name = simpleParsec pkgName
+            Just version = simpleParsec pkgVersion
+            packageId = PackageIdentifier name version
+         in Just (packageId, contents, time)
 isCabalFile _ = Nothing

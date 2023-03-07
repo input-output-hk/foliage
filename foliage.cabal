@@ -27,6 +27,7 @@ executable foliage
         Foliage.Meta.Aeson
         Foliage.Options
         Foliage.Pages
+        Foliage.PreparePackageVersion
         Foliage.PrepareSource
         Foliage.PrepareSdist
         Foliage.RemoteAsset
@@ -37,9 +38,7 @@ executable foliage
         Foliage.Utils.GitHub
         Network.URI.Orphans
 
-    default-language:   Haskell2010
-    default-extensions:
-        ImportQualifiedPost LambdaCase NamedFieldPuns ViewPatterns
+    default-language:   GHC2021
 
     ghc-options:        -Wall
     ghc-options:        -threaded
