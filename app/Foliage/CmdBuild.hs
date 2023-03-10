@@ -120,6 +120,7 @@ buildAction
         packageVersions
 
     targetKeys <- maybeReadKeysAt "target"
+
     metadataEntries <-
       forP packageVersions $ \ppv@PreparedPackageVersion {pkgId, pkgTimestamp} -> do
         let PackageIdentifier {pkgName, pkgVersion} = pkgId
@@ -279,7 +280,7 @@ prepareIndexPkgCabal pkgId timestamp filePath = do
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PreparedPackageVersion -> Action Targets
 prepareIndexPkgMetadata expiryTime PreparedPackageVersion {pkgId, sdistPath} = do
-  targetFileInfo <- computeFileInfoSimple' sdistPath
+  targetFileInfo <- liftIO $ computeFileInfoSimple sdistPath
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
   return
     Targets
