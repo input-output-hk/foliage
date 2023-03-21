@@ -8,7 +8,6 @@ module Foliage.PrepareSource where
 import Control.Monad (when)
 import Data.ByteString qualified as BS
 import Data.Foldable (for_)
-import Data.Text qualified as T
 import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.Rule
@@ -18,8 +17,8 @@ import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta
 import Foliage.RemoteAsset (fetchRemoteAsset)
 import Foliage.UpdateCabalFile (rewritePackageVersion)
+import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
-import Network.URI (URI (..), URIAuth (..), nullURI, nullURIAuth)
 import System.Directory qualified as IO
 import System.FilePath ((<.>), (</>))
 
@@ -79,12 +78,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             -- metadata.
             --
             GitHubSource repo rev mSubdir -> do
-              let url =
-                    nullURI
-                      { uriScheme = "https:",
-                        uriAuthority = Just nullURIAuth {uriRegName = "github.com"},
-                        uriPath = "/" </> T.unpack (unGitHubRepo repo) </> "tarball" </> T.unpack (unGitHubRev rev)
-                      }
+              let url = githubRepoTarballUrl repo rev
 
               tarballPath <- fetchRemoteAsset url
 

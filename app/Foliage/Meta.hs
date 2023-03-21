@@ -13,7 +13,6 @@ module Foliage.Meta
     packageMetaEntryTimestamp,
     readPackageMeta,
     writePackageMeta,
-    PackageVersionMeta (PackageVersionMeta, pkgId, pkgSpec),
     packageVersionTimestamp,
     packageVersionSource,
     packageVersionRevisions,
@@ -32,8 +31,6 @@ module Foliage.Meta
     UTCTime,
     latestRevisionNumber,
     consolidateRanges,
-    cabalFileRevisionPath,
-    revisedCabalFile,
   )
 where
 
@@ -50,8 +47,6 @@ import Distribution.Aeson ()
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.Orphans ()
-import Distribution.Types.PackageId (PackageIdentifier (..))
-import Distribution.Types.PackageName (unPackageName)
 import Distribution.Types.Version (Version)
 import Distribution.Types.VersionRange (VersionRange, anyVersion, intersectVersionRanges, notThisVersion)
 import Distribution.Version (isAnyVersion, isNoVersion, simplifyVersionRange)
@@ -59,7 +54,6 @@ import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
 import Network.URI (URI, parseURI)
 import Network.URI.Orphans ()
-import System.FilePath ((<.>), (</>))
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
@@ -86,14 +80,18 @@ writePackageMeta fp a = void $ Toml.encodeToFile packageMetaCodec fp a
 packageMetaCodec :: TomlCodec PackageMeta
 packageMetaCodec =
   PackageMeta
-    <$> Toml.list packageMetaEntryCodec "entries" .= packageMetaEntries
+    <$> Toml.list packageMetaEntryCodec "entries"
+    .= packageMetaEntries
 
 packageMetaEntryCodec :: TomlCodec PackageMetaEntry
 packageMetaEntryCodec =
   PackageMetaEntry
-    <$> timeCodec "timestamp" .= packageMetaEntryTimestamp
-    <*> Toml.arrayOf _VersionRange "preferred-versions" .= packageMetaEntryPreferred
-    <*> Toml.arrayOf _Version "deprecated-versions" .= packageMetaEntryDeprecated
+    <$> timeCodec "timestamp"
+    .= packageMetaEntryTimestamp
+    <*> Toml.arrayOf _VersionRange "preferred-versions"
+    .= packageMetaEntryPreferred
+    <*> Toml.arrayOf _Version "deprecated-versions"
+    .= packageMetaEntryDeprecated
 
 _Version :: Toml.TomlBiMap Version Toml.AnyValue
 _Version = Toml._TextBy showVersion parseVersion
@@ -185,10 +183,14 @@ data PackageVersionSpec = PackageVersionSpec
 sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
   PackageVersionSpec
-    <$> Toml.dioptional (timeCodec "timestamp") .= packageVersionTimestamp
-    <*> packageSourceCodec .= packageVersionSource
-    <*> Toml.list revisionMetaCodec "revisions" .= packageVersionRevisions
-    <*> withDefault False (Toml.bool "force-version") .= packageVersionForce
+    <$> Toml.dioptional (timeCodec "timestamp")
+    .= packageVersionTimestamp
+    <*> packageSourceCodec
+    .= packageVersionSource
+    <*> Toml.list revisionMetaCodec "revisions"
+    .= packageVersionRevisions
+    <*> withDefault False (Toml.bool "force-version")
+    .= packageVersionForce
 
 readPackageVersionSpec :: FilePath -> IO PackageVersionSpec
 readPackageVersionSpec = Toml.decodeFile sourceMetaCodec
@@ -206,8 +208,10 @@ data RevisionSpec = RevisionSpec
 revisionMetaCodec :: TomlCodec RevisionSpec
 revisionMetaCodec =
   RevisionSpec
-    <$> timeCodec "timestamp" .= revisionTimestamp
-    <*> Toml.int "number" .= revisionNumber
+    <$> timeCodec "timestamp"
+    .= revisionTimestamp
+    <*> Toml.int "number"
+    .= revisionNumber
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
@@ -231,18 +235,3 @@ consolidateRanges PackageMetaEntry {packageMetaEntryPreferred, packageMetaEntryD
     range =
       simplifyVersionRange $
         foldr intersectVersionRanges anyVersion (map notThisVersion packageMetaEntryDeprecated ++ packageMetaEntryPreferred)
-
-data PackageVersionMeta = PackageVersionMeta
-  { pkgId :: PackageIdentifier,
-    pkgSpec :: PackageVersionSpec
-  }
-  deriving (Show, Eq)
-  deriving (Generic)
-
-cabalFileRevisionPath :: FilePath -> PackageIdentifier -> Int -> FilePath
-cabalFileRevisionPath inputDir PackageIdentifier {pkgName, pkgVersion} revisionNumber =
-  inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> show revisionNumber <.> "cabal"
-
-revisedCabalFile :: FilePath -> PackageVersionMeta -> Maybe FilePath
-revisedCabalFile inputDir PackageVersionMeta {pkgId, pkgSpec} = do
-  cabalFileRevisionPath inputDir pkgId <$> latestRevisionNumber pkgSpec

@@ -51,7 +51,9 @@ data BuildOptions = BuildOptions
     buildOptsCurrentTime :: Maybe UTCTime,
     buildOptsExpireSignaturesOn :: Maybe UTCTime,
     buildOptsInputDir :: FilePath,
-    buildOptsOutputDir :: FilePath
+    buildOptsOutputDir :: FilePath,
+    buildOptsNumThreads :: Int,
+    buildOptsWriteMetadata :: Bool
   }
 
 buildCommand :: Parser Command
@@ -89,6 +91,20 @@ buildCommand =
                   <> help "Repository output directory"
                   <> showDefault
                   <> value "_repo"
+              )
+            <*> option
+              auto
+              ( long "num-jobs"
+                  <> short 'j'
+                  <> metavar "JOBS"
+                  <> help "Number of jobs to run in parallel, 0 is 'all available cores'"
+                  <> showDefault
+                  <> value 1
+              )
+            <*> switch
+              ( long "write-metadata"
+                  <> help "Write metadata in the output-directory"
+                  <> showDefault
               )
         )
   where

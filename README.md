@@ -273,6 +273,18 @@ metadata file `<package>/<version>/meta.toml` includes the option
 `force-version = true`, then the version in the package cabal file will be
 overwritten with `<version>`. Notice this is done after applying patches.
 
+# Accessing private repositories
+
+Foliage uses curl to fetch remote assets. If you need to access private
+repositories you can use one of the following methods.
+
+- You can instruct curl to use a netrc file.
+  - Add netrc-optional to ~/.curlrc (see [here](https://curl.se/docs/manpage.html#-K) for the places curl looks in).
+  - Add the relevant credentials to ~/.netrc
+- You can also add the credentials directly to curl's configuration, e.g.
+  - Add `user = "USERNAME:PASSWORD"` to .curlrc in the current directly
+  - Set `CURL_HOME=$PWD`
+
 ## Author
 
 - Andrea Bedini (@andreabedini)
