@@ -270,14 +270,14 @@
         "type": "github"
       }
     },
-    "hackage": {
+    "hackage-nix": {
       "flake": false,
       "locked": {
-        "lastModified": 1677809131,
-        "narHash": "sha256-MQ+ybbu5VFA6ERvh8mXcYEVlBCTte4BDxRaILSwBdAk=",
+        "lastModified": 1679444578,
+        "narHash": "sha256-iAGg8IhYPCaJPCeo3hoacVXIGISCFZm1yTgAAvv5aes=",
         "owner": "input-output-hk",
         "repo": "hackage.nix",
-        "rev": "4ea4b12737ea42e47eb5c6a7e4a3eafe9da2fc52",
+        "rev": "f3793d3d9fa159d0f3a652fc4a50b65ed0e86c27",
         "type": "github"
       },
       "original": {
@@ -296,7 +296,9 @@
         "flake-compat": "flake-compat",
         "flake-utils": "flake-utils",
         "ghc-8.6.5-iohk": "ghc-8.6.5-iohk",
-        "hackage": "hackage",
+        "hackage": [
+          "hackage-nix"
+        ],
         "hpc-coveralls": "hpc-coveralls",
         "hydra": "hydra",
         "iserv-proxy": "iserv-proxy",
@@ -775,6 +777,7 @@
           "haskell-nix",
           "flake-utils"
         ],
+        "hackage-nix": "hackage-nix",
         "haskell-nix": "haskell-nix",
         "nixpkgs": [
           "haskell-nix",

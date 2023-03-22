@@ -5,10 +5,13 @@
   inputs = {
     nixpkgs.follows = "haskell-nix/nixpkgs-unstable";
     haskell-nix.url = "github:input-output-hk/haskell.nix";
+    haskell-nix.inputs.hackage.follows = "hackage-nix";
+    hackage-nix.url = "github:input-output-hk/hackage.nix";
+    hackage-nix.flake = false;
     flake-utils.follows = "haskell-nix/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, haskell-nix }:
+  outputs = { self, nixpkgs, flake-utils, haskell-nix, ... }:
 
     flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
