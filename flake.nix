@@ -21,18 +21,28 @@
           overlays = [ haskell-nix.overlay ];
         };
 
-        pkgs-static-where-possible =
-          if pkgs.stdenv.hostPlatform.isLinux then
-            if pkgs.stdenv.hostPlatform.isAarch64 then
-              pkgs.pkgsCross.aarch64-multiplatform-musl
-            else
-              pkgs.pkgsCross.musl64
-          else
-            pkgs;
+        # FIXME: It seems sadly that enabling this makes `ghc` not found in
+        # $PATH on my machine, which makes indeed HLS quite unable to lint the
+        # sources ...
+        #
+        # pkgs-static-where-possible =
+        #   if pkgs.stdenv.hostPlatform.isLinux then
+        #     if pkgs.stdenv.hostPlatform.isAarch64 then
+        #       pkgs.pkgsCross.aarch64-multiplatform-musl
+        #     else
+        #       pkgs.pkgsCross.musl64
+        #   else
+        #     pkgs;
 
-        project = pkgs-static-where-possible.haskell-nix.cabalProject' {
+        project = pkgs.haskell-nix.cabalProject' {
           src = ./.;
           compiler-nix-name = "ghc926";
+
+          shell.tools = {
+            cabal = "latest";
+            hlint = "latest";
+            haskell-language-server = "latest";
+          };
         };
 
         flake = project.flake { };

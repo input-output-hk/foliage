@@ -32,3 +32,8 @@ _cache
 _keys
 _repo
 _sources
+
+### Nix ###
+result
+# https://github.com/nix-community/nix-direnv
+.direnv
