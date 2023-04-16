@@ -25,3 +25,5 @@ jobs:
            authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - run: nix build --accept-flake-config
+
+      - run: ./tests/simple.sh

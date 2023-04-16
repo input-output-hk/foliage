@@ -1,0 +1,13 @@
+-- From https://github.com/input-output-hk/cardano-haskell-packages#how-to-test-changes
+--
+-- Give it a different name to avoid cabal confusing it with the
+-- real CHaP
+repository cardano-haskell-packages-local
+  -- Point this to the *built* repository
+  url: file:./ChaP/_repo
+  secure: True
+  -- You can skip the root-keys field
+
+-- Add all the packages you want to try building
+extra-packages:
+  , cardano-prelude-0.1.0.0
