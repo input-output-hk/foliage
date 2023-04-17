@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -29,7 +30,7 @@ import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
 import Foliage.Meta (PackageVersionSource)
 import Foliage.Meta.Aeson ()
-import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
+import Foliage.PreparePackageVersion (PreparedPackageVersion (..), Timestamped (..))
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
 import System.Directory qualified as IO
@@ -83,7 +84,7 @@ makeAllPackagesPage currentTime outputDir packageVersions =
                       , allPackagesPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
                       , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
                       , allPackagesPageEntrySource = pkgVersionSource
-                      , allPackagesPageEntryLatestRevisionTimestamp = fst <$> listToMaybe cabalFileRevisions
+                      , allPackagesPageEntryLatestRevisionTimestamp = timestamp <$> listToMaybe cabalFileRevisions
                       }
                 )
         )
@@ -127,15 +128,14 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
             , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
             , allPackageVersionsPageEntrySource = pkgVersionSource
             , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
-            }
-            -- list of revisions
+            } -- list of revisions
             : [ AllPackageVersionsPageEntryRevision
                 { allPackageVersionsPageEntryPkgId = pkgId
-                , allPackageVersionsPageEntryTimestamp = revisionTimestamp
-                , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                , allPackageVersionsPageEntryTimestamp = timestamp revision
+                , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds $ timestamp revision
                 , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
                 }
-              | (revisionTimestamp, _) <- cabalFileRevisions
+              | revision <- cabalFileRevisions
               ]
       )
       packageVersions
@@ -150,7 +150,7 @@ makePackageVersionPage outputDir PreparedPackageVersion{pkgId, pkgTimestamp, pkg
       renderMustache packageVersionPageTemplate $
         object
           [ "pkgVersionSource" .= pkgVersionSource
-          , "cabalFileRevisions" .= map fst cabalFileRevisions
+          , "cabalFileRevisions" .= map timestamp cabalFileRevisions
           , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
           , "pkgTimestamp" .= pkgTimestamp
           , "pkgVersionDeprecated" .= pkgVersionIsDeprecated

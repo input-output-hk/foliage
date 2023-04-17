@@ -1,6 +1,6 @@
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Foliage.PreparePackageVersion (
   PreparedPackageVersion (
@@ -18,15 +18,18 @@ module Foliage.PreparePackageVersion (
   ),
   pattern PreparedPackageVersion,
   preparePackageVersion,
+  Timestamped (..),
 )
 where
 
 import Control.Monad (unless)
+import Data.ByteString.Lazy.Char8 qualified as BL
+import Data.Foldable (foldlM)
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Ord (Down (..))
-import Development.Shake (Action)
+import Development.Shake (Action, CmdOption (..), Stdout (..), cmd, copyFileChanged, liftIO, need)
 import Development.Shake.FilePath (joinPath, splitDirectories)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
@@ -37,7 +40,10 @@ import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionS
 import Foliage.PrepareSdist (prepareSdist)
 import Foliage.PrepareSource (prepareSource)
 import Foliage.Shake (readGenericPackageDescription', readPackageVersionSpec')
-import System.FilePath (takeBaseName, takeFileName, (<.>), (</>))
+import System.FilePath (takeBaseName, takeExtension, takeFileName, (<.>), (</>))
+
+data Timestamped a = Timestamped {timestamp :: UTCTime, timestampedValue :: a}
+  deriving (Eq, Ord, Show)
 
 -- TODO: can we ensure that `pkgVersionDeprecationChanges` and `cabalFileRevisions` are
 -- sorted by timestamp? e.g https://hackage.haskell.org/package/sorted-list
@@ -50,9 +56,12 @@ data PreparedPackageVersion = PreparedPackageVersion
   , pkgVersionDeprecationChanges :: [(UTCTime, Bool)]
   , pkgDesc :: GenericPackageDescription
   , sdistPath :: FilePath
-  , cabalFilePath :: FilePath
-  , originalCabalFilePath :: FilePath
-  , cabalFileRevisions :: [(UTCTime, FilePath)]
+  , -- latest cabal file
+    cabalFilePath :: FilePath
+  , -- cabal file in the sdist
+    originalCabalFilePath :: FilePath
+  , -- all cabal file revisions
+    cabalFileRevisions :: [Timestamped FilePath]
   }
 
 -- @andreabedini comments:
@@ -93,64 +102,40 @@ preparePackageVersion inputDir metaFile = do
   let pkgId = PackageIdentifier pkgName pkgVersion
 
   pkgSpec <-
-    readPackageVersionSpec' (inputDir </> metaFile) >>= \meta@PackageVersionSpec{..} -> do
-      case (NE.nonEmpty packageVersionRevisions, packageVersionTimestamp) of
-        (Just _someRevisions, Nothing) ->
-          error $
-            unlines
-              [ inputDir </> metaFile <> " has cabal file revisions but the package has no timestamp."
-              , "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
-              ]
-        (Just (NE.sort -> someRevisions), Just ts)
-          -- WARN: this should really be a <=
-          | revisionTimestamp (NE.head someRevisions) < ts ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself."
-                  , "Adjust the timestamps so that all revisions come after the package publication."
-                  ]
-          | not (null $ duplicates (revisionTimestamp <$> someRevisions)) ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has two revisions entries with the same timestamp."
-                  , "Adjust the timestamps so that all the revisions happen at a different time."
-                  ]
-        _otherwise -> return ()
-
-      case (NE.nonEmpty packageVersionDeprecations, packageVersionTimestamp) of
-        (Just _someDeprecations, Nothing) ->
-          error $
-            unlines
-              [ inputDir </> metaFile <> " has deprecations but the package has no timestamp."
-              , "This combination doesn't make sense. Either add a timestamp on the original package or remove the deprecation."
-              ]
-        (Just (NE.sort -> someDeprecations), Just ts)
-          | deprecationTimestamp (NE.head someDeprecations) <= ts ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has a deprecation entry with timestamp earlier (or equal) than the package itself."
-                  , "Adjust the timestamps so that all the (un-)deprecations come after the package publication."
-                  ]
-          | not (deprecationIsDeprecated (NE.head someDeprecations)) ->
-              error $
-                "The first deprecation entry in" <> inputDir </> metaFile <> " cannot be an un-deprecation"
-          | not (null $ duplicates (deprecationTimestamp <$> someDeprecations)) ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has two deprecation entries with the same timestamp."
-                  , "Adjust the timestamps so that all the (un-)deprecations happen at a different time."
-                  ]
-          | not (null $ doubleDeprecations someDeprecations) ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations."
-                  , "Make sure deprecations and un-deprecations alternate in time."
-                  ]
-        _otherwise -> return ()
-
-      return meta
+    readPackageVersionSpec' (inputDir </> metaFile) >>= \case
+      PackageVersionSpec{packageVersionRevisions, packageVersionTimestamp = Nothing}
+        | not (null packageVersionRevisions) -> do
+            error $
+              unlines
+                [ inputDir </> metaFile <> " has cabal file revisions but the original package has no timestamp."
+                , "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions"
+                ]
+      PackageVersionSpec{packageVersionRevisions, packageVersionTimestamp = Just pkgTs}
+        | any ((< pkgTs) . revisionTimestamp) packageVersionRevisions -> do
+            error $
+              unlines
+                [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself."
+                , "Adjust the timestamps so that all revisions come after the original package"
+                ]
+      meta ->
+        return meta
 
   srcDir <- prepareSource pkgId pkgSpec
+
+  -- FIXME: This produce a Shake error since it `need` the file:
+  --
+  --     revisionNumber <.> "cabal"
+  --
+  -- ... which could now be a `.diff` or a `.patch`!
+  --
+  -- @andreabedini commented:
+  --
+  -- > I don't think that cabalFileRevisions :: [Timestamped FilePath] can work
+  -- > anymore since there's no filepath for a computed revision (unless we put
+  -- > it in _cache but I would avoid that).
+  -- >
+  -- > @yvan-sraka I think the correct solution is to turn cabalFileRevisions
+  -- > into [Timestamped ByteString] and compute the revisions as part of
 
   let originalCabalFilePath = srcDir </> prettyShow pkgName <.> "cabal"
 
@@ -187,13 +172,6 @@ preparePackageVersion inputDir metaFile = do
         , "version in cabal file: " ++ prettyShow (Distribution.Types.PackageId.pkgVersion $ package $ packageDescription pkgDesc)
         ]
 
-  let cabalFileRevisions =
-        sortOn
-          Down
-          [ (revisionTimestamp, cabalFileRevisionPath revisionNumber)
-          | RevisionSpec{revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec
-          ]
-
   let pkgVersionDeprecationChanges =
         sortOn
           Down
@@ -202,6 +180,23 @@ preparePackageVersion inputDir metaFile = do
           ]
 
   let pkgVersionIsDeprecated = maybe False snd $ listToMaybe pkgVersionDeprecationChanges
+
+  -- use contents rather than path
+  cabalFileRevisions <-
+    sortOn
+      (Down . timestamp)
+      <$> foldlM
+        ( \prevCabalFilePath (RevisionSpec{revisionTimestamp, revisionNumber}) -> do
+            let inputFile = cabalFileRevisionPath revisionNumber
+            let (Timestamped patch _) = prevCabalFilePath
+            if takeExtension inputFile `elem` [".diff", ".patch"]
+              then do
+                Stdout out <- cmd ["patch", "-i", inputFile, "-o", "-", prevCabalFilePath]
+                return $ Timestamped revisionTimestamp out
+              else Timestamped revisionTimestamp <$> BL.readFile inputFile
+        )
+        originalCabalFilePath
+        (packageVersionRevisions pkgSpec)
 
   return
     PreparedPackageVersion
@@ -217,9 +212,3 @@ preparePackageVersion inputDir metaFile = do
       , originalCabalFilePath
       , cabalFileRevisions
       }
-
-duplicates :: (Ord a) => NE.NonEmpty a -> [a]
-duplicates = mapMaybe (listToMaybe . NE.tail) . NE.group
-
-doubleDeprecations :: NE.NonEmpty DeprecationSpec -> [NE.NonEmpty DeprecationSpec]
-doubleDeprecations = filter ((> 1) . length) . NE.groupWith deprecationIsDeprecated
