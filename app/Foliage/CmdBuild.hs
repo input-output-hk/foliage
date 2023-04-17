@@ -10,8 +10,8 @@ import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, void, when)
 import Data.Aeson qualified as Aeson
 import Data.Bifunctor (second)
-import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as BL
+import Data.Foldable (foldlM)
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe)
@@ -28,7 +28,7 @@ import Foliage.Meta
 import Foliage.Meta.Aeson ()
 import Foliage.Options
 import Foliage.Pages
-import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
+import Foliage.PreparePackageVersion (PreparedPackageVersion (..), Timestamped (..), preparePackageVersion)
 import Foliage.PrepareSdist (addPrepareSdistRule)
 import Foliage.PrepareSource (addPrepareSourceRule)
 import Foliage.Shake
@@ -107,22 +107,41 @@ buildAction
     cabalEntries <-
       foldMap
         ( \PreparedPackageVersion{pkgId, pkgTimestamp, cabalFilePath, originalCabalFilePath, cabalFileRevisions} -> do
-            -- original cabal file, with its timestamp (if specified)
-            copyFileChanged originalCabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> "0" <.> "cabal")
-            cf <- prepareIndexPkgCabal pkgId (fromMaybe currentTime pkgTimestamp) originalCabalFilePath
+        -- need [originalCabalFilePath]
 
-            -- all revised cabal files, with their timestamp
-            revcf <- for (zip [1 :: Int ..] cabalFileRevisions) $ \(revNum, (timestamp, path)) -> do
-              copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> show revNum <.> "cabal")
-              prepareIndexPkgCabal pkgId timestamp path
+        -- initial <- do
+        --     content <- liftIO $ BL.readFile originalCabalFilePath
+        --     let entry = mkTarEntry (Timestamped (fromMaybe currentTime pkgTimestamp) originalCabalFilePath) (IndexPkgCabal pkgId)
+        --     _
+        -- foldlM
+        --   (\prevCabalFilePath (revNum, Timestamped ts patchOrNewCabalFile) -> do
+        --     need [patchOrNewCabalFile]
+        --     let outputFile = outputDir </> "package" </> prettyShow pkgId </> "revision" </> show revNum <.> "cabal"
+        --     if takeExtension patchOrNewCabalFile `elem` [".diff", ".patch"]
+        --     then do
+        --             cmd ["patch", "-i", patchOrNewCabalFile, "-o", outputFile, prevCabalFilePath]
+        --     else copyFileChanged patchOrNewCabalFile outputFile
+        --     return outputFile
+        --     )
+        --   cabalFilePath
+        --   (zip [1:: Int ..] cabalFileRevisions)
 
-            -- current version of the cabal file (after the revisions, if any)
-            copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> prettyShow (pkgName pkgId) <.> "cabal")
+        -- -- original cabal file, with its timestamp (if specified)
+        -- copyFileChanged originalCabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> "0" <.> "cabal")
+        -- cf <- prepareIndexPkgCabal pkgId (Timestamped (fromMaybe currentTime pkgTimestamp) originalCabalFilePath) [] -- FIXME !!
 
-            -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
-            -- This accidentally works because 1) the following inserts the original cabal file before the revisions
-            -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
-            return $ cf : revcf
+        -- -- all revised cabal files, with their timestamp
+        -- revcf <- for (zip [1 :: Int ..] cabalFileRevisions) $ \(revNum, path) -> do
+        --   copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> show revNum <.> "cabal")
+        --   prepareIndexPkgCabal pkgId path [] -- FIXME !!
+
+        -- -- current version of the cabal file (after the revisions, if any)
+        -- copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> prettyShow (pkgName pkgId) <.> "cabal")
+
+        -- -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
+        -- -- This accidentally works because 1) the following inserts the original cabal file before the revisions
+        -- -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
+        -- return $ cf : revcf
         )
         packageVersions
 
@@ -133,9 +152,8 @@ buildAction
         targets <- prepareIndexPkgMetadata expiryTime ppv
         pure $
           mkTarEntry
-            (renderSignedJSON targetKeys targets)
+            (Timestamped (fromMaybe currentTime pkgTimestamp) (renderSignedJSON targetKeys targets))
             (IndexPkgMetadata pkgId)
-            (fromMaybe currentTime pkgTimestamp)
 
     let extraEntries = getExtraEntries packageVersions
 
@@ -264,11 +282,29 @@ getPackageVersions inputDir = do
 
   forP metaFiles $ preparePackageVersion inputDir
 
-prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
-prepareIndexPkgCabal pkgId timestamp filePath = do
-  need [filePath]
-  contents <- liftIO $ BS.readFile filePath
-  pure $ mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
+prepareIndexPkgCabal :: PackageId -> Timestamped FilePath -> [Timestamped FilePath] -> Action [Tar.Entry]
+prepareIndexPkgCabal pkgId (Timestamped timestamp originalFilePath) revisions = do
+  need (originalFilePath : map timestampedValue revisions)
+  original <- liftIO (BL.readFile originalFilePath)
+  revisionsApplied <- applyRevisionsInOrder [Timestamped timestamp original] revisions
+  pure $ map (\content -> mkTarEntry content (IndexPkgCabal pkgId)) revisionsApplied
+
+applyRevisionsInOrder :: [Timestamped BL.ByteString] -> [Timestamped FilePath] -> Action [Timestamped BL.ByteString]
+applyRevisionsInOrder acc [] = pure (reverse acc)
+applyRevisionsInOrder acc (patch : remainingPatches) = do
+  newContent <- applyRevision (timestampedValue $ last acc) patch
+  applyRevisionsInOrder (newContent : acc) remainingPatches
+
+applyRevision :: BL.ByteString -> Timestamped FilePath -> Action (Timestamped BL.ByteString)
+applyRevision lastRevisionContents (Timestamped timestamp revisionPath) = do
+  content <-
+    if takeExtension revisionPath `elem` [".diff", ".patch"]
+      then do
+        liftIO $ putStrLn $ "Applying patch " ++ revisionPath
+        cmd_ (StdinBS lastRevisionContents) ["patch", "-i", revisionPath]
+        liftIO $ BL.readFile revisionPath
+      else pure lastRevisionContents
+  return $ Timestamped timestamp content
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PreparedPackageVersion -> Action Targets
 prepareIndexPkgMetadata expiryTime PreparedPackageVersion{pkgId, sdistPath} = do
@@ -304,14 +340,13 @@ getExtraEntries packageVersions =
       -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
       effectiveRanges :: [(UTCTime, VersionRange)]
       effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) deprecationChanges
-
-      -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
-      createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow dep) (IndexPkgPrefs pn) ts
-       where
-        -- Cabal uses `Dependency` to represent preferred versions, cf.
-        -- `parsePreferredVersions`. The (sub)libraries part is ignored.
-        dep = mkDependency pn effectiveRange mainLibSet
    in
+    -- -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
+    -- createTarEntry (ts, effectiveRange) = mkTarEntry (Timestamped ts (BL.pack $ prettyShow dep)) (IndexPkgPrefs pn)
+    --   where
+    --     -- Cabal uses `Dependency` to represent preferred versions, cf.
+    --     -- `parsePreferredVersions`. The (sub)libraries part is ignored.
+    --     dep = mkDependency pn effectiveRange mainLibSet
     foldMap generateEntriesForGroup groupedPackageVersions
 
 -- TODO: the functions belows should be moved to Foliage.PreparedPackageVersion
@@ -338,8 +373,8 @@ applyDeprecation pkgVersion deprecated =
     then intersectVersionRanges (notThisVersion pkgVersion)
     else unionVersionRanges (thisVersion pkgVersion)
 
-mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
-mkTarEntry contents indexFile timestamp =
+mkTarEntry :: Timestamped BL.ByteString -> IndexFile dec -> Tar.Entry
+mkTarEntry (Timestamped timestamp contents) indexFile =
   (Tar.fileEntry tarPath contents)
     { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp
     , Tar.entryOwnership =
