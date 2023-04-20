@@ -13,7 +13,7 @@
 
   outputs = { self, nixpkgs, flake-utils, haskell-nix, ... }:
 
-    flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
+    flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
