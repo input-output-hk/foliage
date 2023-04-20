@@ -16,6 +16,7 @@ module Foliage.Meta
     packageVersionTimestamp,
     packageVersionSource,
     packageVersionRevisions,
+    packageVersionDeprecations,
     packageVersionForce,
     PackageVersionSpec (PackageVersionSpec),
     readPackageVersionSpec,
@@ -23,6 +24,9 @@ module Foliage.Meta
     RevisionSpec (RevisionSpec),
     revisionTimestamp,
     revisionNumber,
+    DeprecationSpec (DeprecationSpec),
+    deprecationTimestamp,
+    deprecationIsDeprecated,
     PackageVersionSource,
     pattern TarballSource,
     pattern GitHubSource,
@@ -174,6 +178,8 @@ data PackageVersionSpec = PackageVersionSpec
     packageVersionSource :: PackageVersionSource,
     -- | revisions
     packageVersionRevisions :: [RevisionSpec],
+    -- | deprecations
+    packageVersionDeprecations :: [DeprecationSpec],
     -- | force version
     packageVersionForce :: Bool
   }
@@ -189,6 +195,8 @@ sourceMetaCodec =
     .= packageVersionSource
     <*> Toml.list revisionMetaCodec "revisions"
     .= packageVersionRevisions
+    <*> Toml.list deprecationMetaCodec "deprecation"
+    .= packageVersionDeprecations
     <*> withDefault False (Toml.bool "force-version")
     .= packageVersionForce
 
@@ -202,7 +210,7 @@ data RevisionSpec = RevisionSpec
   { revisionTimestamp :: UTCTime,
     revisionNumber :: Int
   }
-  deriving (Show, Eq, Generic)
+  deriving (Show, Eq, Generic, Ord)
   deriving anyclass (Binary, Hashable, NFData)
 
 revisionMetaCodec :: TomlCodec RevisionSpec
@@ -212,6 +220,21 @@ revisionMetaCodec =
     .= revisionTimestamp
     <*> Toml.int "number"
     .= revisionNumber
+
+data DeprecationSpec = DeprecationSpec
+  { deprecationTimestamp :: UTCTime,
+    deprecationIsDeprecated :: Bool
+  }
+  deriving (Show, Eq, Generic, Ord)
+  deriving anyclass (Binary, Hashable, NFData)
+
+deprecationMetaCodec :: TomlCodec DeprecationSpec
+deprecationMetaCodec =
+  DeprecationSpec
+    <$> timeCodec "timestamp"
+    .= deprecationTimestamp
+    <*> withDefault True (Toml.bool "deprecated")
+    .= deprecationIsDeprecated
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key

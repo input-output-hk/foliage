@@ -49,7 +49,11 @@
         {{#entries}}
           {{#AllPackageVersionsPageEntryPackage}}
           <tr>
-            <td class="col-sm-2"><a href="../package/{{allPackageVersionsPageEntryPkgId}}">{{allPackageVersionsPageEntryPkgId}}</a></td>
+            <td class="col-sm-2">
+              <a href="../package/{{allPackageVersionsPageEntryPkgId}}">{{allPackageVersionsPageEntryPkgId}}</a></td>
+              {{#allPackageVersionsPageEntryDeprecated}}
+              <span class="badge bg-danger">Deprecated</span>
+              {{/allPackageVersionsPageEntryDeprecated}}
             <td class="col-sm-1">Version</td>
             <td class="col-sm-3" data-order="{{allPackageVersionsPageEntryTimestampPosix}}">{{allPackageVersionsPageEntryTimestamp}}</td>
             <td class="col-sm-6">

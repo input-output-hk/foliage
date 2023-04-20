@@ -27,7 +27,11 @@
         <li class="nav-item">
           <a class="nav-link" href="../../all-package-versions/index.html">All package versions</a>
         </li>
-      </ul>      <h1 class="py-5">
+      </ul>
+      <h1 class="py-5">
+        {{#pkgVersionDeprecated}}
+        <span class="badge bg-danger" style="font-size: 1em">Deprecated</span>
+        {{/pkgVersionDeprecated}}
         {{name}}-{{version}}
       </h1>
       <dl class="row class="px-4 py-5">

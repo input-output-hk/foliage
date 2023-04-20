@@ -18,6 +18,8 @@ deriving via MyAesonEncoding PackageMetaEntry instance ToJSON PackageMetaEntry
 
 deriving via MyAesonEncoding RevisionSpec instance ToJSON RevisionSpec
 
+deriving via MyAesonEncoding DeprecationSpec instance ToJSON DeprecationSpec
+
 deriving via MyAesonEncoding PackageVersionSpec instance ToJSON PackageVersionSpec
 
 deriving via Text instance ToJSON GitHubRepo
