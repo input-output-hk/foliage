@@ -195,7 +195,7 @@ sourceMetaCodec =
     .= packageVersionSource
     <*> Toml.list revisionMetaCodec "revisions"
     .= packageVersionRevisions
-    <*> Toml.list deprecationMetaCodec "deprecation"
+    <*> Toml.list deprecationMetaCodec "deprecations"
     .= packageVersionDeprecations
     <*> withDefault False (Toml.bool "force-version")
     .= packageVersionForce
