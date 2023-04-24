@@ -102,10 +102,10 @@ preparePackageVersion inputDir metaFile = do
                 "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
               ]
         (Just (NE.sort -> someRevisions), Just ts)
-          | revisionTimestamp (NE.head someRevisions) <= ts ->
+          | revisionTimestamp (NE.head someRevisions) < ts ->
               error $
                 unlines
-                  [ inputDir </> metaFile <> " has a revision with timestamp earlier (or equal) than the package itself.",
+                  [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself.",
                     "Adjust the timestamps so that all revisions come after the package publication."
                   ]
           | not (null $ duplicates (revisionTimestamp <$> someRevisions)) ->
