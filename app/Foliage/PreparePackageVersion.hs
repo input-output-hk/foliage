@@ -102,6 +102,7 @@ preparePackageVersion inputDir metaFile = do
                 "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
               ]
         (Just (NE.sort -> someRevisions), Just ts)
+          -- WARN: this should really be a <=
           | revisionTimestamp (NE.head someRevisions) < ts ->
               error $
                 unlines

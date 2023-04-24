@@ -121,6 +121,9 @@ buildAction
             -- all revised cabal files, with their timestamp
             revcf <- for cabalFileRevisions $ uncurry (prepareIndexPkgCabal pkgId)
 
+            -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
+            -- This accidentally works because 1) the following inserts the original cabal file before the revisions
+            -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
             return $ cf : revcf
         )
         packageVersions
@@ -141,6 +144,7 @@ buildAction
 
     let extraEntries = getExtraEntries packageVersions
 
+    -- WARN: See note above, the sorting here has to be stable
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries ++ extraEntries)
     traced "Writing index" $ do
       BL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
