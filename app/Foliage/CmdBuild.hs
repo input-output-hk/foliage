@@ -311,7 +311,7 @@ getExtraEntries packageVersions =
           -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
           effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) deprecationChanges
           -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
-          createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ show effectiveRange) (IndexPkgPrefs pn) ts
+          createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow effectiveRange) (IndexPkgPrefs pn) ts
    in foldMap generateEntriesForGroup groupedPackageVersions
 
 -- Extract deprecation changes for a given `PreparedPackageVersion`.
