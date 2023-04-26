@@ -22,10 +22,10 @@ executable foliage
         Foliage.CmdBuild
         Foliage.CmdCreateKeys
         Foliage.CmdImportIndex
+        Foliage.CmdLint
         Foliage.HackageSecurity
         Foliage.Meta
         Foliage.Meta.Aeson
-        Foliage.Options
         Foliage.Pages
         Foliage.PreparePackageVersion
         Foliage.PrepareSource

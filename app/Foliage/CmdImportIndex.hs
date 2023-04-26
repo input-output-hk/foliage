@@ -2,6 +2,8 @@
 
 module Foliage.CmdImportIndex
   ( cmdImportIndex,
+    importIndexOptionsParser,
+    ImportIndexOptions (..),
   )
 where
 
@@ -19,11 +21,36 @@ import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta
-import Foliage.Options
 import Network.URI hiding (path)
+import Options.Applicative
 import System.Directory (createDirectoryIfMissing)
 import System.Environment (getEnv)
 import System.FilePath
+
+data ImportFilter = ImportFilter String (Maybe String)
+
+newtype ImportIndexOptions = ImportIndexOptions
+  { importOptsFilter :: Maybe ImportFilter
+  }
+
+importIndexOptionsParser :: Parser ImportIndexOptions
+importIndexOptionsParser =
+  ImportIndexOptions
+    <$> optional
+      ( ImportFilter
+          <$> strOption
+            ( long "package-name"
+                <> metavar "NAME"
+                <> help "package name"
+            )
+          <*> optional
+            ( strOption
+                ( long "package-version"
+                    <> metavar "VERSION"
+                    <> help "package version"
+                )
+            )
+      )
 
 cmdImportIndex :: ImportIndexOptions -> IO ()
 cmdImportIndex opts = do
