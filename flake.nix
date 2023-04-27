@@ -12,7 +12,6 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, haskell-nix, ... }:
-
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -20,25 +19,34 @@
           inherit (haskell-nix) config;
           overlays = [ haskell-nix.overlay ];
         };
+        inherit (pkgs) lib;
 
-        pkgs-static-where-possible =
-          if pkgs.stdenv.hostPlatform.isLinux then
-            if pkgs.stdenv.hostPlatform.isAarch64 then
-              pkgs.pkgsCross.aarch64-multiplatform-musl
-            else
-              pkgs.pkgsCross.musl64
-          else
-            pkgs;
-
-        project = pkgs-static-where-possible.haskell-nix.cabalProject' {
+        project = pkgs.haskell-nix.cabalProject' {
           src = ./.;
           compiler-nix-name = "ghc926";
+          shell.tools = {
+            cabal = "latest";
+            hlint = "latest";
+            haskell-language-server = "latest";
+          };
         };
 
         flake = project.flake { };
 
       in
-      flake // { packages.default = flake.packages."foliage:exe:foliage"; });
+      flake // {
+        inherit project;
+
+        packages = rec {
+          default = foliage;
+          foliage = flake.packages."foliage:exe:foliage";
+        } // lib.attrsets.optionalAttrs (system == "x86_64-linux") {
+          foliage-static = project.projectCross.musl64;
+        } // lib.attrsets.optionalAttrs (system == "aarch64-linux") {
+          foliage-static = project.projectCross.aarch64-multiplatform-musl;
+        };
+
+      });
 
   nixConfig = {
     extra-substituters = [
