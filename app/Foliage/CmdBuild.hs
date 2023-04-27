@@ -1,7 +1,14 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Foliage.CmdBuild (cmdBuild) where
+module Foliage.CmdBuild
+  ( cmdBuild,
+    buildOptionsParser,
+    BuildOptions (..),
+    SignOptions (..),
+  )
+where
 
 import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
@@ -15,23 +22,105 @@ import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Traversable (for)
 import Development.Shake
+import Development.Shake.Classes
 import Development.Shake.FilePath
 import Distribution.Package
 import Distribution.Pretty (prettyShow)
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
-import Foliage.Meta.Aeson ()
-import Foliage.Options
 import Foliage.Pages
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
 import Foliage.PrepareSdist (addPrepareSdistRule)
 import Foliage.PrepareSource (addPrepareSourceRule)
 import Foliage.RemoteAsset (addFetchRemoteAssetRule)
 import Foliage.Shake
+import Foliage.Time
 import Foliage.Time qualified as Time
+import GHC.Generics (Generic)
 import Hackage.Security.Util.Path (castRoot, toFilePath)
 import Network.URI (URI (uriPath, uriQuery, uriScheme), nullURI)
+import Options.Applicative
 import System.Directory (createDirectoryIfMissing)
+
+data SignOptions
+  = SignOptsSignWithKeys FilePath
+  | SignOptsDon'tSign
+  deriving (Show, Eq, Generic)
+  deriving anyclass (Binary, Hashable, NFData)
+
+data BuildOptions = BuildOptions
+  { buildOptsSignOpts :: SignOptions,
+    buildOptsCurrentTime :: Maybe UTCTime,
+    buildOptsExpireSignaturesOn :: Maybe UTCTime,
+    buildOptsInputDir :: FilePath,
+    buildOptsOutputDir :: FilePath,
+    buildOptsNumThreads :: Int,
+    buildOptsWriteMetadata :: Bool
+  }
+
+buildOptionsParser :: Parser BuildOptions
+buildOptionsParser =
+  BuildOptions
+    <$> signOpts
+    <*> optional
+      ( option
+          (maybeReader iso8601ParseM)
+          ( long "current-time"
+              <> metavar "TIME"
+              <> help "Set current time"
+              <> showDefault
+          )
+      )
+    <*> optional
+      ( option
+          (maybeReader iso8601ParseM)
+          ( long "expire-signatures-on"
+              <> metavar "TIME"
+              <> help "Set an expiry date on TUF signatures"
+          )
+      )
+    <*> strOption
+      ( long "input-directory"
+          <> metavar "INPUT"
+          <> help "Repository input directory"
+          <> showDefault
+          <> value "_sources"
+      )
+    <*> strOption
+      ( long "output-directory"
+          <> metavar "OUTPUT"
+          <> help "Repository output directory"
+          <> showDefault
+          <> value "_repo"
+      )
+    <*> option
+      auto
+      ( long "num-jobs"
+          <> short 'j'
+          <> metavar "JOBS"
+          <> help "Number of jobs to run in parallel, 0 is 'all available cores'"
+          <> showDefault
+          <> value 1
+      )
+    <*> switch
+      ( long "write-metadata"
+          <> help "Write metadata in the output-directory"
+          <> showDefault
+      )
+  where
+    signOpts =
+      ( SignOptsSignWithKeys
+          <$> strOption
+            ( long "keys"
+                <> metavar "KEYS"
+                <> help "TUF keys location"
+                <> showDefault
+                <> value "_keys"
+            )
+      )
+        <|> ( SignOptsDon'tSign
+                <$ switch (long "no-signatures" <> help "Don't sign the repository")
+            )
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do

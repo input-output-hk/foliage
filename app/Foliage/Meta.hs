@@ -31,11 +31,14 @@ module Foliage.Meta
     UTCTime,
     latestRevisionNumber,
     consolidateRanges,
+    prettyPackageVersionSpec,
+    parsePackageVersionSpec,
   )
 where
 
 import Control.Applicative ((<|>))
 import Control.Monad (void)
+import Data.Bifunctor (first)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down))
@@ -197,6 +200,12 @@ readPackageVersionSpec = Toml.decodeFile sourceMetaCodec
 
 writePackageVersionSpec :: FilePath -> PackageVersionSpec -> IO ()
 writePackageVersionSpec fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
+
+parsePackageVersionSpec :: Text -> Either Text PackageVersionSpec
+parsePackageVersionSpec = first Toml.prettyTomlDecodeErrors . Toml.decode sourceMetaCodec
+
+prettyPackageVersionSpec :: PackageVersionSpec -> Text
+prettyPackageVersionSpec = Toml.encode sourceMetaCodec
 
 data RevisionSpec = RevisionSpec
   { revisionTimestamp :: UTCTime,
