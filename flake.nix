@@ -31,22 +31,34 @@
           };
         };
 
-        flake = project.flake { };
-
+        flake = project.flake (
+          lib.attrsets.optionalAttrs (system == "x86_64-linux")
+            { crossPlatforms = p: [ p.musl64 ]; }
+          // lib.attrsets.optionalAttrs (system == "aarch64-linux")
+            { crossPlatforms = p: [ p.aarch64-multiplatform-musl ]; }
+        );
       in
+
       flake // {
         inherit project;
 
-        packages = rec {
-          default = foliage;
-          foliage = flake.packages."foliage:exe:foliage";
-        } // lib.attrsets.optionalAttrs (system == "x86_64-linux") {
-          foliage-static = project.projectCross.musl64;
-        } // lib.attrsets.optionalAttrs (system == "aarch64-linux") {
-          foliage-static = project.projectCross.aarch64-multiplatform-musl;
-        };
+        # This is way too much boilerplate. I only want the default package to
+        # be the main exe (package or app) and "static" the static version on
+        # the systems where it is available.
 
-      });
+        apps = { default = flake.apps."foliage:exe:foliage"; }
+        // lib.attrsets.optionalAttrs (system == "x86_64-linux")
+          { static = flake.apps."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+        // lib.attrsets.optionalAttrs (system == "aarch64-linux")
+          { static = flake.apps."aarch64-multiplatform-musl:foliage:exe:foliage"; };
+
+        packages = { default = flake.packages."foliage:exe:foliage"; }
+        // lib.attrsets.optionalAttrs (system == "x86_64-linux")
+          { static = flake.packages."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+        // lib.attrsets.optionalAttrs (system == "aarch64-linux")
+          { static = flake.packages."aarch64-multiplatform-musl:foliage:exe:foliage"; };
+      }
+    );
 
   nixConfig = {
     extra-substituters = [
