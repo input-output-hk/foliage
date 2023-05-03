@@ -12,33 +12,50 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, haskell-nix, ... }:
-
-    flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
+    flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           inherit system;
           inherit (haskell-nix) config;
           overlays = [ haskell-nix.overlay ];
         };
+        inherit (pkgs) lib;
 
-        pkgs-static-where-possible =
-          if pkgs.stdenv.hostPlatform.isLinux then
-            if pkgs.stdenv.hostPlatform.isAarch64 then
-              pkgs.pkgsCross.aarch64-multiplatform-musl
-            else
-              pkgs.pkgsCross.musl64
-          else
-            pkgs;
-
-        project = pkgs-static-where-possible.haskell-nix.cabalProject' {
+        project = pkgs.haskell-nix.cabalProject' {
           src = ./.;
           compiler-nix-name = "ghc926";
+          shell.tools = {
+            cabal = "latest";
+            hlint = "latest";
+            haskell-language-server = "latest";
+          };
         };
 
-        flake = project.flake { };
-
+        flake = project.flake (
+          lib.attrsets.optionalAttrs (system == "x86_64-linux")
+            { crossPlatforms = p: [ p.musl64 ]; }
+        );
       in
-      flake // { packages.default = flake.packages."foliage:exe:foliage"; });
+
+      flake // {
+        inherit project;
+
+        # This is way too much boilerplate. I only want the default package to
+        # be the main exe (package or app) and "static" the static version on
+        # the systems where it is available.
+
+        apps = { default = flake.apps."foliage:exe:foliage"; }
+        // lib.attrsets.optionalAttrs (system == "x86_64-linux")
+          { static = flake.apps."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+        // lib.attrsets.optionalAttrs (system == "aarch64-linux")
+          { static = flake.apps."aarch64-multiplatform-musl:foliage:exe:foliage"; };
+
+        packages = { default = flake.packages."foliage:exe:foliage"; }
+        // lib.attrsets.optionalAttrs (system == "x86_64-linux")
+          { static = flake.packages."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+        ;
+      }
+    );
 
   nixConfig = {
     extra-substituters = [
