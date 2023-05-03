@@ -34,8 +34,6 @@
         flake = project.flake (
           lib.attrsets.optionalAttrs (system == "x86_64-linux")
             { crossPlatforms = p: [ p.musl64 ]; }
-          // lib.attrsets.optionalAttrs (system == "aarch64-linux")
-            { crossPlatforms = p: [ p.aarch64-multiplatform-musl ]; }
         );
       in
 
@@ -55,8 +53,7 @@
         packages = { default = flake.packages."foliage:exe:foliage"; }
         // lib.attrsets.optionalAttrs (system == "x86_64-linux")
           { static = flake.packages."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
-        // lib.attrsets.optionalAttrs (system == "aarch64-linux")
-          { static = flake.packages."aarch64-multiplatform-musl:foliage:exe:foliage"; };
+        ;
       }
     );
 
