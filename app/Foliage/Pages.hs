@@ -124,8 +124,6 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
                 allPackageVersionsPageEntryTimestamp = fromMaybe currentTime pkgTimestamp,
                 allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp),
                 allPackageVersionsPageEntrySource = pkgVersionSource,
-                -- FIXME: this weirdly seems to not work (display a `Deprecated` badge on all package version page) ...
-                -- don't understand yet why! :/
                 allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
               }
               -- list of revisions
