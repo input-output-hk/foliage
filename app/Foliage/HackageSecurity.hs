@@ -40,18 +40,6 @@ createKeys base = do
   putStrLn "  root keys:"
   createDirectoryIfMissing True (base </> "root")
   replicateM_ 3 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "root")
-  putStrLn "  target keys:"
-  createDirectoryIfMissing True (base </> "target")
-  replicateM_ 3 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "target")
-  putStrLn "  timestamp keys:"
-  createDirectoryIfMissing True (base </> "timestamp")
-  replicateM_ 1 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "timestamp")
-  putStrLn "  snapshot keys:"
-  createDirectoryIfMissing True (base </> "snapshot")
-  replicateM_ 1 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "snapshot")
-  putStrLn "  mirrors keys:"
-  createDirectoryIfMissing True (base </> "mirrors")
-  replicateM_ 3 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "mirrors")
 
 writeKeyWithId :: FilePath -> Some Key -> IO ()
 writeKeyWithId base k = do
