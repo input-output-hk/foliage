@@ -12,11 +12,12 @@ module Foliage.HackageSecurity
   )
 where
 
-import Control.Monad (replicateM_)
+import Control.Monad (replicateM)
 import Crypto.Sign.Ed25519 (unPublicKey)
 import Data.ByteString.Base16 qualified as Base16
-import qualified Data.ByteString.Char8 as BS
+import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy qualified as BSL
+import Data.Foldable (for_)
 import Hackage.Security.Key.Env (fromKeys)
 import Hackage.Security.Server
 import Hackage.Security.TUF.FileMap
@@ -37,18 +38,26 @@ computeFileInfoSimple fp = do
 
 createKeys :: FilePath -> IO ()
 createKeys base = do
-  putStrLn "  root keys:"
-  createDirectoryIfMissing True (base </> "root")
-  replicateM_ 3 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "root")
+  putStrLn "root keys:"
+  createKeyGroup "root" >>= showKeys
+  for_ ["target", "timestamp", "snapshot", "mirrors"] createKeyGroup
+  where
+    createKeyGroup group = do
+      createDirectoryIfMissing True (base </> group)
+      keys <- replicateM 3 $ createKey' KeyTypeEd25519
+      for_ keys $ writeKeyWithId (base </> group)
+      pure keys
+
+    showKeys keys =
+      for_ keys $ \key ->
+        putStrLn $ "  " ++ showKey key
+
+showKey :: Some Key -> [Char]
+showKey k = BS.unpack $ Base16.encode $ exportSomePublicKey $ somePublicKey k
 
 writeKeyWithId :: FilePath -> Some Key -> IO ()
-writeKeyWithId base k = do
-  let keyId' = keyIdString $ someKeyId k
-  let publicKey' = somePublicKey k
-  putStr "    "
-  putStrLn $ BS.unpack $ Base16.encode $ exportSomePublicKey publicKey'
-
-  writeKey (base </> keyId' <.> "json") k
+writeKeyWithId base k =
+  writeKey (base </> keyIdString (someKeyId k) <.> "json") k
 
 exportSomePublicKey :: Some PublicKey -> BS.ByteString
 exportSomePublicKey (Some k) = exportPublicKey k
