@@ -6,14 +6,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Foliage.Meta
-  ( PackageMeta (PackageMeta),
-    PackageMetaEntry (PackageMetaEntry),
-    packageMetaEntryDeprecated,
-    packageMetaEntryPreferred,
-    packageMetaEntryTimestamp,
-    readPackageMeta,
-    writePackageMeta,
-    packageVersionTimestamp,
+  ( packageVersionTimestamp,
     packageVersionSource,
     packageVersionRevisions,
     packageVersionDeprecations,
@@ -34,7 +27,6 @@ module Foliage.Meta
     GitHubRev (..),
     UTCTime,
     latestRevisionNumber,
-    consolidateRanges,
   )
 where
 
@@ -48,70 +40,13 @@ import Data.Text qualified as T
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
 import Development.Shake.Classes (Binary, Hashable, NFData)
 import Distribution.Aeson ()
-import Distribution.Parsec (simpleParsec)
-import Distribution.Pretty (prettyShow)
 import Distribution.Types.Orphans ()
-import Distribution.Types.Version (Version)
-import Distribution.Types.VersionRange (VersionRange, anyVersion, intersectVersionRanges, notThisVersion)
-import Distribution.Version (isAnyVersion, isNoVersion, simplifyVersionRange)
 import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
 import Network.URI (URI, parseURI)
 import Network.URI.Orphans ()
 import Toml (TomlCodec, (.=))
 import Toml qualified
-
-newtype PackageMeta = PackageMeta
-  { packageMetaEntries :: [PackageMetaEntry]
-  }
-  deriving (Show, Eq, Generic)
-  deriving anyclass (Binary, Hashable, NFData)
-
-data PackageMetaEntry = PackageMetaEntry
-  { packageMetaEntryTimestamp :: UTCTime,
-    packageMetaEntryPreferred :: [VersionRange],
-    packageMetaEntryDeprecated :: [Version]
-  }
-  deriving (Show, Eq, Generic)
-  deriving anyclass (Binary, Hashable, NFData)
-
-readPackageMeta :: FilePath -> IO PackageMeta
-readPackageMeta = Toml.decodeFile packageMetaCodec
-
-writePackageMeta :: FilePath -> PackageMeta -> IO ()
-writePackageMeta fp a = void $ Toml.encodeToFile packageMetaCodec fp a
-
-packageMetaCodec :: TomlCodec PackageMeta
-packageMetaCodec =
-  PackageMeta
-    <$> Toml.list packageMetaEntryCodec "entries"
-    .= packageMetaEntries
-
-packageMetaEntryCodec :: TomlCodec PackageMetaEntry
-packageMetaEntryCodec =
-  PackageMetaEntry
-    <$> timeCodec "timestamp"
-    .= packageMetaEntryTimestamp
-    <*> Toml.arrayOf _VersionRange "preferred-versions"
-    .= packageMetaEntryPreferred
-    <*> Toml.arrayOf _Version "deprecated-versions"
-    .= packageMetaEntryDeprecated
-
-_Version :: Toml.TomlBiMap Version Toml.AnyValue
-_Version = Toml._TextBy showVersion parseVersion
-  where
-    showVersion = T.pack . prettyShow
-    parseVersion t = case simpleParsec (T.unpack t) of
-      Nothing -> Left $ T.pack $ "unable to parse version" ++ T.unpack t
-      Just v -> Right v
-
-_VersionRange :: Toml.TomlBiMap VersionRange Toml.AnyValue
-_VersionRange = Toml._TextBy showVersion parseVersion
-  where
-    showVersion = T.pack . prettyShow
-    parseVersion t = case simpleParsec (T.unpack t) of
-      Nothing -> Left $ T.pack $ "unable to parse version" ++ T.unpack t
-      Just v -> Right v
 
 newtype GitHubRepo = GitHubRepo {unGitHubRepo :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
@@ -249,12 +184,3 @@ withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
 withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
   where
     f a = if a == d then Nothing else Just a
-
--- | copied from hackage-server
-consolidateRanges :: PackageMetaEntry -> Maybe VersionRange
-consolidateRanges PackageMetaEntry {packageMetaEntryPreferred, packageMetaEntryDeprecated} =
-  if isAnyVersion range || isNoVersion range then Nothing else Just range
-  where
-    range =
-      simplifyVersionRange $
-        foldr intersectVersionRanges anyVersion (map notThisVersion packageMetaEntryDeprecated ++ packageMetaEntryPreferred)
