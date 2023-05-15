@@ -305,22 +305,38 @@ prepareIndexPkgMetadata expiryTime PreparedPackageVersion {pkgId, sdistPath} = d
 -- Currently `extraEntries` are only used for encoding `prefered-versions`.
 getExtraEntries :: [PreparedPackageVersion] -> [Tar.Entry]
 getExtraEntries packageVersions =
-  let groupedPackageVersions = NE.groupWith (pkgName . pkgId) packageVersions
+  let -- Group all (package) versions by package (name)
+      groupedPackageVersions :: [NE.NonEmpty PreparedPackageVersion]
+      groupedPackageVersions = NE.groupWith (pkgName . pkgId) packageVersions
+
+      -- All versions of a given package together form a list of entries
+      -- The list of entries might be empty (in case no version has been deprecated)
+      generateEntriesForGroup :: NE.NonEmpty PreparedPackageVersion -> [Tar.Entry]
       generateEntriesForGroup packageGroup = map createTarEntry effectiveRanges
         where
           -- Get the package name of the current group.
+          pn :: PackageName
           pn = pkgName $ pkgId $ NE.head packageGroup
-          -- Collect and sort the deprecation changes for the package group.
+          -- Collect and sort the deprecation changes for the package group, turning them into a action on VersionRange
+          deprecationChanges :: [(UTCTime, VersionRange -> VersionRange)]
           deprecationChanges = sortOn fst $ foldMap versionDeprecationChanges packageGroup
           -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
+          effectiveRanges :: [(UTCTime, VersionRange)]
           effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) deprecationChanges
           -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
           createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow effectiveRange) (IndexPkgPrefs pn) ts
    in foldMap generateEntriesForGroup groupedPackageVersions
 
+-- TODO: the functions belows should be moved to Foliage.PreparedPackageVersion
+
 -- Extract deprecation changes for a given `PreparedPackageVersion`.
 versionDeprecationChanges :: PreparedPackageVersion -> [(UTCTime, VersionRange -> VersionRange)]
-versionDeprecationChanges PreparedPackageVersion {pkgId = PackageIdentifier {pkgVersion}, pkgVersionDeprecationChanges} = map (second $ applyDeprecation pkgVersion) pkgVersionDeprecationChanges
+versionDeprecationChanges
+  PreparedPackageVersion
+    { pkgId = PackageIdentifier {pkgVersion},
+      pkgVersionDeprecationChanges
+    } =
+    map (second $ applyDeprecation pkgVersion) pkgVersionDeprecationChanges
 
 -- Apply a given change (`VersionRange -> VersionRange`) to a `VersionRange` and
 -- return the simplified the result with a new timestamp.
