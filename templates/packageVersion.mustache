@@ -29,12 +29,13 @@
         </li>
       </ul>
       <h1 class="py-5">
-        {{#pkgVersionDeprecated}}
-        <span class="badge bg-danger" style="font-size: 1em">Deprecated</span>
-        {{/pkgVersionDeprecated}}
         {{name}}-{{version}}
       </h1>
       <dl class="row class="px-4 py-5">
+        {{#pkgVersionDeprecated}}
+        <dt class="col-sm-3"><span class="badge bg-danger" style="font-size: 1em">Deprecated</span></dt>
+        <dd></dd>
+        {{/pkgVersionDeprecated}}
         <dt class="col-sm-3">Synopsis</dt>
         <dd class="col-sm-9"><p>{{synopsis}}</p></dd>
         <dt class="col-sm-3">Description</dt>

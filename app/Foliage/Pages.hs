@@ -90,6 +90,7 @@ makeAllPackagesPage currentTime outputDir packageVersions =
         -- sort packages by pkgId
         & sortOn allPackagesPageEntryPkgId
 
+-- FIXME: refactor this
 data AllPackageVersionsPageEntry
   = AllPackageVersionsPageEntryPackage
       { allPackageVersionsPageEntryPkgId :: PackageIdentifier,
@@ -101,7 +102,8 @@ data AllPackageVersionsPageEntry
   | AllPackageVersionsPageEntryRevision
       { allPackageVersionsPageEntryPkgId :: PackageIdentifier,
         allPackageVersionsPageEntryTimestamp :: UTCTime,
-        allPackageVersionsPageEntryTimestampPosix :: POSIXTime
+        allPackageVersionsPageEntryTimestampPosix :: POSIXTime,
+        allPackageVersionsPageEntryDeprecated :: Bool
       }
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
@@ -130,7 +132,8 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
               : [ AllPackageVersionsPageEntryRevision
                     { allPackageVersionsPageEntryPkgId = pkgId,
                       allPackageVersionsPageEntryTimestamp = revisionTimestamp,
-                      allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                      allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp,
+                      allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
                     }
                   | (revisionTimestamp, _) <- cabalFileRevisions
                 ]
