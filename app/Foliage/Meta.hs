@@ -158,6 +158,9 @@ revisionMetaCodec =
 
 data DeprecationSpec = DeprecationSpec
   { deprecationTimestamp :: UTCTime,
+    -- | 'True' means the package version has been deprecated
+    --   'False' means the package version has been undeprecated
+    --   FIXME: we should consider something better than 'Bool'
     deprecationIsDeprecated :: Bool
   }
   deriving (Show, Eq, Generic, Ord)

@@ -187,9 +187,19 @@ preparePackageVersion inputDir metaFile = do
           "version in cabal file: " ++ prettyShow (Distribution.Types.PackageId.pkgVersion $ package $ packageDescription pkgDesc)
         ]
 
-  let cabalFileRevisions = sortOn Down [(revisionTimestamp, cabalFileRevisionPath revisionNumber) | RevisionSpec {revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec]
+  let cabalFileRevisions =
+        sortOn
+          Down
+          [ (revisionTimestamp, cabalFileRevisionPath revisionNumber)
+            | RevisionSpec {revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec
+          ]
 
-  let pkgVersionDeprecationChanges = sortOn Down [(deprecationTimestamp, deprecationIsDeprecated) | DeprecationSpec {deprecationTimestamp, deprecationIsDeprecated} <- packageVersionDeprecations pkgSpec]
+  let pkgVersionDeprecationChanges =
+        sortOn
+          Down
+          [ (deprecationTimestamp, deprecationIsDeprecated)
+            | DeprecationSpec {deprecationTimestamp, deprecationIsDeprecated} <- packageVersionDeprecations pkgSpec
+          ]
 
   let pkgVersionIsDeprecated = maybe False snd $ listToMaybe pkgVersionDeprecationChanges
 
