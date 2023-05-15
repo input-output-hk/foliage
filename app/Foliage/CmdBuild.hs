@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Foliage.CmdBuild (cmdBuild) where
@@ -8,16 +9,20 @@ import Codec.Archive.Tar.Entry qualified as Tar
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, void, when)
 import Data.Aeson qualified as Aeson
-import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as BL
+import Data.Bifunctor (second)
+import Data.ByteString.Char8 qualified as BS
+import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.List (sortOn)
+import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.FilePath
 import Distribution.Package
 import Distribution.Pretty (prettyShow)
+import Distribution.Version
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Meta.Aeson ()
@@ -35,7 +40,7 @@ import System.Directory (createDirectoryIfMissing)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
-  outputDirRoot <- liftIO $ makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
+  outputDirRoot <- makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
   shake opts $
     do
       addFetchRemoteAssetRule cacheDir
@@ -72,7 +77,7 @@ buildAction
           liftIO $ createKeys keysPath
         return $ \name -> readKeysAt (keysPath </> name)
       SignOptsDon'tSign ->
-        return $ const $ return []
+        return $ const $ pure []
 
     expiryTime <-
       for mExpireSignaturesOn $ \expireSignaturesOn -> do
@@ -101,9 +106,10 @@ buildAction
 
     void $ forP packageVersions $ makePackageVersionPage outputDir
 
-    void $ forP packageVersions $ \PreparedPackageVersion {pkgId, cabalFilePath} -> do
-      let PackageIdentifier {pkgName, pkgVersion} = pkgId
-      copyFileChanged cabalFilePath (outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> prettyShow pkgName <.> "cabal")
+    void $
+      forP packageVersions $ \PreparedPackageVersion {pkgId, cabalFilePath} -> do
+        let PackageIdentifier {pkgName, pkgVersion} = pkgId
+        copyFileChanged cabalFilePath (outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> prettyShow pkgName <.> "cabal")
 
     cabalEntries <-
       foldMap
@@ -115,6 +121,9 @@ buildAction
             -- all revised cabal files, with their timestamp
             revcf <- for cabalFileRevisions $ uncurry (prepareIndexPkgCabal pkgId)
 
+            -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
+            -- This accidentally works because 1) the following inserts the original cabal file before the revisions
+            -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
             return $ cf : revcf
         )
         packageVersions
@@ -133,7 +142,10 @@ buildAction
             (IndexPkgMetadata pkgId)
             (fromMaybe currentTime pkgTimestamp)
 
-    let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries)
+    let extraEntries = getExtraEntries packageVersions
+
+    -- WARN: See note above, the sorting here has to be stable
+    let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries ++ extraEntries)
     traced "Writing index" $ do
       BL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
       BL.writeFile (anchorPath outputDirRoot repoLayoutIndexTarGz) $ GZip.compress tarContents
@@ -289,6 +301,55 @@ prepareIndexPkgMetadata expiryTime PreparedPackageVersion {pkgId, sdistPath} = d
         targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
         targetsDelegations = Nothing
       }
+
+-- Currently `extraEntries` are only used for encoding `prefered-versions`.
+getExtraEntries :: [PreparedPackageVersion] -> [Tar.Entry]
+getExtraEntries packageVersions =
+  let -- Group all (package) versions by package (name)
+      groupedPackageVersions :: [NE.NonEmpty PreparedPackageVersion]
+      groupedPackageVersions = NE.groupWith (pkgName . pkgId) packageVersions
+
+      -- All versions of a given package together form a list of entries
+      -- The list of entries might be empty (in case no version has been deprecated)
+      generateEntriesForGroup :: NE.NonEmpty PreparedPackageVersion -> [Tar.Entry]
+      generateEntriesForGroup packageGroup = map createTarEntry effectiveRanges
+        where
+          -- Get the package name of the current group.
+          pn :: PackageName
+          pn = pkgName $ pkgId $ NE.head packageGroup
+          -- Collect and sort the deprecation changes for the package group, turning them into a action on VersionRange
+          deprecationChanges :: [(UTCTime, VersionRange -> VersionRange)]
+          deprecationChanges = sortOn fst $ foldMap versionDeprecationChanges packageGroup
+          -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
+          effectiveRanges :: [(UTCTime, VersionRange)]
+          effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) deprecationChanges
+          -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
+          createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow effectiveRange) (IndexPkgPrefs pn) ts
+   in foldMap generateEntriesForGroup groupedPackageVersions
+
+-- TODO: the functions belows should be moved to Foliage.PreparedPackageVersion
+
+-- Extract deprecation changes for a given `PreparedPackageVersion`.
+versionDeprecationChanges :: PreparedPackageVersion -> [(UTCTime, VersionRange -> VersionRange)]
+versionDeprecationChanges
+  PreparedPackageVersion
+    { pkgId = PackageIdentifier {pkgVersion},
+      pkgVersionDeprecationChanges
+    } =
+    map (second $ applyDeprecation pkgVersion) pkgVersionDeprecationChanges
+
+-- Apply a given change (`VersionRange -> VersionRange`) to a `VersionRange` and
+-- return the simplified the result with a new timestamp.
+applyChangeToRange :: (UTCTime, VersionRange) -> (UTCTime, VersionRange -> VersionRange) -> (UTCTime, VersionRange)
+applyChangeToRange (_, range) (ts, change) = (ts, simplifyVersionRange $ change range)
+
+-- Exclude (or include) to the `VersionRange` of prefered versions, a given
+-- `Version`, if the `Version` is (or not) tagged as "deprecated".
+applyDeprecation :: Version -> Bool -> VersionRange -> VersionRange
+applyDeprecation pkgVersion deprecated =
+  if deprecated
+    then intersectVersionRanges (notThisVersion pkgVersion)
+    else unionVersionRanges (thisVersion pkgVersion)
 
 mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
 mkTarEntry contents indexFile timestamp =
