@@ -27,7 +27,11 @@ import System.FilePath
 
 cmdImportIndex :: ImportIndexOptions -> IO ()
 cmdImportIndex opts = do
-  putStrLn "EXPERIMENTAL. Import the Hackage index from $HOME/.cabal. Make sure you have done `cabal update` recently."
+  putStrLn $
+    unlines
+      [ "This command is EXPERIMENTAL and INCOMPLETE!",
+        "Import the Hackage index from $HOME/.cabal. Make sure you have done `cabal update` recently."
+      ]
   home <- getEnv "HOME"
   entries <- Tar.read <$> BSL.readFile (home </> ".cabal/packages/hackage.haskell.org/01-index.tar")
   m <- importIndex indexfilter entries M.empty
@@ -60,6 +64,7 @@ importIndex f (Tar.Next e es) m =
                         { packageVersionSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
                           packageVersionTimestamp = Just time,
                           packageVersionRevisions = [],
+                          packageVersionDeprecations = [],
                           packageVersionForce = False
                         }
                 -- Existing package, new revision

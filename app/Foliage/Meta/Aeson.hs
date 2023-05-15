@@ -12,11 +12,9 @@ import Foliage.Meta
 import Foliage.Utils.Aeson
 import Network.URI (URI)
 
-deriving via MyAesonEncoding PackageMeta instance ToJSON PackageMeta
-
-deriving via MyAesonEncoding PackageMetaEntry instance ToJSON PackageMetaEntry
-
 deriving via MyAesonEncoding RevisionSpec instance ToJSON RevisionSpec
+
+deriving via MyAesonEncoding DeprecationSpec instance ToJSON DeprecationSpec
 
 deriving via MyAesonEncoding PackageVersionSpec instance ToJSON PackageVersionSpec
 

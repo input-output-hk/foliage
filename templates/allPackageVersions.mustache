@@ -10,9 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.1.3/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
     <!-- DataTables -->
     <link rel="stylesheet" href="https://cdn.datatables.net/v/bs5/dt-1.12.1/datatables.min.css" integrity="sha384-4+3RMUungd+Oh0juS2Jl3yQ7mPlVfsgr10NLSsqltLXIECi9ExY4d1cTtmf9aN8E" crossorigin="anonymous">
-    <!-- <script src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.12.1/datatables.min.js" integrity="sha384-eU1uLDC5C4YCIouMauJZjbrnSmIiICWWAPdnZjRkNnuDxG+eJFN/EhW5GlKPAIVl" crossorigin="anonymous"></script>
-    -->
-    <script src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.12.1/datatables.js"></script>
+    <script src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.12.1/datatables.min.js" integrity="sha384-eU1uLDC5C4YCIouMauJZjbrnSmIiICWWAPdnZjRkNnuDxG+eJFN/EhW5GlKPAIVl" crossorigin="anonymous"></script>
     <title>
       All package versions
     </title>
@@ -49,7 +47,12 @@
         {{#entries}}
           {{#AllPackageVersionsPageEntryPackage}}
           <tr>
-            <td class="col-sm-2"><a href="../package/{{allPackageVersionsPageEntryPkgId}}">{{allPackageVersionsPageEntryPkgId}}</a></td>
+            <td class="col-sm-2">
+              <a href="../package/{{allPackageVersionsPageEntryPkgId}}">{{allPackageVersionsPageEntryPkgId}}</a>
+              {{#allPackageVersionsPageEntryDeprecated}}
+              <span class="badge bg-danger">Deprecated</span>
+              {{/allPackageVersionsPageEntryDeprecated}}
+            </td>
             <td class="col-sm-1">Version</td>
             <td class="col-sm-3" data-order="{{allPackageVersionsPageEntryTimestampPosix}}">{{allPackageVersionsPageEntryTimestamp}}</td>
             <td class="col-sm-6">
@@ -63,10 +66,15 @@
           {{/AllPackageVersionsPageEntryPackage}}
           {{#AllPackageVersionsPageEntryRevision}}
           <tr>
-            <td>{{allPackageVersionsPageEntryPkgId}}</td>
-            <td>Revision</td>
-            <td data-order="{{allPackageVersionsPageEntryTimestampPosix}}">{{allPackageVersionsPageEntryTimestamp}}</td>
-            <td></td>
+            <td class="col-sm-2">
+              <a href="../package/{{allPackageVersionsPageEntryPkgId}}">{{allPackageVersionsPageEntryPkgId}}</a>
+              {{#allPackageVersionsPageEntryDeprecated}}
+              <span class="badge bg-danger">Deprecated</span>
+              {{/allPackageVersionsPageEntryDeprecated}}
+            </td>
+            <td class="col-sm-1">Revision</td>
+            <td class="col-sm-3" data-order="{{allPackageVersionsPageEntryTimestampPosix}}">{{allPackageVersionsPageEntryTimestamp}}</td>
+            <td class="col-sm-6"></td>
           </tr>
           {{/AllPackageVersionsPageEntryRevision}}
         {{/entries}}
