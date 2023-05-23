@@ -143,18 +143,20 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
         & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
 makePackageVersionPage :: FilePath -> PreparedPackageVersion -> Action ()
-makePackageVersionPage outputDir PreparedPackageVersion {pkgId, pkgTimestamp, pkgVersionSource, pkgDesc, cabalFileRevisions, pkgVersionIsDeprecated} = do
-  traced ("webpages / package / " ++ prettyShow pkgId) $ do
-    IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
-    TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
-      renderMustache packageVersionPageTemplate $
-        object
-          [ "pkgVersionSource" .= pkgVersionSource,
-            "cabalFileRevisions" .= map fst cabalFileRevisions,
-            "pkgDesc" .= jsonGenericPackageDescription pkgDesc,
-            "pkgTimestamp" .= pkgTimestamp,
-            "pkgVersionDeprecated" .= pkgVersionIsDeprecated
-          ]
+makePackageVersionPage
+  outputDir
+  PreparedPackageVersion {pkgId, pkgTimestamp, pkgVersionSource, pkgDesc, cabalFileRevisions, pkgVersionIsDeprecated} =
+    traced ("webpages / package / " ++ prettyShow pkgId) $ do
+      IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
+      TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
+        renderMustache packageVersionPageTemplate $
+          object
+            [ "pkgVersionSource" .= pkgVersionSource,
+              "cabalFileRevisions" .= map fst cabalFileRevisions,
+              "pkgDesc" .= jsonGenericPackageDescription pkgDesc,
+              "pkgTimestamp" .= pkgTimestamp,
+              "pkgVersionDeprecated" .= pkgVersionIsDeprecated
+            ]
 
 indexPageTemplate :: Template
 indexPageTemplate = $(compileMustacheDir "index" "templates")

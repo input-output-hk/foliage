@@ -12,11 +12,12 @@
 module Distribution.Aeson where
 
 import Data.Aeson
-import Data.Aeson.Key (fromString)
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Aeson.Types
 import Data.Bifunctor (second)
 import Data.List (foldl1')
+import Data.String (fromString)
 import Distribution.CabalSpecVersion
 import Distribution.Compat.Lens hiding ((.=))
 import Distribution.Compat.Newtype
@@ -192,7 +193,7 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
 
   prefixedFields :: FieldName -> ALens' s [(String, String)] -> JSONFieldGrammar s [(String, String)]
   prefixedFields _fnPfx l = JsonFG $ \_v _cs s ->
-    [fromString n .= v | (n, v) <- aview l s]
+    [Key.fromString n .= v | (n, v) <- aview l s]
 
   knownField :: FieldName -> JSONFieldGrammar s ()
   knownField _ = pure ()
@@ -213,8 +214,8 @@ jsonField :: [Condition ConfVar] -> FieldName -> Value -> [Pair]
 jsonField cs fn v
   | v == emptyArray = mempty
   | v == emptyString = mempty
-  | null cs = [fromString (fromUTF8BS fn) .= v]
-  | otherwise = [fromString (fromUTF8BS fn) .= v']
+  | null cs = [Key.fromString (fromUTF8BS fn) .= v]
+  | otherwise = [Key.fromString (fromUTF8BS fn) .= v']
   where
     v' = object ["if" .= toJSON (foldl1' CAnd cs), "then" .= v]
 
@@ -223,12 +224,7 @@ jsonField cs fn v
     emptyString = String ""
 
 jsonGenericPackageDescription :: GenericPackageDescription -> Value
-jsonGenericPackageDescription gpd = jsonGenericPackageDescription' v gpd
-  where
-    v = specVersion $ packageDescription gpd
-
-jsonGenericPackageDescription' :: CabalSpecVersion -> GenericPackageDescription -> Value
-jsonGenericPackageDescription' v gpd =
+jsonGenericPackageDescription gpd =
   object $
     concat
       [ jsonPackageDescription v (packageDescription gpd),
@@ -241,6 +237,8 @@ jsonGenericPackageDescription' v gpd =
         jsonCondTestSuites v (condTestSuites gpd),
         jsonCondBenchmarks v (condBenchmarks gpd)
       ]
+  where
+    v = specVersion $ packageDescription gpd
 
 jsonPackageDescription :: CabalSpecVersion -> PackageDescription -> [Pair]
 jsonPackageDescription v pd =
@@ -272,7 +270,7 @@ jsonGenPackageFlags v flags
   where
     flags' =
       object
-        [ fromString (unFlagName name) .= object (jsonFieldGrammar v [] (flagFieldGrammar name) flag)
+        [ Key.fromString (unFlagName name) .= object (jsonFieldGrammar v [] (flagFieldGrammar name) flag)
           | flag@(MkPackageFlag name _ _ _) <- flags
         ]
 
@@ -288,11 +286,10 @@ jsonCondSubLibraries v libs
   | otherwise = ["sub-libraries" .= libs']
   where
     libs' =
-      object
-        [ fromString (unUnqualComponentName n)
-            .= jsonCondTree2 v (libraryFieldGrammar $ LSubLibName n) condTree
-          | (n, condTree) <- libs
-        ]
+      [ KeyMap.insert "name" (fromString $ unUnqualComponentName n) $
+          jsonCondTree2 v (libraryFieldGrammar $ LSubLibName n) condTree
+        | (n, condTree) <- libs
+      ]
 
 jsonCondForeignLibs :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] ForeignLib)] -> [Pair]
 jsonCondForeignLibs v flibs
@@ -300,11 +297,10 @@ jsonCondForeignLibs v flibs
   | otherwise = ["foreign-libraries" .= flibs']
   where
     flibs' =
-      object
-        [ fromString (unUnqualComponentName n)
-            .= jsonCondTree2 v (foreignLibFieldGrammar n) condTree
-          | (n, condTree) <- flibs
-        ]
+      [ KeyMap.insert "name" (fromString $ unUnqualComponentName n) $
+          jsonCondTree2 v (foreignLibFieldGrammar n) condTree
+        | (n, condTree) <- flibs
+      ]
 
 jsonCondExecutables :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] Executable)] -> [Pair]
 jsonCondExecutables v exes
@@ -312,11 +308,10 @@ jsonCondExecutables v exes
   | otherwise = ["executables" .= exes']
   where
     exes' =
-      object
-        [ fromString (unUnqualComponentName n)
-            .= jsonCondTree2 v (executableFieldGrammar n) condTree
-          | (n, condTree) <- exes
-        ]
+      [ KeyMap.insert "name" (fromString $ unUnqualComponentName n) $
+          jsonCondTree2 v (executableFieldGrammar n) condTree
+        | (n, condTree) <- exes
+      ]
 
 jsonCondTestSuites :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] TestSuite)] -> [Pair]
 jsonCondTestSuites v suites
@@ -324,11 +319,10 @@ jsonCondTestSuites v suites
   | otherwise = ["test-suites" .= suites']
   where
     suites' =
-      object
-        [ fromString (unUnqualComponentName n)
-            .= jsonCondTree2 v testSuiteFieldGrammar (fmap unvalidateTestSuite condTree)
-          | (n, condTree) <- suites
-        ]
+      [ KeyMap.insert "name" (fromString $ unUnqualComponentName n) $
+          jsonCondTree2 v testSuiteFieldGrammar (fmap unvalidateTestSuite condTree)
+        | (n, condTree) <- suites
+      ]
 
 jsonCondBenchmarks :: CabalSpecVersion -> [(UnqualComponentName, CondTree ConfVar [Dependency] Benchmark)] -> [Pair]
 jsonCondBenchmarks v suites
@@ -336,13 +330,12 @@ jsonCondBenchmarks v suites
   | otherwise = ["benchmarks" .= suites']
   where
     suites' =
-      object
-        [ fromString (unUnqualComponentName n)
-            .= jsonCondTree2 v benchmarkFieldGrammar (fmap unvalidateBenchmark condTree)
-          | (n, condTree) <- suites
-        ]
+      [ KeyMap.insert "name" (fromString $ unUnqualComponentName n) $
+          jsonCondTree2 v benchmarkFieldGrammar (fmap unvalidateBenchmark condTree)
+        | (n, condTree) <- suites
+      ]
 
-jsonCondTree2 :: CabalSpecVersion -> JSONFieldGrammar' s -> CondTree ConfVar [Dependency] s -> Value
+jsonCondTree2 :: CabalSpecVersion -> JSONFieldGrammar' s -> CondTree ConfVar [Dependency] s -> KeyMap.KeyMap Value
 jsonCondTree2 v grammar = merge . go []
   where
     go cs (CondNode it _ ifs) =
@@ -353,5 +346,5 @@ jsonCondTree2 v grammar = merge . go []
     jsonIf cs (CondBranch c thenTree (Just elseTree)) =
       go (c : cs) thenTree ++ go (CNot c : cs) elseTree
 
-    merge :: [Pair] -> Value
-    merge = Object . fmap toJSON . KeyMap.fromListWith (++) . map (second (: []))
+    merge :: [Pair] -> KeyMap.KeyMap Value
+    merge = fmap toJSON . KeyMap.fromListWith (<>) . map (second (: []))
