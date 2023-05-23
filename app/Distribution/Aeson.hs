@@ -25,7 +25,7 @@ import Distribution.FieldGrammar
 import Distribution.Fields
 import Distribution.ModuleName hiding (fromString)
 import Distribution.PackageDescription
-import Distribution.PackageDescription.FieldGrammar.Copy
+import Distribution.PackageDescription.FieldGrammar
 import Distribution.Pretty
 import Distribution.System
 import Distribution.Types.Version

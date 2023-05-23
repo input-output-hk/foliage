@@ -24,12 +24,12 @@ where
 import Control.Monad (unless)
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Ord (Down (..))
 import Development.Shake (Action)
 import Development.Shake.FilePath (joinPath, splitDirectories)
-import Distribution.Client.Compat.Prelude (fromMaybe, prettyShow)
 import Distribution.Parsec (simpleParsec)
+import Distribution.Pretty (prettyShow)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (packageDescription))
 import Distribution.Types.PackageDescription (PackageDescription (package))
 import Distribution.Types.PackageId
