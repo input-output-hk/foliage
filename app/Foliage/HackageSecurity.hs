@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 
 module Foliage.HackageSecurity
   ( module Foliage.HackageSecurity,
@@ -10,8 +12,13 @@ module Foliage.HackageSecurity
   )
 where
 
-import Control.Monad (replicateM_)
+import Control.Monad (replicateM)
+import Crypto.Sign.Ed25519 (unPublicKey)
+import Data.ByteString.Base16 (encodeBase16)
+import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy qualified as BSL
+import Data.Foldable (for_)
+import Data.Text qualified as T
 import Hackage.Security.Key.Env (fromKeys)
 import Hackage.Security.Server
 import Hackage.Security.TUF.FileMap
@@ -32,20 +39,32 @@ computeFileInfoSimple fp = do
 
 createKeys :: FilePath -> IO ()
 createKeys base = do
-  createDirectoryIfMissing True (base </> "root")
-  replicateM_ 3 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "root")
-  createDirectoryIfMissing True (base </> "target")
-  replicateM_ 3 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "target")
-  createDirectoryIfMissing True (base </> "timestamp")
-  replicateM_ 1 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "timestamp")
-  createDirectoryIfMissing True (base </> "snapshot")
-  replicateM_ 1 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "snapshot")
-  createDirectoryIfMissing True (base </> "mirrors")
-  replicateM_ 3 $ createKey' KeyTypeEd25519 >>= writeKeyWithId (base </> "mirrors")
+  putStrLn "root keys:"
+  createKeyGroup "root" >>= showKeys
+  for_ ["target", "timestamp", "snapshot", "mirrors"] createKeyGroup
+  where
+    createKeyGroup group = do
+      createDirectoryIfMissing True (base </> group)
+      keys <- replicateM 3 $ createKey' KeyTypeEd25519
+      for_ keys $ writeKeyWithId (base </> group)
+      pure keys
+
+    showKeys keys =
+      for_ keys $ \key ->
+        putStrLn $ "  " ++ showKey key
+
+showKey :: Some Key -> [Char]
+showKey k = T.unpack $ encodeBase16 $ exportSomePublicKey $ somePublicKey k
 
 writeKeyWithId :: FilePath -> Some Key -> IO ()
 writeKeyWithId base k =
   writeKey (base </> keyIdString (someKeyId k) <.> "json") k
+
+exportSomePublicKey :: Some PublicKey -> BS.ByteString
+exportSomePublicKey (Some k) = exportPublicKey k
+
+exportPublicKey :: PublicKey a -> BS.ByteString
+exportPublicKey (PublicKeyEd25519 pub) = unPublicKey pub
 
 writeKey :: FilePath -> Some Key -> IO ()
 writeKey fp key = do
