@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.PrepareSdist
@@ -10,14 +9,16 @@ module Foliage.PrepareSdist
 where
 
 import Control.Monad (when)
+import Crypto.Hash.SHA256 qualified as SHA256
 import Data.Binary qualified as Binary
 import Data.ByteString qualified as BS
+import Data.ByteString.Base16
 import Data.ByteString.Lazy qualified as BSL
+import Data.Text qualified as T
 import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
-import Distribution.Client.HashValue (HashValue, hashValue, readFileHashValue, showHashValue)
 import Distribution.Client.SrcDist (packageDirToSdist)
 import Distribution.Package (packageId)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
@@ -97,10 +98,16 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
         IO.createDirectoryIfMissing True (takeDirectory path)
         sdist <- packageDirToSdist Verbosity.normal gpd srcDir
         BSL.writeFile path sdist
-        return (hashValue sdist, path)
+        return (SHA256.hashlazy sdist, path)
 
-    save :: (HashValue, FilePath) -> BS.ByteString
+    save :: (BS.ByteString, FilePath) -> BS.ByteString
     save = BSL.toStrict . Binary.encode
 
-    load :: BS.ByteString -> (HashValue, FilePath)
+    load :: BS.ByteString -> (BS.ByteString, FilePath)
     load = Binary.decode . BSL.fromStrict
+
+readFileHashValue :: FilePath -> IO BS.ByteString
+readFileHashValue = fmap SHA256.hash . BS.readFile
+
+showHashValue :: BS.ByteString -> [Char]
+showHashValue = T.unpack . encodeBase16
