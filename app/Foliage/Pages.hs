@@ -14,7 +14,6 @@ module Foliage.Pages
   )
 where
 
-import Control.Monad (unless)
 import Data.Aeson (KeyValue ((.=)), ToJSON, object)
 import Data.Function (on, (&))
 import Data.List (sortOn)
@@ -24,7 +23,7 @@ import Data.Ord (Down (Down), comparing)
 import Data.Text.Lazy.IO.Utf8 qualified as TL
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
-import Development.Shake (Action, putWarn, traced)
+import Development.Shake (Action, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
 import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
@@ -35,7 +34,7 @@ import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
 import System.Directory qualified as IO
 import System.FilePath ((</>))
-import Text.Mustache (Template, displayMustacheWarning, renderMustacheW)
+import Text.Mustache (Template)
 import Text.Mustache.Compile.TH (compileMustacheDir)
 import Text.Mustache.Render (renderMustache)
 
@@ -144,29 +143,18 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
         & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
 makePackageVersionPage :: FilePath -> PreparedPackageVersion -> Action ()
-makePackageVersionPage
-  outputDir
-  PreparedPackageVersion
-    { pkgId,
-      pkgTimestamp,
-      pkgVersionSource,
-      pkgDesc,
-      cabalFileRevisions,
-      pkgVersionIsDeprecated
-    } = do
-    let (warnings, text) =
-          renderMustacheW packageVersionPageTemplate $
-            object
-              [ "pkgVersionSource" .= pkgVersionSource,
-                "cabalFileRevisions" .= map fst cabalFileRevisions,
-                "pkgDesc" .= jsonGenericPackageDescription pkgDesc,
-                "pkgTimestamp" .= pkgTimestamp,
-                "pkgVersionDeprecated" .= pkgVersionIsDeprecated
-              ]
-    traced ("webpages / package / " ++ prettyShow pkgId) $ do
-      IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
-      TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") text
-    unless (null warnings) $ putWarn $ unlines (map displayMustacheWarning warnings)
+makePackageVersionPage outputDir PreparedPackageVersion {pkgId, pkgTimestamp, pkgVersionSource, pkgDesc, cabalFileRevisions, pkgVersionIsDeprecated} = do
+  traced ("webpages / package / " ++ prettyShow pkgId) $ do
+    IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
+    TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
+      renderMustache packageVersionPageTemplate $
+        object
+          [ "pkgVersionSource" .= pkgVersionSource,
+            "cabalFileRevisions" .= map fst cabalFileRevisions,
+            "pkgDesc" .= jsonGenericPackageDescription pkgDesc,
+            "pkgTimestamp" .= pkgTimestamp,
+            "pkgVersionDeprecated" .= pkgVersionIsDeprecated
+          ]
 
 indexPageTemplate :: Template
 indexPageTemplate = $(compileMustacheDir "index" "templates")

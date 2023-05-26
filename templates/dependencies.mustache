@@ -1,0 +1,17 @@
+<ul class="build-depends">
+{{#build-depends}}
+{{^if}}
+<li>{{.}}</li>
+{{/if}}
+{{/build-depends}}
+</ul>
+{{#build-depends}}
+{{#if}}
+<p>if {{.}}</p>
+<ul class="build-depends">
+{{#then}}
+<li>{{.}}</li>
+{{/then}}
+</ul>
+{{/if}}
+{{/build-depends}}

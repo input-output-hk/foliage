@@ -1,9 +1,0 @@
-{{#build-depends}}
-<li>{{.}}</li>
-{{/build-depends}}
-{{#if.then.build-depends}}
-<li>{{.}} if {{if.cond}}</li>
-{{/if.then.build-depends}}
-{{#if.else.build-depends}}
-<li>{{.}} unless {{if.cond}}</li>
-{{/if.else.build-depends}}

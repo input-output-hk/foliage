@@ -13,7 +13,6 @@
   </title>
   <style>
     ul.build-depends {
-      display: inline;
       list-style: none;
     }
 
@@ -93,51 +92,39 @@
       <dd class="col-sm-9">
         <dl>
           {{#pkgDesc.library}}
-          <dt>library:</dt>
+          <dt>library {{pkgDesc.name}}:</dt>
           <dd>
-            <ul class="build-depends">
-              {{> cond-tree-dependency}}
-            </ul>
+            {{> dependencies}}
           </dd>
           {{/pkgDesc.library}}
           {{#pkgDesc.sub-libraries}}
           <dt>library {{name}}:</dt>
           <dd>
-            <ul class="build-depends">
-              {{> cond-tree-dependency}}
-            </ul>
+            {{> dependencies}}
           </dd>
           {{/pkgDesc.sub-libraries}}
           {{#pkgDesc.foreign-libraries}}
           <dt>foreign library {{name}}:</dt>
           <dd>
-            <ul class="build-depends">
-              {{> cond-tree-dependency}}
-            </ul>
+            {{> dependencies}}
           </dd>
           {{/pkgDesc.foreign-libraries}}
           {{#pkgDesc.executables}}
           <dt>executable {{name}}:</dt>
           <dd>
-            <ul class="build-depends">
-              {{> cond-tree-dependency}}
-            </ul>
+            {{> dependencies}}
           </dd>
           {{/pkgDesc.executables}}
           {{#pkgDesc.test-suites}}
           <dt>test-suite {{name}}:</dt>
           <dd>
-            <ul class="build-depends">
-              {{> cond-tree-dependency}}
-            </ul>
+            {{> dependencies}}
           </dd>
           {{/pkgDesc.test-suites}}
           {{#pkgDesc.benchmarks}}
           <dt>benchmark {{name}}:</dt>
           <dd>
-            <ul class="build-depends">
-              {{> cond-tree-dependency}}
-            </ul>
+            {{> dependencies}}
           </dd>
           {{/pkgDesc.benchmarks}}
         </dl>
