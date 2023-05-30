@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -12,9 +13,7 @@ import Control.Monad (when)
 import Crypto.Hash.SHA256 qualified as SHA256
 import Data.Binary qualified as Binary
 import Data.ByteString qualified as BS
-import Data.ByteString.Base16
 import Data.ByteString.Lazy qualified as BSL
-import Data.Text qualified as T
 import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
@@ -25,25 +24,26 @@ import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta ()
+import Foliage.Meta.Hash
 import GHC.Generics (Generic)
 import Hackage.Security.Util.Path (toFilePath)
 import System.Directory qualified as IO
 import System.IO.Error (tryIOError)
 
-newtype PrepareSdistRule = PrepareSdistRule FilePath
+data PrepareSdistRule = PrepareSdistRule FilePath (Maybe SHA256)
   deriving (Show, Eq, Generic)
   deriving (Hashable, Binary, NFData)
 
 type instance RuleResult PrepareSdistRule = FilePath
 
-prepareSdist :: FilePath -> Action FilePath
-prepareSdist srcDir = apply1 $ PrepareSdistRule srcDir
+prepareSdist :: FilePath -> Maybe SHA256 -> Action FilePath
+prepareSdist srcDir mHash = apply1 $ PrepareSdistRule srcDir mHash
 
 addPrepareSdistRule :: Path Absolute -> Rules ()
 addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
   where
     run :: PrepareSdistRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
-    run (PrepareSdistRule srcDir) (Just old) RunDependenciesSame = do
+    run (PrepareSdistRule srcDir mHash) (Just old) RunDependenciesSame = do
       let (hvExpected, path) = load old
 
       -- Check of has of the sdist, if the sdist is still there and it is
@@ -55,12 +55,12 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
           | hvExisting == hvExpected ->
               return RunResult {runChanged = ChangedNothing, runStore = old, runValue = path}
         Right hvExisting -> do
-          putWarn $ "Changed " ++ path ++ " (expecting hash " ++ showHashValue hvExpected ++ " found " ++ showHashValue hvExisting ++ "). I will rebuild it."
-          run (PrepareSdistRule srcDir) (Just old) RunDependenciesChanged
+          putWarn $ "Changed " ++ path ++ " (expecting hash " ++ show hvExpected ++ " found " ++ show hvExisting ++ "). I will rebuild it."
+          run (PrepareSdistRule srcDir mHash) (Just old) RunDependenciesChanged
         Left _e -> do
           putWarn $ "Unable to read " ++ path ++ ". I will rebuild it."
-          run (PrepareSdistRule srcDir) (Just old) RunDependenciesChanged
-    run (PrepareSdistRule srcDir) old _mode = do
+          run (PrepareSdistRule srcDir mHash) (Just old) RunDependenciesChanged
+    run (PrepareSdistRule srcDir mHash) old _mode = do
       -- create the sdist distribution
       (hv, path) <- makeSdist srcDir
 
@@ -71,10 +71,10 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
             _differentOrMissing -> ChangedRecomputeDiff
 
       when (changed == ChangedRecomputeSame) $
-        putInfo ("Wrote " ++ path ++ " (same hash " ++ showHashValue hv ++ ")")
+        putInfo ("Wrote " ++ path ++ " (same hash " ++ show hv ++ ")")
 
       when (changed == ChangedRecomputeDiff) $
-        putInfo ("Wrote " ++ path ++ " (new hash " ++ showHashValue hv ++ ")")
+        putInfo ("Wrote " ++ path ++ " (new hash " ++ show hv ++ ")")
 
       return $ RunResult {runChanged = changed, runStore = new, runValue = path}
 
@@ -100,14 +100,8 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
         BSL.writeFile path sdist
         return (SHA256.hashlazy sdist, path)
 
-    save :: (BS.ByteString, FilePath) -> BS.ByteString
+    save :: (SHA256, FilePath) -> BS.ByteString
     save = BSL.toStrict . Binary.encode
 
-    load :: BS.ByteString -> (BS.ByteString, FilePath)
+    load :: BS.ByteString -> (SHA256, FilePath)
     load = Binary.decode . BSL.fromStrict
-
-readFileHashValue :: FilePath -> IO BS.ByteString
-readFileHashValue = fmap SHA256.hash . BS.readFile
-
-showHashValue :: BS.ByteString -> [Char]
-showHashValue = T.unpack . encodeBase16

@@ -33,10 +33,13 @@ import Distribution.Pretty (prettyShow)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (packageDescription))
 import Distribution.Types.PackageDescription (PackageDescription (package))
 import Distribution.Types.PackageId
+import Foliage.HackageSecurity (anchorRepoPathLocally, repoLayoutPkgTarGz)
 import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber)
 import Foliage.PrepareSdist (prepareSdist)
 import Foliage.PrepareSource (prepareSource)
 import Foliage.Shake (readGenericPackageDescription', readPackageVersionSpec')
+import Hackage.Security.Client (hackageRepoLayout)
+import Hackage.Security.Util.Path (toFilePath)
 import System.FilePath (takeBaseName, takeFileName, (<.>), (</>))
 
 -- TODO: can we ensure that `pkgVersionDeprecationChanges` and `cabalFileRevisions` are
@@ -172,6 +175,10 @@ preparePackageVersion inputDir metaFile = do
 
   pkgDesc <- readGenericPackageDescription' cabalFilePath
 
+  let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
+      path = toFilePath $ anchorRepoPathLocally outputDirRoot packagePath
+
+  -- IO.createDirectoryIfMissing True (takeDirectory path)
   sdistPath <- prepareSdist srcDir
 
   let expectedSdistName = prettyShow pkgId <.> "tar.gz"

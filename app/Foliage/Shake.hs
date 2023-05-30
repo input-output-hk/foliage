@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module Foliage.Shake
   ( computeFileInfoSimple',
     readKeysAt,
@@ -8,12 +10,23 @@ where
 
 import Data.Traversable (for)
 import Development.Shake
+import Development.Shake.Classes
 import Development.Shake.FilePath
 import Distribution.Simple.PackageDescription
 import Distribution.Types.GenericPackageDescription
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta
+
+newtype CacheDir = CacheDir ()
+  deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
+
+type instance RuleResult CacheDir = FilePath
+
+newtype OutputDir = OutputDir ()
+  deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
+
+type instance RuleResult OutputDir = FilePath
 
 computeFileInfoSimple' :: FilePath -> Action FileInfo
 computeFileInfoSimple' fp = do

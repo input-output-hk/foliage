@@ -4,12 +4,10 @@
 module Foliage.Time
   ( iso8601ParseM,
     iso8601Show,
-    getCurrentTime,
-    UTCTime (..),
-    utcTimeToPOSIXSeconds,
-    addUTCTime,
-    nominalDay,
     truncateSeconds,
+    module Data.Time,
+    module Data.Time.LocalTime,
+    module Data.Time.Clock.POSIX,
   )
 where
 
@@ -17,6 +15,7 @@ import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Time.Compat ()
 import Data.Time.Format.ISO8601
+import Data.Time.LocalTime
 import Development.Shake.Classes
 
 instance Binary UTCTime where

@@ -37,10 +37,11 @@ import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down))
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
 import Development.Shake.Classes (Binary, Hashable, NFData)
 import Distribution.Aeson ()
 import Distribution.Types.Orphans ()
+import Foliage.Meta.Hash (SHA256, sha256Codec)
+import Foliage.Meta.Toml (timeCodec)
 import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
 import Network.URI (URI, parseURI)
@@ -111,6 +112,8 @@ data PackageVersionSpec = PackageVersionSpec
     packageVersionTimestamp :: Maybe UTCTime,
     -- | source parameters
     packageVersionSource :: PackageVersionSource,
+    -- | source distribution hash
+    packageVersionHash :: Maybe SHA256,
     -- | revisions
     packageVersionRevisions :: [RevisionSpec],
     -- | deprecations
@@ -128,6 +131,8 @@ sourceMetaCodec =
     .= packageVersionTimestamp
     <*> packageSourceCodec
     .= packageVersionSource
+    <*> Toml.dioptional sha256Codec
+    .= packageVersionHash
     <*> Toml.list revisionMetaCodec "revisions"
     .= packageVersionRevisions
     <*> Toml.list deprecationMetaCodec "deprecations"
@@ -174,16 +179,13 @@ deprecationMetaCodec =
     <*> withDefault True (Toml.bool "deprecated")
     .= deprecationIsDeprecated
 
-timeCodec :: Toml.Key -> TomlCodec UTCTime
-timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
-
 latestRevisionNumber :: PackageVersionSpec -> Maybe Int
 latestRevisionNumber sm =
   case sortOn (Down . revisionNumber) (packageVersionRevisions sm) of
     [] -> Nothing
     rev : _ -> Just (revisionNumber rev)
 
-withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
+withDefault :: (Eq a) => a -> TomlCodec a -> TomlCodec a
 withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
   where
     f a = if a == d then Nothing else Just a
