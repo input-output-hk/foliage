@@ -108,15 +108,18 @@ buildAction
 
     cabalEntries <-
       foldMap
-        ( \PreparedPackageVersion {pkgId, pkgTimestamp, originalCabalFilePath, cabalFileRevisions} -> do
+        ( \PreparedPackageVersion {pkgId, pkgTimestamp, cabalFilePath, originalCabalFilePath, cabalFileRevisions} -> do
             -- original cabal file, with its timestamp (if specified)
             copyFileChanged originalCabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> "0" <.> "cabal")
             cf <- prepareIndexPkgCabal pkgId (fromMaybe currentTime pkgTimestamp) originalCabalFilePath
 
             -- all revised cabal files, with their timestamp
-            revcf <- for (zip [1 :: Int ..] cabalFileRevisions) $ \(revNum, (timestamp, cabalFilePath)) -> do
+            revcf <- for (zip [1 :: Int ..] cabalFileRevisions) $ \(revNum, (timestamp, path)) -> do
               copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> show revNum <.> "cabal")
-              prepareIndexPkgCabal pkgId timestamp cabalFilePath
+              prepareIndexPkgCabal pkgId timestamp path
+
+            -- current version of the cabal file (after the revisions, if any)
+            copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> prettyShow (pkgName pkgId) <.> "cabal")
 
             -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
             -- This accidentally works because 1) the following inserts the original cabal file before the revisions
