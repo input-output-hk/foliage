@@ -101,25 +101,22 @@ buildAction
 
     makeAllPackageVersionsPage currentTime outputDir packageVersions
 
-    when doWritePackageMeta $
-      makeMetadataFile outputDir packageVersions
-
     void $ forP packageVersions $ makePackageVersionPage outputDir
 
-    void $
-      forP packageVersions $ \PreparedPackageVersion {pkgId, cabalFilePath} -> do
-        let PackageIdentifier {pkgName, pkgVersion} = pkgId
-        copyFileChanged cabalFilePath (outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> prettyShow pkgName <.> "cabal")
+    when doWritePackageMeta $
+      makeMetadataFile outputDir packageVersions
 
     cabalEntries <-
       foldMap
         ( \PreparedPackageVersion {pkgId, pkgTimestamp, originalCabalFilePath, cabalFileRevisions} -> do
             -- original cabal file, with its timestamp (if specified)
-            let cabalFileTimestamp = fromMaybe currentTime pkgTimestamp
-            cf <- prepareIndexPkgCabal pkgId cabalFileTimestamp originalCabalFilePath
+            copyFileChanged originalCabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> "0" <.> "cabal")
+            cf <- prepareIndexPkgCabal pkgId (fromMaybe currentTime pkgTimestamp) originalCabalFilePath
 
             -- all revised cabal files, with their timestamp
-            revcf <- for cabalFileRevisions $ uncurry (prepareIndexPkgCabal pkgId)
+            revcf <- for (zip [1 :: Int ..] cabalFileRevisions) $ \(revNum, (timestamp, cabalFilePath)) -> do
+              copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> show revNum <.> "cabal")
+              prepareIndexPkgCabal pkgId timestamp cabalFilePath
 
             -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
             -- This accidentally works because 1) the following inserts the original cabal file before the revisions
@@ -132,10 +129,7 @@ buildAction
 
     metadataEntries <-
       forP packageVersions $ \ppv@PreparedPackageVersion {pkgId, pkgTimestamp} -> do
-        let PackageIdentifier {pkgName, pkgVersion} = pkgId
         targets <- prepareIndexPkgMetadata expiryTime ppv
-        let path = outputDir </> "index" </> prettyShow pkgName </> prettyShow pkgVersion </> "package.json"
-        liftIO $ BL.writeFile path $ renderSignedJSON targetKeys targets
         pure $
           mkTarEntry
             (renderSignedJSON targetKeys targets)
