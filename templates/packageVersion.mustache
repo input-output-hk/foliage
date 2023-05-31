@@ -100,31 +100,31 @@
           {{#pkgDesc.sub-libraries}}
           <dt>library {{name}}:</dt>
           <dd>
-            {{> dependencies}}
+            {{#desc}}{{> dependencies}}{{/desc}}
           </dd>
           {{/pkgDesc.sub-libraries}}
           {{#pkgDesc.foreign-libraries}}
           <dt>foreign library {{name}}:</dt>
           <dd>
-            {{> dependencies}}
+            {{#desc}}{{> dependencies}}{{/desc}}
           </dd>
           {{/pkgDesc.foreign-libraries}}
           {{#pkgDesc.executables}}
           <dt>executable {{name}}:</dt>
           <dd>
-            {{> dependencies}}
+            {{#desc}}{{> dependencies}}{{/desc}}
           </dd>
           {{/pkgDesc.executables}}
           {{#pkgDesc.test-suites}}
           <dt>test-suite {{name}}:</dt>
           <dd>
-            {{> dependencies}}
+            {{#desc}}{{> dependencies}}{{/desc}}
           </dd>
           {{/pkgDesc.test-suites}}
           {{#pkgDesc.benchmarks}}
           <dt>benchmark {{name}}:</dt>
           <dd>
-            {{> dependencies}}
+            {{#desc}}{{> dependencies}}{{/desc}}
           </dd>
           {{/pkgDesc.benchmarks}}
         </dl>
