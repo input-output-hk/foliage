@@ -10,7 +10,6 @@ module Foliage.PrepareSdist
 where
 
 import Control.Monad (when)
-import Crypto.Hash.SHA256 qualified as SHA256
 import Data.Binary qualified as Binary
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -19,17 +18,31 @@ import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
 import Distribution.Client.SrcDist (packageDirToSdist)
-import Distribution.Package (packageId)
+import Distribution.Package (PackageId, packageId)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
+import Distribution.Types.Orphans ()
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
-import Foliage.Meta ()
 import Foliage.Meta.Hash
 import GHC.Generics (Generic)
 import Hackage.Security.Util.Path (toFilePath)
 import System.Directory qualified as IO
 import System.IO.Error (tryIOError)
 
+-- newtype SDist = SDist PackageId
+--   deriving (Show, Eq, Generic)
+--   deriving newtype (Hashable, Binary, NFData)
+--
+-- type instance RuleResult SDist = ()
+--
+-- data SDistRule = SDistRule SDist (Action ())
+--
+-- sdistRule :: PackageId -> Action () -> Rules ()
+-- sdistRule pkgId act = addUserRule $ SDistRule (SDist pkgId) act
+--
+-- sdistNeed :: PackageId -> Action ()
+-- sdistNeed = apply1 . SDist
+--
 data PrepareSdistRule = PrepareSdistRule FilePath (Maybe SHA256)
   deriving (Show, Eq, Generic)
   deriving (Hashable, Binary, NFData)
@@ -98,7 +111,7 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
         IO.createDirectoryIfMissing True (takeDirectory path)
         sdist <- packageDirToSdist Verbosity.normal gpd srcDir
         BSL.writeFile path sdist
-        return (SHA256.hashlazy sdist, path)
+        return (hashlazy sdist, path)
 
     save :: (SHA256, FilePath) -> BS.ByteString
     save = BSL.toStrict . Binary.encode

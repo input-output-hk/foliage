@@ -2,7 +2,13 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Foliage.Meta.Hash where
+module Foliage.Meta.Hash
+  ( SHA256 (SHA256, unSHA256),
+    readFileHashValue,
+    sha256Codec,
+    hashlazy,
+  )
+where
 
 import Control.Category ((>>>))
 import Control.Monad ((>=>))
@@ -12,6 +18,7 @@ import Data.Aeson.Types (parseFail)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base64 (decodeBase64, encodeBase64)
+import Data.ByteString.Lazy qualified as BL
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Development.Shake.Classes
@@ -39,3 +46,6 @@ sha256Codec = Toml.match (Toml.iso unSHA256 SHA256 >>> _ByteStringBase16) "sha25
 
 readFileHashValue :: FilePath -> IO SHA256
 readFileHashValue = fmap (SHA256 . SHA256.hash) . BS.readFile
+
+hashlazy :: BL.ByteString -> SHA256
+hashlazy = SHA256 . SHA256.hashlazy
