@@ -320,8 +320,13 @@ getExtraEntries packageVersions =
           -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
           effectiveRanges :: [(UTCTime, VersionRange)]
           effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) deprecationChanges
+
           -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
-          createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow effectiveRange) (IndexPkgPrefs pn) ts
+          createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow dep) (IndexPkgPrefs pn) ts
+            where
+              -- Cabal uses `Dependency` to represent preferred versions, cf.
+              -- `parsePreferredVersions`. The (sub)libraries part is ignored.
+              dep = mkDependency pn effectiveRange mainLibSet
    in foldMap generateEntriesForGroup groupedPackageVersions
 
 -- TODO: the functions belows should be moved to Foliage.PreparedPackageVersion
