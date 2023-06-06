@@ -1,9 +1,9 @@
 name: Build and Release
 
-on:
+on: 
   push:
-    branches:
-      - main
+    tags:
+    - '*'
 
 jobs:
   build:
@@ -14,16 +14,16 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Nix
         uses: cachix/install-nix-action@v20
 
       - name: Build
-        run: nix build .#packages.${{ matrix.platform }}.default
+        run: nix build .#packages.${{ matrix.platform }}.default --accept-flake-config
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: foliage-${{ matrix.platform }}
           path: ./result
@@ -32,9 +32,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Download Artifacts
         run: |
@@ -44,29 +47,7 @@ jobs:
             unzip artifacts/$platform/foliage.zip -d artifacts/$platform
           done
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release and Upload Release Assets
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-
-      - name: Upload Release Assets
-        run: |
-          for platform in aarch64-linux aarch64-darwin x86_64-linux x86_64-darwin; do
-            asset_path=artifacts/$platform/foliage
-            asset_name=foliage-$platform
-            asset_content_type=application/octet-stream
-            upload_url=${{ steps.create_release.outputs.upload_url }}
-            echo "Uploading $asset_name to $upload_url ..."
-            curl \
-              --header 'Content-Type: $asset_content_type' \
-              --header 'Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-              --data-binary @$asset_path \
-              --upload-file $asset_path \
-              $upload_url?name=$asset_name
-          done
+          artifacts: "artifacts/*"
