@@ -6,48 +6,23 @@ on:
     - '*'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        platform: ["aarch64-linux", "aarch64-darwin", "x86_64-linux", "x86_64-darwin"]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup Nix
-        uses: cachix/install-nix-action@v20
-
-      - name: Build
-        run: nix build .#packages.${{ matrix.platform }}.default --accept-flake-config
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: foliage-${{ matrix.platform }}
-          path: ./result
-
-  release:
-    needs: build
+  build-and-release:
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Download Artifacts
-        run: |
-          for platform in aarch64-linux aarch64-darwin x86_64-linux x86_64-darwin; do
-            mkdir -p artifacts/$platform
-            wget -O artifacts/$platform/foliage https://github.com/${{ github.repository }}/actions/artifacts/foliage-$platform/zip
-            unzip artifacts/$platform/foliage.zip -d artifacts/$platform
-          done
+      - name: Setup Nix
+        uses: cachix/install-nix-action@v20
 
+      - name: Build
+        run: nix build .#packages.x86_64-linux.default --accept-flake-config
+          
       - name: Create Release and Upload Release Assets
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "artifacts/*"
+          artifacts: ./result/bin/foliage
