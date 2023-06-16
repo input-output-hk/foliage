@@ -32,10 +32,14 @@ readJSONSimple fp = do
   p <- makeAbsolute (fromFilePath fp)
   readJSON_NoKeys_NoLayout p
 
+forceFileInfo :: FileInfo -> ()
+forceFileInfo (FileInfo a b) = a `seq` b `seq` ()
+
 computeFileInfoSimple :: FilePath -> IO FileInfo
 computeFileInfoSimple fp = do
   p <- makeAbsolute (fromFilePath fp)
-  computeFileInfo p
+  fi <- computeFileInfo p
+  return $! forceFileInfo fi `seq` fi
 
 createKeys :: FilePath -> IO ()
 createKeys base = do
