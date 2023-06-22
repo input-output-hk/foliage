@@ -7,7 +7,11 @@ on:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
 
     permissions:
       contents: write
@@ -20,9 +24,11 @@ jobs:
         uses: cachix/install-nix-action@v20
 
       - name: Build
-        run: nix build .#packages.x86_64-linux.default --accept-flake-config
-          
+        run: nix build .# --accept-flake-config
+
       - name: Create Release and Upload Release Assets
         uses: ncipollo/release-action@v1
         with:
-          artifacts: ./result/bin/foliage
+          artifacts: "result/bin/*"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
