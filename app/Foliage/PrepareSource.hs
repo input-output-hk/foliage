@@ -23,8 +23,15 @@ import System.Directory qualified as IO
 import System.FilePath ((<.>), (</>))
 
 data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionSpec
-  deriving (Show, Eq, Generic)
+  deriving (Eq, Generic)
   deriving (Hashable, Binary, NFData)
+
+instance Show PrepareSourceRule where
+  show (PrepareSourceRule pkgId pkgSpec) =
+    "prepareSource "
+      ++ prettyShow pkgId
+      ++ " "
+      ++ show pkgSpec
 
 type instance RuleResult PrepareSourceRule = FilePath
 
