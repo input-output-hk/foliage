@@ -53,7 +53,33 @@ addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
         withTempFile $ \fp -> traced "curl" $ do
           BS.writeFile fp oldETag
           createDirectoryIfMissing True (takeDirectory path)
-          cmd_ Shell ["curl", "--silent", "--location", "--etag-compare", fp, "--etag-save", fp, "--output", path, show uri]
+          cmd_
+            Shell
+            [ "curl",
+              -- Silent or quiet mode. Do not show progress meter or error messages. Makes Curl mute.
+              "--silent",
+              -- Fail fast with no output at all on server errors.
+              "--fail",
+              -- If the server reports that the requested page has moved to a different location this
+              -- option will make curl redo the request on the new place.
+              -- NOTE: This is needed because github always replies with a redirect
+              "--location",
+              -- This  option  makes  a conditional HTTP request for the specific ETag read from the
+              -- given file by sending a custom If-None-Match header using the stored ETag.
+              -- For correct results, make sure that the specified file contains only a single line
+              -- with the desired ETag. An empty file is parsed as an empty ETag.
+              "--etag-compare",
+              fp,
+              -- This option saves an HTTP ETag to the specified file. If no ETag is sent by the server,
+              -- an empty file is created.
+              "--etag-save",
+              fp,
+              -- Write output to <file> instead of stdout.
+              "--output",
+              path,
+              -- URL to fetch
+              show uri
+            ]
           BS.readFile fp
 
       let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
