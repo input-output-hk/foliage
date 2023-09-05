@@ -23,6 +23,7 @@ import Development.Shake.FilePath
 import Distribution.Package
 import Distribution.Pretty (prettyShow)
 import Distribution.Version
+import Foliage.FetchURL (addFetchURLRule)
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Meta.Aeson ()
@@ -31,7 +32,6 @@ import Foliage.Pages
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
 import Foliage.PrepareSdist (addPrepareSdistRule)
 import Foliage.PrepareSource (addPrepareSourceRule)
-import Foliage.RemoteAsset (addFetchRemoteAssetRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path (castRoot, toFilePath)
@@ -43,7 +43,7 @@ cmdBuild buildOptions = do
   outputDirRoot <- makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
   shake opts $
     do
-      addFetchRemoteAssetRule cacheDir
+      addFetchURLRule cacheDir
       addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
       addPrepareSdistRule outputDirRoot
       phony "buildAction" (buildAction buildOptions)
@@ -53,7 +53,7 @@ cmdBuild buildOptions = do
     opts =
       shakeOptions
         { shakeFiles = cacheDir,
-          shakeVerbosity = Verbose,
+          shakeVerbosity = buildOptsVerbosity buildOptions,
           shakeThreads = buildOptsNumThreads buildOptions
         }
 

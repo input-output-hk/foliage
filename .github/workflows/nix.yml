@@ -27,3 +27,5 @@ jobs:
            authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - run: nix build --accept-flake-config
+
+      - run: nix build --accept-flake-config .#checks.x86_64-linux.foliage:test:foliage-test-suite

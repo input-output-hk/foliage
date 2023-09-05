@@ -31,4 +31,6 @@ cabal.project.local~
 _cache
 _keys
 _repo
-_sources
+
+# only at the root since we need to check-in testcases _sources
+./_sources

@@ -14,11 +14,12 @@ import Development.Shake.Rule
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
+import Foliage.FetchURL (fetchURL)
 import Foliage.Meta
-import Foliage.RemoteAsset (fetchRemoteAsset)
 import Foliage.UpdateCabalFile (rewritePackageVersion)
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
+import Network.URI (URI (..))
 import System.Directory qualified as IO
 import System.FilePath ((<.>), (</>))
 
@@ -63,7 +64,10 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
 
           case packageVersionSource of
             TarballSource url mSubdir -> do
-              tarballPath <- fetchRemoteAsset url
+              tarballPath <- case url of
+                URI {uriScheme = "file:", uriPath} ->
+                  liftIO $ IO.makeAbsolute uriPath
+                _ -> fetchURL url
 
               withTempDir $ \tmpDir -> do
                 cmd_ "tar xzf" [tarballPath] "-C" [tmpDir]
@@ -87,7 +91,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             GitHubSource repo rev mSubdir -> do
               let url = githubRepoTarballUrl repo rev
 
-              tarballPath <- fetchRemoteAsset url
+              tarballPath <- fetchURL url
 
               withTempDir $ \tmpDir -> do
                 cmd_ "tar xzf" [tarballPath] "-C" [tmpDir]

@@ -8,7 +8,7 @@
     haskell-nix.inputs.hackage.follows = "hackage-nix";
     hackage-nix.url = "github:input-output-hk/hackage.nix";
     hackage-nix.flake = false;
-    flake-utils.follows = "haskell-nix/flake-utils";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = { nixpkgs, flake-utils, haskell-nix, ... }:
@@ -32,7 +32,7 @@
 
         project = pkgs.haskell-nix.cabalProject' {
           src = ./.;
-          compiler-nix-name = "ghc926";
+          compiler-nix-name = "ghc947";
           shell.tools = {
             cabal = "latest";
             hlint = "latest";

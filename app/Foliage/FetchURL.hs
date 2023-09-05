@@ -2,9 +2,9 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Foliage.RemoteAsset
-  ( fetchRemoteAsset,
-    addFetchRemoteAssetRule,
+module Foliage.FetchURL
+  ( fetchURL,
+    addFetchURLRule,
   )
 where
 
@@ -24,23 +24,23 @@ import Network.URI.Orphans ()
 import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode (..))
 
-newtype RemoteAsset = RemoteAsset URI
+newtype FetchURL = FetchURL URI
   deriving (Eq)
   deriving (Hashable, Binary, NFData) via URI
 
-instance Show RemoteAsset where
-  show (RemoteAsset uri) = "fetchRemoteAsset " ++ show uri
+instance Show FetchURL where
+  show (FetchURL uri) = "fetchURL " ++ show uri
 
-type instance RuleResult RemoteAsset = FilePath
+type instance RuleResult FetchURL = FilePath
 
-fetchRemoteAsset :: URI -> Action FilePath
-fetchRemoteAsset = apply1 . RemoteAsset
+fetchURL :: URI -> Action FilePath
+fetchURL = apply1 . FetchURL
 
-addFetchRemoteAssetRule :: FilePath -> Rules ()
-addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
+addFetchURLRule :: FilePath -> Rules ()
+addFetchURLRule cacheDir = addBuiltinRule noLint noIdentity run
   where
-    run :: BuiltinRun RemoteAsset FilePath
-    run (RemoteAsset uri) old _mode = do
+    run :: BuiltinRun FetchURL FilePath
+    run (FetchURL uri) old _mode = do
       unless (uriQuery uri == "") $
         error ("Query elements in URI are not supported: " <> show uri)
 
@@ -68,36 +68,7 @@ addFetchRemoteAssetRule cacheDir = addBuiltinRule noLint noIdentity run
 runCurl :: URI -> String -> String -> Action ETag
 runCurl uri path etagFile = do
   (Exit exitCode, Stdout out) <-
-    traced "curl" $
-      cmd
-        Shell
-        [ "curl",
-          -- Silent or quiet mode. Do not show progress meter or error messages. Makes Curl mute.
-          "--silent",
-          -- Fail fast with no output at all on server errors.
-          "--fail",
-          -- If the server reports that the requested page has moved to a different location this
-          -- option will make curl redo the request on the new place.
-          -- NOTE: This is needed because github always replies with a redirect
-          "--location",
-          -- This  option  makes  a conditional HTTP request for the specific ETag read from the
-          -- given file by sending a custom If-None-Match header using the stored ETag.
-          -- For correct results, make sure that the specified file contains only a single line
-          -- with the desired ETag. An empty file is parsed as an empty ETag.
-          "--etag-compare",
-          etagFile,
-          -- This option saves an HTTP ETag to the specified file. If no ETag is sent by the server,
-          -- an empty file is created.
-          "--etag-save",
-          etagFile,
-          -- Write output to <file> instead of stdout.
-          "--output",
-          path,
-          "--write-out",
-          "%{json}",
-          -- URL to fetch
-          show uri
-        ]
+    traced "curl" $ cmd Shell curlInvocation
   case exitCode of
     ExitSuccess -> liftIO $ BS.readFile etagFile
     ExitFailure c -> do
@@ -112,7 +83,36 @@ runCurl uri path etagFile = do
               ]
         -- We can consider displaying different messages based on some fields (e.g. response_code)
         Right CurlWriteOut {errormsg} ->
-          error errormsg
+          error $ unlines ["calling", unwords curlInvocation, "failed with", errormsg]
+  where
+    curlInvocation =
+      [ "curl",
+        -- Silent or quiet mode. Do not show progress meter or error messages. Makes Curl mute.
+        "--silent",
+        -- Fail fast with no output at all on server errors.
+        "--fail",
+        -- If the server reports that the requested page has moved to a different location this
+        -- option will make curl redo the request on the new place.
+        -- NOTE: This is needed because github always replies with a redirect
+        "--location",
+        -- This  option  makes  a conditional HTTP request for the specific ETag read from the
+        -- given file by sending a custom If-None-Match header using the stored ETag.
+        -- For correct results, make sure that the specified file contains only a single line
+        -- with the desired ETag. An empty file is parsed as an empty ETag.
+        "--etag-compare",
+        etagFile,
+        -- This option saves an HTTP ETag to the specified file. If no ETag is sent by the server,
+        -- an empty file is created.
+        "--etag-save",
+        etagFile,
+        -- Write output to <file> instead of stdout.
+        "--output",
+        path,
+        "--write-out",
+        "%{json}",
+        -- URL to fetch
+        show uri
+      ]
 
 type ETag = BS.ByteString
 
