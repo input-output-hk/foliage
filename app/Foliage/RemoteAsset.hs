@@ -25,8 +25,11 @@ import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode (..))
 
 newtype RemoteAsset = RemoteAsset URI
-  deriving (Show, Eq)
+  deriving (Eq)
   deriving (Hashable, Binary, NFData) via URI
+
+instance Show RemoteAsset where
+  show (RemoteAsset uri) = "fetchRemoteAsset " ++ show uri
 
 type instance RuleResult RemoteAsset = FilePath
 
