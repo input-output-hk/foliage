@@ -35,6 +35,18 @@
           lib.attrsets.optionalAttrs (system == "x86_64-linux")
             { crossPlatforms = p: [ p.musl64 ]; }
         );
+
+        # Wrap the foliage executable with the needed dependencies in PATH.
+        # See #71.
+        wrapExe = drv:
+          pkgs.runCommand "foliage" {
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+          } ''
+            mkdir -p $out/bin
+            makeWrapper ${drv}/bin/foliage $out/bin/foliage \
+                --prefix PATH : ${with pkgs; lib.makeBinPath [ curl patch ]}:$out/bin
+          '';
+
       in
 
       flake // {
@@ -46,9 +58,9 @@
 
         apps = { default = flake.apps."foliage:exe:foliage"; }
         // lib.attrsets.optionalAttrs (system == "x86_64-linux")
-          { static = flake.apps."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+          { static = wrapExe flake.apps."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
         // lib.attrsets.optionalAttrs (system == "aarch64-linux")
-          { static = flake.apps."aarch64-multiplatform-musl:foliage:exe:foliage"; };
+          { static = wrapExe flake.apps."aarch64-multiplatform-musl:foliage:exe:foliage"; };
 
         packages = { default = flake.packages."foliage:exe:foliage"; }
         // lib.attrsets.optionalAttrs (system == "x86_64-linux")
