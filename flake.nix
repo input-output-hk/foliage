@@ -11,8 +11,17 @@
     flake-utils.follows = "haskell-nix/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, haskell-nix, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs = { nixpkgs, flake-utils, haskell-nix, ... }:
+    let
+      systems = [
+        "x86_64-linux"
+        "x86_64-darwin"
+        # TODO switch back on when ci.iog.io has builders for aarch64-linux
+        # "aarch64-linux"
+        "aarch64-darwin"
+      ];
+    in
+    flake-utils.lib.eachSystem systems (system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -39,9 +48,10 @@
         # Wrap the foliage executable with the needed dependencies in PATH.
         # See #71.
         wrapExe = drv:
-          pkgs.runCommand "foliage" {
-            nativeBuildInputs = [ pkgs.makeWrapper ];
-          } ''
+          pkgs.runCommand "foliage"
+            {
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+            } ''
             mkdir -p $out/bin
             makeWrapper ${drv}/bin/foliage $out/bin/foliage \
                 --prefix PATH : ${with pkgs; lib.makeBinPath [ curl patch ]}:$out/bin
