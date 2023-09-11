@@ -2,4 +2,5 @@ packages: .
 index-state: 2023-09-10T21:31:08Z
 with-compiler: ghc-9.4.7
 
-test-show-details: streaming
+tests: True
+test-show-details: direct

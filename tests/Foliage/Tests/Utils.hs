@@ -15,7 +15,9 @@ import System.FilePath
 import System.Posix.Temp (mkdtemp)
 import System.Process (readCreateProcess, shell)
 
--- | Set up a temporary directory prepopulated with the fixture files
+-- | Set up a temporary directory prepopulated with symlinks to the fixture files. The first argument
+-- should be a relative path from the current directory to the directory containing the
+-- fixture files.
 withFixture :: FilePath -> IO () -> IO ()
 withFixture name =
   bracket acquire release . const
