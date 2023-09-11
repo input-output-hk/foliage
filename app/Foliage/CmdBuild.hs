@@ -73,8 +73,11 @@ buildAction
       SignOptsSignWithKeys keysPath -> do
         ks <- doesDirectoryExist keysPath
         unless ks $ do
-          putWarn $ "You don't seem to have created a set of TUF keys. I will create one in " <> keysPath
-          liftIO $ createKeys keysPath
+          putError $ unwords
+            [ "I cannot find a set of TUF keys in " <> keysPath <> ","
+            , "Use the create-keys command to create them."
+            ]
+          fail "Keys not found"
         return $ \name -> readKeysAt (keysPath </> name)
       SignOptsDon'tSign ->
         return $ const $ pure []

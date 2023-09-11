@@ -109,17 +109,14 @@ buildCommand =
         )
   where
     signOpts =
-      ( SignOptsSignWithKeys
-          <$> strOption
-            ( long "keys"
-                <> metavar "KEYS"
-                <> help "TUF keys location"
-                <> showDefault
-                <> value "_keys"
-            )
-      )
-        <|> ( SignOptsDon'tSign
-                <$ switch (long "no-signatures" <> help "Don't sign the repository")
+      pure SignOptsDon'tSign
+        <|> ( SignOptsSignWithKeys
+                <$> strOption
+                  ( long "sign-with-keys"
+                      <> metavar "KEYS"
+                      <> help "TUF keys location"
+                      <> value "_keys"
+                  )
             )
 
 createKeysCommand :: Parser Command
