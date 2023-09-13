@@ -26,8 +26,8 @@ instance ToJSON PackageVersionSource where
   toJSON =
     genericToJSON
       defaultOptions
-        { sumEncoding = ObjectWithSingleField,
-          omitNothingFields = True
+        { sumEncoding = ObjectWithSingleField
+        , omitNothingFields = True
         }
 
 instance ToJSON URI where

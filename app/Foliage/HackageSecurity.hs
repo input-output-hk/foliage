@@ -2,14 +2,14 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 
-module Foliage.HackageSecurity
-  ( module Foliage.HackageSecurity,
-    module Hackage.Security.Server,
-    module Hackage.Security.TUF.FileMap,
-    module Hackage.Security.Key.Env,
-    module Hackage.Security.Util.Path,
-    module Hackage.Security.Util.Some,
-  )
+module Foliage.HackageSecurity (
+  module Foliage.HackageSecurity,
+  module Hackage.Security.Server,
+  module Hackage.Security.TUF.FileMap,
+  module Hackage.Security.Key.Env,
+  module Hackage.Security.Util.Path,
+  module Hackage.Security.Util.Some,
+)
 where
 
 import Control.Monad (replicateM)
@@ -27,7 +27,7 @@ import Hackage.Security.Util.Some
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath
 
-readJSONSimple :: FromJSON ReadJSON_NoKeys_NoLayout a => FilePath -> IO (Either DeserializationError a)
+readJSONSimple :: (FromJSON ReadJSON_NoKeys_NoLayout a) => FilePath -> IO (Either DeserializationError a)
 readJSONSimple fp = do
   p <- makeAbsolute (fromFilePath fp)
   readJSON_NoKeys_NoLayout p
@@ -46,16 +46,16 @@ createKeys base = do
   putStrLn "root keys:"
   createKeyGroup "root" >>= showKeys
   for_ ["target", "timestamp", "snapshot", "mirrors"] createKeyGroup
-  where
-    createKeyGroup group = do
-      createDirectoryIfMissing True (base </> group)
-      keys <- replicateM 3 $ createKey' KeyTypeEd25519
-      for_ keys $ writeKeyWithId (base </> group)
-      pure keys
+ where
+  createKeyGroup group = do
+    createDirectoryIfMissing True (base </> group)
+    keys <- replicateM 3 $ createKey' KeyTypeEd25519
+    for_ keys $ writeKeyWithId (base </> group)
+    pure keys
 
-    showKeys keys =
-      for_ keys $ \key ->
-        putStrLn $ "  " ++ showKey key
+  showKeys keys =
+    for_ keys $ \key ->
+      putStrLn $ "  " ++ showKey key
 
 showKey :: Some Key -> [Char]
 showKey k = T.unpack $ encodeBase16 $ exportSomePublicKey $ somePublicKey k
@@ -75,14 +75,14 @@ writeKey fp key = do
   p <- makeAbsolute (fromFilePath fp)
   writeJSON_NoLayout p key
 
-renderSignedJSON :: ToJSON WriteJSON a => [Some Key] -> a -> BSL.ByteString
+renderSignedJSON :: (ToJSON WriteJSON a) => [Some Key] -> a -> BSL.ByteString
 renderSignedJSON keys thing =
   renderJSON
     hackageRepoLayout
     (withSignatures hackageRepoLayout keys thing)
 
-writeSignedJSON :: ToJSON WriteJSON a => Path Absolute -> (RepoLayout -> RepoPath) -> [Some Key] -> a -> IO ()
+writeSignedJSON :: (ToJSON WriteJSON a) => Path Absolute -> (RepoLayout -> RepoPath) -> [Some Key] -> a -> IO ()
 writeSignedJSON outputDirRoot repoPath keys thing = do
   writeLazyByteString fp $ renderSignedJSON keys thing
-  where
-    fp = anchorRepoPathLocally outputDirRoot $ repoPath hackageRepoLayout
+ where
+  fp = anchorRepoPathLocally outputDirRoot $ repoPath hackageRepoLayout

@@ -1,16 +1,16 @@
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Foliage.Time
-  ( iso8601ParseM,
-    iso8601Show,
-    getCurrentTime,
-    UTCTime (..),
-    utcTimeToPOSIXSeconds,
-    addUTCTime,
-    nominalDay,
-    truncateSeconds,
-  )
+module Foliage.Time (
+  iso8601ParseM,
+  iso8601Show,
+  getCurrentTime,
+  UTCTime (..),
+  utcTimeToPOSIXSeconds,
+  addUTCTime,
+  nominalDay,
+  truncateSeconds,
+)
 where
 
 import Data.Time
