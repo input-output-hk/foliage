@@ -114,7 +114,8 @@ buildCommand =
               )
             <*> option
               (maybeReader (readMaybe . toUppercase))
-              ( long "verbosity"
+              ( short 'v'
+                  <> long "verbosity"
                   <> metavar "VERBOSITY"
                   <> help "What level of messages should be printed out [silent, error, warn, info, verbose, diagnostic]"
                   <> showDefaultWith (toLowercase . show)
