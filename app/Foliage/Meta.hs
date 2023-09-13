@@ -21,12 +21,13 @@ module Foliage.Meta
     deprecationTimestamp,
     deprecationIsDeprecated,
     PackageVersionSource,
-    pattern TarballSource,
+    pattern URISource,
     pattern GitHubSource,
     GitHubRepo (..),
     GitHubRev (..),
     UTCTime,
     latestRevisionNumber,
+    packageVersionSourceToUri,
   )
 where
 
@@ -43,8 +44,9 @@ import Distribution.Aeson ()
 import Distribution.Types.Orphans ()
 import Foliage.Time (UTCTime)
 import GHC.Generics (Generic)
-import Network.URI (URI, parseURI)
+import Network.URI (URI (..), nullURI, parseURI)
 import Network.URI.Orphans ()
+import System.FilePath ((</>))
 import Toml (TomlCodec, (.=))
 import Toml qualified
 
@@ -55,8 +57,8 @@ newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
 
 data PackageVersionSource
-  = TarballSource
-      { tarballSourceURI :: URI,
+  = URISource
+      { sourceURI :: URI,
         subdir :: Maybe String
       }
   | GitHubSource
@@ -67,13 +69,28 @@ data PackageVersionSource
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
 
+packageVersionSourceToUri :: PackageVersionSource -> URI
+packageVersionSourceToUri (URISource uri Nothing) = uri
+packageVersionSourceToUri (URISource uri (Just subdir)) = uri {uriQuery = "?dir=" ++ subdir}
+packageVersionSourceToUri (GitHubSource repo rev Nothing) =
+  nullURI
+    { uriScheme = "github:",
+      uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev)
+    }
+packageVersionSourceToUri (GitHubSource repo rev (Just subdir)) =
+  nullURI
+    { uriScheme = "github:",
+      uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev),
+      uriQuery = "?dir=" ++ subdir
+    }
+
 packageSourceCodec :: TomlCodec PackageVersionSource
 packageSourceCodec =
-  Toml.dimatch matchTarballSource (uncurry TarballSource) tarballSourceCodec
+  Toml.dimatch matchTarballSource (uncurry URISource) tarballSourceCodec
     <|> Toml.dimatch matchGitHubSource (\((repo, rev), mSubdir) -> GitHubSource repo rev mSubdir) githubSourceCodec
 
-uri :: Toml.Key -> TomlCodec URI
-uri = Toml.textBy to from
+uriCodec :: Toml.Key -> TomlCodec URI
+uriCodec = Toml.textBy to from
   where
     to = T.pack . show
     from t = case parseURI (T.unpack t) of
@@ -83,11 +100,11 @@ uri = Toml.textBy to from
 tarballSourceCodec :: TomlCodec (URI, Maybe String)
 tarballSourceCodec =
   Toml.pair
-    (uri "url")
+    (uriCodec "url")
     (Toml.dioptional $ Toml.string "subdir")
 
 matchTarballSource :: PackageVersionSource -> Maybe (URI, Maybe String)
-matchTarballSource (TarballSource url mSubdir) = Just (url, mSubdir)
+matchTarballSource (URISource url mSubdir) = Just (url, mSubdir)
 matchTarballSource _ = Nothing
 
 gitHubRepo :: Toml.Key -> TomlCodec GitHubRepo
@@ -125,15 +142,15 @@ sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
   PackageVersionSpec
     <$> Toml.dioptional (timeCodec "timestamp")
-    .= packageVersionTimestamp
+      .= packageVersionTimestamp
     <*> packageSourceCodec
-    .= packageVersionSource
+      .= packageVersionSource
     <*> Toml.list revisionMetaCodec "revisions"
-    .= packageVersionRevisions
+      .= packageVersionRevisions
     <*> Toml.list deprecationMetaCodec "deprecations"
-    .= packageVersionDeprecations
+      .= packageVersionDeprecations
     <*> withDefault False (Toml.bool "force-version")
-    .= packageVersionForce
+      .= packageVersionForce
 
 readPackageVersionSpec :: FilePath -> IO PackageVersionSpec
 readPackageVersionSpec = Toml.decodeFile sourceMetaCodec
@@ -152,9 +169,9 @@ revisionMetaCodec :: TomlCodec RevisionSpec
 revisionMetaCodec =
   RevisionSpec
     <$> timeCodec "timestamp"
-    .= revisionTimestamp
+      .= revisionTimestamp
     <*> Toml.int "number"
-    .= revisionNumber
+      .= revisionNumber
 
 data DeprecationSpec = DeprecationSpec
   { deprecationTimestamp :: UTCTime,
@@ -170,9 +187,9 @@ deprecationMetaCodec :: TomlCodec DeprecationSpec
 deprecationMetaCodec =
   DeprecationSpec
     <$> timeCodec "timestamp"
-    .= deprecationTimestamp
+      .= deprecationTimestamp
     <*> withDefault True (Toml.bool "deprecated")
-    .= deprecationIsDeprecated
+      .= deprecationIsDeprecated
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
@@ -183,7 +200,7 @@ latestRevisionNumber sm =
     [] -> Nothing
     rev : _ -> Just (revisionNumber rev)
 
-withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
+withDefault :: (Eq a) => a -> TomlCodec a -> TomlCodec a
 withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
   where
     f a = if a == d then Nothing else Just a

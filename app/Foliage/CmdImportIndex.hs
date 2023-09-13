@@ -45,7 +45,7 @@ cmdImportIndex opts = do
     mkFilter (ImportFilter pn (Just pv)) = (&&) <$> (== pn) . unPackageName . pkgName <*> (== pv) . prettyShow . pkgVersion
 
 importIndex ::
-  Show e =>
+  (Show e) =>
   (PackageIdentifier -> Bool) ->
   Tar.Entries e ->
   Map PackageIdentifier PackageVersionSpec ->
@@ -61,7 +61,7 @@ importIndex f (Tar.Next e es) m =
                   pure $
                     Just $
                       PackageVersionSpec
-                        { packageVersionSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing,
+                        { packageVersionSource = URISource (pkgIdToHackageUrl pkgId) Nothing,
                           packageVersionTimestamp = Just time,
                           packageVersionRevisions = [],
                           packageVersionDeprecations = [],

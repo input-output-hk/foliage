@@ -15,7 +15,6 @@ import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe)
-import Data.Text qualified as T
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Traversable (for)
 import Development.Shake
@@ -35,7 +34,6 @@ import Foliage.PrepareSource (addPrepareSourceRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path (castRoot, toFilePath)
-import Network.URI (URI (uriPath, uriQuery, uriScheme), nullURI)
 import System.Directory (createDirectoryIfMissing)
 
 cmdBuild :: BuildOptions -> IO ()
@@ -247,26 +245,11 @@ makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
         Aeson.object
           ( [ "pkg-name" Aeson..= pkgName,
               "pkg-version" Aeson..= pkgVersion,
-              "url" Aeson..= sourceUrl pkgVersionSource
+              "url" Aeson..= packageVersionSourceToUri pkgVersionSource
             ]
               ++ ["forced-version" Aeson..= True | pkgVersionForce]
               ++ (case pkgTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
           )
-
-    sourceUrl :: PackageVersionSource -> URI
-    sourceUrl (TarballSource uri Nothing) = uri
-    sourceUrl (TarballSource uri (Just subdir)) = uri {uriQuery = "?dir=" ++ subdir}
-    sourceUrl (GitHubSource repo rev Nothing) =
-      nullURI
-        { uriScheme = "github:",
-          uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev)
-        }
-    sourceUrl (GitHubSource repo rev (Just subdir)) =
-      nullURI
-        { uriScheme = "github:",
-          uriPath = T.unpack (unGitHubRepo repo) </> T.unpack (unGitHubRev rev),
-          uriQuery = "?dir=" ++ subdir
-        }
 
 getPackageVersions :: FilePath -> Action [PreparedPackageVersion]
 getPackageVersions inputDir = do
