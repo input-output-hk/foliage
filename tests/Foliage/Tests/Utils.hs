@@ -2,7 +2,7 @@ module Foliage.Tests.Utils
   ( checkRequiredProgram,
     callCommand,
     readCommand,
-    withFixture,
+    inTemporaryDirectoryWithFixture,
   )
 where
 
@@ -16,11 +16,15 @@ import System.FilePath
 import System.Posix.Temp (mkdtemp)
 import System.Process (readCreateProcess, shell)
 
--- | Set up a temporary directory prepopulated with symlinks to the fixture files. The first argument
--- should be a relative path from the current directory to the directory containing the
--- fixture files.
-withFixture :: FilePath -> IO () -> IO ()
-withFixture name =
+-- | Set up a temporary directory prepopulated with symlinks to the fixture
+-- files and change the current directory to it before running the given
+-- action. The previous working directory is restored after the action is
+-- finished or an exception is raised.
+--
+-- The first argument should be a relative path from the current directory
+-- to the directory containing the fixture files.
+inTemporaryDirectoryWithFixture :: FilePath -> IO () -> IO ()
+inTemporaryDirectoryWithFixture name =
   bracket acquire release . const
   where
     acquire = do

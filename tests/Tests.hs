@@ -16,7 +16,7 @@ main = do
     testGroup
       "foliage-test-suite"
       [ testCaseSteps "one" $ \step ->
-          withFixture "tests/fixtures/simple" $ do
+          inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
             step "Building repository"
             callCommand "foliage build"
 
@@ -37,7 +37,7 @@ main = do
                   entryTime entry @?= 1648534790,
         ---
         testCaseSteps "accepts --no-signatures" $ \step ->
-          withFixture "tests/fixtures/simple" $ do
+          inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
             step "Building repository"
             callCommand "foliage build --no-signatures"
 
@@ -46,7 +46,7 @@ main = do
             doesExist @?= False,
         ---
         testCaseSteps "accepts --write-metadata" $ \step ->
-          withFixture "tests/fixtures/simple" $ do
+          inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
             step "Building repository"
             callCommand "foliage build --write-metadata"
 
