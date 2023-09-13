@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 import Codec.Archive.Tar.Entry (GenEntry (entryContent, entryTime), GenEntryContent (NormalFile))
+import Control.Exception (SomeException, try)
 import Data.ByteString.Lazy qualified as BL
 import Foliage.Tests.Tar
 import Foliage.Tests.Utils
@@ -68,4 +69,12 @@ main = do
 
             step "Running checks"
             doesFileExist "_repo/foliage/packages.json" @? "foliage/packages.json does not exist"
+      , ---
+        testCaseSteps "rejects quoted timestamp in meta.toml" $ \step ->
+          inTemporaryDirectoryWithFixture "tests/fixtures/bad-timestamp" $ do
+            step "Building repository (expecting failure)"
+            result <- try @SomeException (callCommand "foliage build --no-signatures")
+            case result of
+              Left _ -> pure ()
+              Right _ -> assertFailure "foliage build should have failed on a quoted timestamp"
       ]
