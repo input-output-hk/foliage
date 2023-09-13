@@ -63,51 +63,15 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             IO.createDirectoryIfMissing True srcDir
 
           case packageVersionSource of
-            TarballSource url mSubdir -> do
-              tarballPath <- case url of
-                URI {uriScheme = "file:", uriPath} ->
-                  liftIO $ IO.makeAbsolute uriPath
-                _ -> fetchURL url
-
-              withTempDir $ \tmpDir -> do
-                cmd_ "tar xzf" [tarballPath] "-C" [tmpDir]
-
-                -- Special treatment of top-level directory: we remove it
-                --
-                -- Note: Don't let shake look into tmpDir! it will cause
-                -- unnecessary rework because tmpDir is always new
-                ls <- liftIO $ IO.getDirectoryContents tmpDir
-                let ls' = filter (not . all (== '.')) ls
-
-                let fix1 = case ls' of [l] -> (</> l); _ -> id
-                    fix2 = case mSubdir of Just s -> (</> s); _ -> id
-                    tdir = fix2 $ fix1 tmpDir
-
-                cmd_ "cp --recursive --no-target-directory --dereference" [tdir, srcDir]
-            --
-            -- This is almost identical to the above but we get to keep the
-            -- metadata.
-            --
+            URISource (URI {uriScheme, uriPath}) mSubdir | uriScheme == "file:" -> do
+              tarballPath <- liftIO $ IO.makeAbsolute uriPath
+              extractFromTarball tarballPath mSubdir srcDir
+            URISource uri mSubdir -> do
+              tarballPath <- fetchURL uri
+              extractFromTarball tarballPath mSubdir srcDir
             GitHubSource repo rev mSubdir -> do
-              let url = githubRepoTarballUrl repo rev
-
-              tarballPath <- fetchURL url
-
-              withTempDir $ \tmpDir -> do
-                cmd_ "tar xzf" [tarballPath] "-C" [tmpDir]
-
-                -- Special treatment of top-level directory: we remove it
-                --
-                -- Note: Don't let shake look into tmpDir! it will cause
-                -- unnecessary rework because tmpDir is always new
-                ls <- liftIO $ IO.getDirectoryContents tmpDir
-                let ls' = filter (not . all (== '.')) ls
-
-                let fix1 = case ls' of [l] -> (</> l); _ -> id
-                    fix2 = case mSubdir of Just s -> (</> s); _ -> id
-                    tdir = fix2 $ fix1 tmpDir
-
-                cmd_ "cp --recursive --no-target-directory --dereference" [tdir, srcDir]
+              tarballPath <- fetchURL (githubRepoTarballUrl repo rev)
+              extractFromTarball tarballPath mSubdir srcDir
 
           let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
           hasPatches <- doesDirectoryExist patchesDir
@@ -124,3 +88,21 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             liftIO $ rewritePackageVersion cabalFilePath pkgVersion
 
           return $ RunResult ChangedRecomputeDiff BS.empty srcDir
+
+    extractFromTarball tarballPath mSubdir outDir = do
+      withTempDir $ \tmpDir -> do
+        cmd_ "tar xzf" [tarballPath] "-C" [tmpDir]
+
+        ls <-
+          -- remove "." and ".."
+          filter (not . all (== '.'))
+            -- NOTE: Don't let shake look into tmpDir! it will cause
+            -- unnecessary rework because tmpDir is always new
+            <$> liftIO (IO.getDirectoryContents tmpDir)
+
+        -- Special treatment of top-level directory: we remove it
+        let byPassSingleTopLevelDir = case ls of [l] -> (</> l); _ -> id
+            applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
+            targetDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
+
+        cmd_ "cp --recursive --no-target-directory --dereference" [targetDir, outDir]
