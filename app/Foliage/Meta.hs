@@ -5,29 +5,29 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Foliage.Meta
-  ( packageVersionTimestamp,
-    packageVersionSource,
-    packageVersionRevisions,
-    packageVersionDeprecations,
-    packageVersionForce,
-    PackageVersionSpec (PackageVersionSpec),
-    readPackageVersionSpec,
-    writePackageVersionSpec,
-    RevisionSpec (RevisionSpec),
-    revisionTimestamp,
-    revisionNumber,
-    DeprecationSpec (DeprecationSpec),
-    deprecationTimestamp,
-    deprecationIsDeprecated,
-    PackageVersionSource,
-    pattern TarballSource,
-    pattern GitHubSource,
-    GitHubRepo (..),
-    GitHubRev (..),
-    UTCTime,
-    latestRevisionNumber,
-  )
+module Foliage.Meta (
+  packageVersionTimestamp,
+  packageVersionSource,
+  packageVersionRevisions,
+  packageVersionDeprecations,
+  packageVersionForce,
+  PackageVersionSpec (PackageVersionSpec),
+  readPackageVersionSpec,
+  writePackageVersionSpec,
+  RevisionSpec (RevisionSpec),
+  revisionTimestamp,
+  revisionNumber,
+  DeprecationSpec (DeprecationSpec),
+  deprecationTimestamp,
+  deprecationIsDeprecated,
+  PackageVersionSource,
+  pattern TarballSource,
+  pattern GitHubSource,
+  GitHubRepo (..),
+  GitHubRev (..),
+  UTCTime,
+  latestRevisionNumber,
+)
 where
 
 import Control.Applicative ((<|>))
@@ -56,13 +56,13 @@ newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
 
 data PackageVersionSource
   = TarballSource
-      { tarballSourceURI :: URI,
-        subdir :: Maybe String
+      { tarballSourceURI :: URI
+      , subdir :: Maybe String
       }
   | GitHubSource
-      { githubRepo :: GitHubRepo,
-        githubRev :: GitHubRev,
-        subdir :: Maybe String
+      { githubRepo :: GitHubRepo
+      , githubRev :: GitHubRev
+      , subdir :: Maybe String
       }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
@@ -74,11 +74,11 @@ packageSourceCodec =
 
 uri :: Toml.Key -> TomlCodec URI
 uri = Toml.textBy to from
-  where
-    to = T.pack . show
-    from t = case parseURI (T.unpack t) of
-      Nothing -> Left $ "Invalid url: " <> t
-      Just uri' -> Right uri'
+ where
+  to = T.pack . show
+  from t = case parseURI (T.unpack t) of
+    Nothing -> Left $ "Invalid url: " <> t
+    Just uri' -> Right uri'
 
 tarballSourceCodec :: TomlCodec (URI, Maybe String)
 tarballSourceCodec =
@@ -107,16 +107,16 @@ matchGitHubSource (GitHubSource repo rev mSubdir) = Just ((repo, rev), mSubdir)
 matchGitHubSource _ = Nothing
 
 data PackageVersionSpec = PackageVersionSpec
-  { -- | timestamp
-    packageVersionTimestamp :: Maybe UTCTime,
-    -- | source parameters
-    packageVersionSource :: PackageVersionSource,
-    -- | revisions
-    packageVersionRevisions :: [RevisionSpec],
-    -- | deprecations
-    packageVersionDeprecations :: [DeprecationSpec],
-    -- | force version
-    packageVersionForce :: Bool
+  { packageVersionTimestamp :: Maybe UTCTime
+  -- ^ timestamp
+  , packageVersionSource :: PackageVersionSource
+  -- ^ source parameters
+  , packageVersionRevisions :: [RevisionSpec]
+  -- ^ revisions
+  , packageVersionDeprecations :: [DeprecationSpec]
+  -- ^ deprecations
+  , packageVersionForce :: Bool
+  -- ^ force version
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
@@ -125,15 +125,15 @@ sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
   PackageVersionSpec
     <$> Toml.dioptional (timeCodec "timestamp")
-    .= packageVersionTimestamp
+      .= packageVersionTimestamp
     <*> packageSourceCodec
-    .= packageVersionSource
+      .= packageVersionSource
     <*> Toml.list revisionMetaCodec "revisions"
-    .= packageVersionRevisions
+      .= packageVersionRevisions
     <*> Toml.list deprecationMetaCodec "deprecations"
-    .= packageVersionDeprecations
+      .= packageVersionDeprecations
     <*> withDefault False (Toml.bool "force-version")
-    .= packageVersionForce
+      .= packageVersionForce
 
 readPackageVersionSpec :: FilePath -> IO PackageVersionSpec
 readPackageVersionSpec = Toml.decodeFile sourceMetaCodec
@@ -142,8 +142,8 @@ writePackageVersionSpec :: FilePath -> PackageVersionSpec -> IO ()
 writePackageVersionSpec fp a = void $ Toml.encodeToFile sourceMetaCodec fp a
 
 data RevisionSpec = RevisionSpec
-  { revisionTimestamp :: UTCTime,
-    revisionNumber :: Int
+  { revisionTimestamp :: UTCTime
+  , revisionNumber :: Int
   }
   deriving (Show, Eq, Generic, Ord)
   deriving anyclass (Binary, Hashable, NFData)
@@ -152,16 +152,16 @@ revisionMetaCodec :: TomlCodec RevisionSpec
 revisionMetaCodec =
   RevisionSpec
     <$> timeCodec "timestamp"
-    .= revisionTimestamp
+      .= revisionTimestamp
     <*> Toml.int "number"
-    .= revisionNumber
+      .= revisionNumber
 
 data DeprecationSpec = DeprecationSpec
-  { deprecationTimestamp :: UTCTime,
-    -- | 'True' means the package version has been deprecated
-    --   'False' means the package version has been undeprecated
-    --   FIXME: we should consider something better than 'Bool'
-    deprecationIsDeprecated :: Bool
+  { deprecationTimestamp :: UTCTime
+  , deprecationIsDeprecated :: Bool
+  -- ^ 'True' means the package version has been deprecated
+  --   'False' means the package version has been undeprecated
+  --   FIXME: we should consider something better than 'Bool'
   }
   deriving (Show, Eq, Generic, Ord)
   deriving anyclass (Binary, Hashable, NFData)
@@ -170,9 +170,9 @@ deprecationMetaCodec :: TomlCodec DeprecationSpec
 deprecationMetaCodec =
   DeprecationSpec
     <$> timeCodec "timestamp"
-    .= deprecationTimestamp
+      .= deprecationTimestamp
     <*> withDefault True (Toml.bool "deprecated")
-    .= deprecationIsDeprecated
+      .= deprecationIsDeprecated
 
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
@@ -183,7 +183,7 @@ latestRevisionNumber sm =
     [] -> Nothing
     rev : _ -> Just (revisionNumber rev)
 
-withDefault :: Eq a => a -> TomlCodec a -> TomlCodec a
+withDefault :: (Eq a) => a -> TomlCodec a -> TomlCodec a
 withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
-  where
-    f a = if a == d then Nothing else Just a
+ where
+  f a = if a == d then Nothing else Just a

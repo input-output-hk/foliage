@@ -1,9 +1,9 @@
-module Foliage.Shake
-  ( computeFileInfoSimple',
-    readKeysAt,
-    readPackageVersionSpec',
-    readGenericPackageDescription',
-  )
+module Foliage.Shake (
+  computeFileInfoSimple',
+  readKeysAt,
+  readPackageVersionSpec',
+  readGenericPackageDescription',
+)
 where
 
 import Data.Traversable (for)

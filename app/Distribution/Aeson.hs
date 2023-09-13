@@ -144,33 +144,33 @@ jsonField fn v
   | v == emptyArray = mempty
   | v == emptyString = mempty
   | otherwise = [Key.fromString (fromUTF8BS fn) .= v]
-  where
-    -- Should be added to aeson
-    emptyString :: Value
-    emptyString = String ""
+ where
+  -- Should be added to aeson
+  emptyString :: Value
+  emptyString = String ""
 
 jsonGenericPackageDescription :: GenericPackageDescription -> Value
 jsonGenericPackageDescription gpd = jsonGenericPackageDescription' v gpd
-  where
-    v = specVersion $ packageDescription gpd
+ where
+  v = specVersion $ packageDescription gpd
 
 jsonGenericPackageDescription' :: CabalSpecVersion -> GenericPackageDescription -> Value
 jsonGenericPackageDescription' v gpd =
   object $
     concat
-      [ jsonPackageDescription v (packageDescription gpd),
-        jsonSetupBuildInfo v (setupBuildInfo (packageDescription gpd)),
-        jsonGenPackageFlags v (genPackageFlags gpd),
-        jsonCondLibrary v (condLibrary gpd),
-        jsonCondSubLibraries v (condSubLibraries gpd),
-        jsonCondForeignLibs v (condForeignLibs gpd),
-        jsonCondExecutables v (condExecutables gpd),
-        jsonCondTestSuites v (condTestSuites gpd),
-        jsonCondBenchmarks v (condBenchmarks gpd)
+      [ jsonPackageDescription v (packageDescription gpd)
+      , jsonSetupBuildInfo v (setupBuildInfo (packageDescription gpd))
+      , jsonGenPackageFlags v (genPackageFlags gpd)
+      , jsonCondLibrary v (condLibrary gpd)
+      , jsonCondSubLibraries v (condSubLibraries gpd)
+      , jsonCondForeignLibs v (condForeignLibs gpd)
+      , jsonCondExecutables v (condExecutables gpd)
+      , jsonCondTestSuites v (condTestSuites gpd)
+      , jsonCondBenchmarks v (condBenchmarks gpd)
       ]
 
 jsonPackageDescription :: CabalSpecVersion -> PackageDescription -> [Pair]
-jsonPackageDescription v pd@PackageDescription {sourceRepos, setupBuildInfo} =
+jsonPackageDescription v pd@PackageDescription{sourceRepos, setupBuildInfo} =
   jsonFieldGrammar v packageDescriptionFieldGrammar pd
     <> jsonSourceRepos v sourceRepos
     <> jsonSetupBuildInfo v setupBuildInfo
@@ -180,7 +180,7 @@ jsonSourceRepos v =
   concatMap (\neRepos -> ["source-repository" .= NE.map (jsonSourceRepo v) neRepos]) . NE.nonEmpty
 
 jsonSourceRepo :: CabalSpecVersion -> SourceRepo -> Value
-jsonSourceRepo v repo@SourceRepo {repoKind} =
+jsonSourceRepo v repo@SourceRepo{repoKind} =
   object $ jsonFieldGrammar v (sourceRepoFieldGrammar repoKind) repo
 
 jsonSetupBuildInfo :: CabalSpecVersion -> Maybe SetupBuildInfo -> [Pair]
@@ -241,33 +241,33 @@ jsonCondBenchmark v (n, condTree) =
 
 jsonCondTree :: forall a. CabalSpecVersion -> JSONFieldGrammar' a -> CondTree ConfVar [Dependency] a -> Value
 jsonCondTree v grammar = toJSON . go . fmap fst . conv
-  where
-    go (CondFlat a ifs) =
-      KeyMap.fromListWith (<>) $
-        second (: [])
-          <$> jsonFieldGrammar v grammar a ++ concatMap (\(cv, a') -> second (ifc cv) <$> jsonFieldGrammar v grammar a') ifs
+ where
+  go (CondFlat a ifs) =
+    KeyMap.fromListWith (<>) $
+      second (: [])
+        <$> jsonFieldGrammar v grammar a ++ concatMap (\(cv, a') -> second (ifc cv) <$> jsonFieldGrammar v grammar a') ifs
 
-    ifc cv a = object ["if" .= showCondition cv, "then" .= a]
+  ifc cv a = object ["if" .= showCondition cv, "then" .= a]
 
 data CondFlat v a = CondFlat a [(Condition v, a)]
   deriving (Show, Functor)
 
 conv :: forall v c a. CondTree v c a -> CondFlat v (a, c)
 conv = goNode
-  where
-    goNode (CondNode a c ifs) =
-      CondFlat (a, c) (concatMap goBranch ifs)
+ where
+  goNode (CondNode a c ifs) =
+    CondFlat (a, c) (concatMap goBranch ifs)
 
-    goBranch (CondBranch cond thenTree Nothing) =
-      let (CondFlat a ifs) = goNode thenTree
-       in (cond, a) : fmap (first (cond `cAnd`)) ifs
-    goBranch (CondBranch cond thenTree (Just elseTree)) =
-      let (CondFlat a1 ifs1) = goNode thenTree
-          (CondFlat a2 ifs2) = goNode elseTree
-       in (cond, a1)
-            : (first (cond `cAnd`) <$> ifs1)
-            ++ (cNot cond, a2)
-            : (first (cNot cond `cAnd`) <$> ifs2)
+  goBranch (CondBranch cond thenTree Nothing) =
+    let (CondFlat a ifs) = goNode thenTree
+     in (cond, a) : fmap (first (cond `cAnd`)) ifs
+  goBranch (CondBranch cond thenTree (Just elseTree)) =
+    let (CondFlat a1 ifs1) = goNode thenTree
+        (CondFlat a2 ifs2) = goNode elseTree
+     in (cond, a1)
+          : (first (cond `cAnd`) <$> ifs1)
+          ++ (cNot cond, a2)
+          : (first (cNot cond `cAnd`) <$> ifs2)
 
 test :: FilePath -> IO ()
 test fn = do
