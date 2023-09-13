@@ -6,7 +6,7 @@ module Foliage.Tests.Utils
   )
 where
 
-import Control.Exception (bracket)
+import Control.Exception (finally)
 import Control.Monad (when)
 import Data.Foldable (for_)
 import Data.Functor (void)
@@ -24,22 +24,14 @@ import System.Process (readCreateProcess, shell)
 -- The first argument should be a relative path from the current directory
 -- to the directory containing the fixture files.
 inTemporaryDirectoryWithFixture :: FilePath -> IO () -> IO ()
-inTemporaryDirectoryWithFixture name =
-  bracket acquire release . const
-  where
-    acquire = do
-      cur <- getCurrentDirectory
-      fixtureDir <- makeAbsolute name
-      -- Adding a dot to the prefix to make it look nicer (tests/fixtures/simple123423 vs tests/fixtures/simple.123423)
-      workDir <- mkdtemp $ fixtureDir ++ "."
-      setCurrentDirectory workDir
-      fixtureFiles <- listDirectory fixtureDir
-      for_ fixtureFiles $ \p -> createFileLink (fixtureDir </> p) (workDir </> p)
-      return (cur, workDir)
-
-    release (old, workDir) = do
-      setCurrentDirectory old
-      removeDirectoryRecursive workDir
+inTemporaryDirectoryWithFixture name action = do
+  fixtureDir <- makeAbsolute name
+  -- Adding a dot to the prefix to make it look nicer (tests/fixtures/simple123423 vs tests/fixtures/simple.123423)
+  let prefix = fixtureDir ++ "."
+  withTempDir prefix $ \workDir -> do
+    fixtureFiles <- listDirectory fixtureDir
+    for_ fixtureFiles $ \p -> createFileLink (fixtureDir </> p) (workDir </> p)
+    withCurrentDirectory workDir action
 
 -- | Ensures the given program is available in PATH
 checkRequiredProgram :: String -> IO ()
@@ -53,3 +45,8 @@ callCommand = void . readCommand
 -- | Run a shell command and capture its standard output
 readCommand :: String -> IO String
 readCommand cmd = readCreateProcess (shell cmd) ""
+
+withTempDir :: String -> (FilePath -> IO a) -> IO a
+withTempDir prefix action = do
+  tmpDir <- mkdtemp prefix
+  action tmpDir `finally` removeDirectoryRecursive tmpDir
