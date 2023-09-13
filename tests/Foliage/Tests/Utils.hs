@@ -1,9 +1,10 @@
-module Foliage.Tests.Utils (
-  checkRequiredProgram,
-  callCommand,
-  readCommand,
-  withFixture,
-) where
+module Foliage.Tests.Utils
+  ( checkRequiredProgram,
+    callCommand,
+    readCommand,
+    withFixture,
+  )
+where
 
 import Control.Exception (bracket)
 import Control.Monad (when)
@@ -21,19 +22,19 @@ import System.Process (readCreateProcess, shell)
 withFixture :: FilePath -> IO () -> IO ()
 withFixture name =
   bracket acquire release . const
- where
-  acquire = do
-    cur <- getCurrentDirectory
-    fixtureDir <- makeAbsolute name
-    workDir <- mkdtemp $ fixtureDir ++ "."
-    setCurrentDirectory workDir
-    fixtureFiles <- listDirectory fixtureDir
-    for_ fixtureFiles $ \p -> createFileLink (fixtureDir </> p) (workDir </> p)
-    return (cur, workDir)
+  where
+    acquire = do
+      cur <- getCurrentDirectory
+      fixtureDir <- makeAbsolute name
+      workDir <- mkdtemp $ fixtureDir ++ "."
+      setCurrentDirectory workDir
+      fixtureFiles <- listDirectory fixtureDir
+      for_ fixtureFiles $ \p -> createFileLink (fixtureDir </> p) (workDir </> p)
+      return (cur, workDir)
 
-  release (old, workDir) = do
-    setCurrentDirectory old
-    removeDirectoryRecursive workDir
+    release (old, workDir) = do
+      setCurrentDirectory old
+      removeDirectoryRecursive workDir
 
 -- | Ensures the given program is available in PATH
 checkRequiredProgram :: String -> IO ()
