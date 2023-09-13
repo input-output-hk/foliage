@@ -26,6 +26,7 @@ withFixture name =
     acquire = do
       cur <- getCurrentDirectory
       fixtureDir <- makeAbsolute name
+      -- Adding a dot to the prefix to make it look nicer (tests/fixtures/simple123423 vs tests/fixtures/simple.123423)
       workDir <- mkdtemp $ fixtureDir ++ "."
       setCurrentDirectory workDir
       fixtureFiles <- listDirectory fixtureDir
