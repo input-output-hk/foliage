@@ -91,7 +91,17 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
 
     extractFromTarball tarballPath mSubdir outDir = do
       withTempDir $ \tmpDir -> do
-        cmd_ "tar xzf" [tarballPath] "-C" [tmpDir]
+        cmd_ [ "tar",
+              -- Extract files from an archive
+              "--extract",
+              -- Filter the archive through gunzip
+              "--gunzip",
+              -- Use archive file
+              "--file",
+              tarballPath,
+              -- Change to DIR before performing any operations
+              "--directory", tmpDir
+            ]
 
         ls <-
           -- remove "." and ".."
@@ -103,6 +113,17 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
         -- Special treatment of top-level directory: we remove it
         let byPassSingleTopLevelDir = case ls of [l] -> (</> l); _ -> id
             applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
-            targetDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
+            srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
 
-        cmd_ "cp --recursive --no-target-directory --dereference" [targetDir, outDir]
+        cmd_ [ "cp",
+              -- copy directories recursively
+              "--recursive",
+              -- treat DEST as a normal file
+              "--no-target-directory",
+              -- always follow symbolic links in SOURCE
+              "--dereference",
+              -- SOURCE
+              srcDir,
+              -- DEST
+              outDir
+            ]
