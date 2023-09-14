@@ -10,7 +10,5 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: haskell-actions/run-fourmolu@v9
-        with:
-          version: "0.14.0.0"
+      - uses: cachix/install-nix-action@v22
+      - run: nix develop --command fourmolu -m check .
