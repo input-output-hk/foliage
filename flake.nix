@@ -37,6 +37,7 @@
             cabal = "latest";
             hlint = "latest";
             haskell-language-server = "latest";
+            fourmolu = "0.14.0.0";
           };
         };
 

@@ -11,11 +11,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Install Nix
-        uses: cachix/install-nix-action@v19
+        uses: DeterminateSystems/nix-installer-action@v4
         with:
-          extra_nix_config: |
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+
+      - uses: cachix/cachix-action@v12
+        with:
+           name: foliage
+           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
       - name: Update flake.lock
         uses: DeterminateSystems/update-flake-lock@v16
         with:
@@ -23,5 +31,6 @@ jobs:
           pr-labels: |                  # Labels to be set on the PR
             dependencies
             automated
+
       - name: Print PR number
         run: echo Opened pull request ${{ steps.update.outputs.pull-request-number }}.

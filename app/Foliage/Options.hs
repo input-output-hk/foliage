@@ -156,7 +156,8 @@ newtype ImportIndexOptions = ImportIndexOptions
 
 importIndexCommand :: Parser Command
 importIndexCommand =
-  ImportIndex . ImportIndexOptions
+  ImportIndex
+    . ImportIndexOptions
     <$> optional
       ( ImportFilter
           <$> strOption
