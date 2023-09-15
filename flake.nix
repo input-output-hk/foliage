@@ -32,7 +32,7 @@
 
         project = pkgs.haskell-nix.cabalProject' {
           src = ./.;
-          compiler-nix-name = "ghc926";
+          compiler-nix-name = "ghc94";
           shell.tools = {
             cabal = "latest";
             hlint = "latest";

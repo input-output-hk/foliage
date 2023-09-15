@@ -1,4 +1,4 @@
-cabal-version:      2.4
+cabal-version:      3.8
 name:               foliage
 description:        Foliage is a tool to create custom Haskell package repositories, in a fully reproducible way.
 version:            0.6.0.0
@@ -12,7 +12,12 @@ source-repository head
   type:     git
   location: https://github.com/andreabedini/foliage
 
+common common-settings
+    ghc-options:        -Wall -threaded
+    default-language:   GHC2021
+
 executable foliage
+    import:             common-settings
     main-is:            Main.hs
     hs-source-dirs:     app
     other-modules:
@@ -21,6 +26,7 @@ executable foliage
         Foliage.CmdBuild
         Foliage.CmdCreateKeys
         Foliage.CmdImportIndex
+        Foliage.FetchURL
         Foliage.HackageSecurity
         Foliage.Meta
         Foliage.Meta.Aeson
@@ -29,7 +35,6 @@ executable foliage
         Foliage.PreparePackageVersion
         Foliage.PrepareSource
         Foliage.PrepareSdist
-        Foliage.RemoteAsset
         Foliage.Shake
         Foliage.Time
         Foliage.UpdateCabalFile
@@ -37,10 +42,6 @@ executable foliage
         Foliage.Utils.GitHub
         Network.URI.Orphans
 
-    default-language:   GHC2021
-
-    ghc-options:        -Wall
-    ghc-options:        -threaded
     build-depends:
         base                 >=4.14.3.0   && <4.18,
         aeson                >=2.0.3.0    && <2.2,
@@ -68,3 +69,22 @@ executable foliage
         vector               >=0.13.0.0   && <0.14,
         with-utf8            >=1.0.2.3    && <1.1,
         zlib                 >=0.6.2.3    && <0.7,
+
+test-suite foliage-test-suite
+  import:              common-settings
+  main-is:             Tests.hs
+  other-modules:       Foliage.Tests.Utils
+                     , Foliage.Tests.Tar
+  build-depends:       base
+                     , bytestring
+                     , containers
+                     , directory
+                     , filepath
+                     , network
+                     , process
+                     , tasty
+                     , tasty-hunit
+                     , tar
+                     , unix
+  build-tool-depends:  foliage:foliage
+  hs-source-dirs:      tests

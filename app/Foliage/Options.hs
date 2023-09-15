@@ -12,10 +12,15 @@ module Foliage.Options (
 )
 where
 
+import Data.Bifunctor (Bifunctor (..))
+import Data.Char qualified as Char
+import Data.List (uncons)
+import Development.Shake (Verbosity (..))
 import Development.Shake.Classes (Binary, Hashable, NFData)
 import Foliage.Time
 import GHC.Generics
 import Options.Applicative
+import Text.Read (readMaybe)
 
 data Command
   = CreateKeys FilePath
@@ -54,6 +59,7 @@ data BuildOptions = BuildOptions
   , buildOptsOutputDir :: FilePath
   , buildOptsNumThreads :: Int
   , buildOptsWriteMetadata :: Bool
+  , buildOptsVerbosity :: Verbosity
   }
 
 buildCommand :: Parser Command
@@ -106,6 +112,15 @@ buildCommand =
                   <> help "Write metadata in the output-directory"
                   <> showDefault
               )
+            <*> option
+              (maybeReader (readMaybe . toUppercase))
+              ( short 'v'
+                  <> long "verbosity"
+                  <> metavar "VERBOSITY"
+                  <> help "What level of messages should be printed out [silent, error, warn, info, verbose, diagnostic]"
+                  <> showDefaultWith (toLowercase . show)
+                  <> value Info
+              )
         )
  where
   signOpts =
@@ -141,7 +156,8 @@ newtype ImportIndexOptions = ImportIndexOptions
 
 importIndexCommand :: Parser Command
 importIndexCommand =
-  ImportIndex . ImportIndexOptions
+  ImportIndex
+    . ImportIndexOptions
     <$> optional
       ( ImportFilter
           <$> strOption
@@ -157,3 +173,11 @@ importIndexCommand =
                 )
             )
       )
+
+toUppercase :: [Char] -> String
+toUppercase s =
+  maybe "" (uncurry (:) . first Char.toUpper) (uncons s)
+
+toLowercase :: [Char] -> String
+toLowercase s =
+  maybe "" (uncurry (:) . first Char.toLower) (uncons s)

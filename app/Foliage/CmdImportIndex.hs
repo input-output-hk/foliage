@@ -62,7 +62,7 @@ importIndex f (Tar.Next e es) m =
                 pure $
                   Just $
                     PackageVersionSpec
-                      { packageVersionSource = TarballSource (pkgIdToHackageUrl pkgId) Nothing
+                      { packageVersionSource = URISource (pkgIdToHackageUrl pkgId) Nothing
                       , packageVersionTimestamp = Just time
                       , packageVersionRevisions = []
                       , packageVersionDeprecations = []
