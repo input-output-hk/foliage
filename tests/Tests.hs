@@ -29,13 +29,13 @@ main = do
             doesFileExist "_repo/snapshot.json" @? "snapshot.json does not exist"
             doesFileExist "_repo/timestamp.json" @? "timestamp.json does not exist"
 
-            withTarball "_repo/01-index.tar" $ \TarballAccessFn {lookupEntry} -> do
+            withTarball "_repo/01-index.tar" $ \TarballAccessFn{lookupEntry} -> do
               lookupEntry "pkg-a/2.3.4.5/pkg-a.cabal" >>= \case
                 Nothing ->
                   assertFailure "entry for pkg-a-2.3.4.5 is missing"
                 Just entry -> do
-                  entryTime entry @?= 1648534790,
-        ---
+                  entryTime entry @?= 1648534790
+      , ---
         testCaseSteps "accepts --no-signatures" $ \step ->
           inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
             step "Building repository"
@@ -43,8 +43,8 @@ main = do
 
             step "Running checks"
             doesExist <- doesDirectoryExist "_keys"
-            doesExist @?= False,
-        ---
+            doesExist @?= False
+      , ---
         testCaseSteps "accepts --write-metadata" $ \step ->
           inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
             step "Building repository"

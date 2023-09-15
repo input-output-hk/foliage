@@ -15,8 +15,8 @@ newtype MyAesonEncoding a = MyAesonEncoding a
 myOptions :: Options
 myOptions =
   defaultOptions
-    { sumEncoding = ObjectWithSingleField,
-      omitNothingFields = True
+    { sumEncoding = ObjectWithSingleField
+    , omitNothingFields = True
     }
 
 instance (Generic a, GToJSON' Value Zero (Rep a), GToJSON' Encoding Zero (Rep a)) => ToJSON (MyAesonEncoding a) where

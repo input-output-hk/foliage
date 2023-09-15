@@ -7,12 +7,12 @@ import Distribution.Types.Lens
 import Distribution.Types.Version
 import Distribution.Verbosity
 
-rewritePackageVersion ::
-  -- | path to @.cabal@ file
-  FilePath ->
-  -- | new version
-  Version ->
-  IO ()
+rewritePackageVersion
+  :: FilePath
+  -- ^ path to @.cabal@ file
+  -> Version
+  -- ^ new version
+  -> IO ()
 rewritePackageVersion cabalPath ver = do
   gpd <- readGenericPackageDescription normal cabalPath
   writeGenericPackageDescription cabalPath (set (packageDescription . package . pkgVersion) ver gpd)

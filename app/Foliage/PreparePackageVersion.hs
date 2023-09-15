@@ -2,23 +2,23 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Foliage.PreparePackageVersion
-  ( PreparedPackageVersion
-      ( pkgId,
-        pkgTimestamp,
-        pkgVersionSource,
-        pkgVersionForce,
-        pkgVersionIsDeprecated,
-        pkgVersionDeprecationChanges,
-        pkgDesc,
-        sdistPath,
-        cabalFilePath,
-        originalCabalFilePath,
-        cabalFileRevisions
-      ),
-    pattern PreparedPackageVersion,
-    preparePackageVersion,
-  )
+module Foliage.PreparePackageVersion (
+  PreparedPackageVersion (
+    pkgId,
+    pkgTimestamp,
+    pkgVersionSource,
+    pkgVersionForce,
+    pkgVersionIsDeprecated,
+    pkgVersionDeprecationChanges,
+    pkgDesc,
+    sdistPath,
+    cabalFilePath,
+    originalCabalFilePath,
+    cabalFileRevisions
+  ),
+  pattern PreparedPackageVersion,
+  preparePackageVersion,
+)
 where
 
 import Control.Monad (unless)
@@ -42,17 +42,17 @@ import System.FilePath (takeBaseName, takeFileName, (<.>), (</>))
 -- TODO: can we ensure that `pkgVersionDeprecationChanges` and `cabalFileRevisions` are
 -- sorted by timestamp? e.g https://hackage.haskell.org/package/sorted-list
 data PreparedPackageVersion = PreparedPackageVersion
-  { pkgId :: PackageId,
-    pkgTimestamp :: Maybe UTCTime,
-    pkgVersionSource :: PackageVersionSource,
-    pkgVersionForce :: Bool,
-    pkgVersionIsDeprecated :: Bool,
-    pkgVersionDeprecationChanges :: [(UTCTime, Bool)],
-    pkgDesc :: GenericPackageDescription,
-    sdistPath :: FilePath,
-    cabalFilePath :: FilePath,
-    originalCabalFilePath :: FilePath,
-    cabalFileRevisions :: [(UTCTime, FilePath)]
+  { pkgId :: PackageId
+  , pkgTimestamp :: Maybe UTCTime
+  , pkgVersionSource :: PackageVersionSource
+  , pkgVersionForce :: Bool
+  , pkgVersionIsDeprecated :: Bool
+  , pkgVersionDeprecationChanges :: [(UTCTime, Bool)]
+  , pkgDesc :: GenericPackageDescription
+  , sdistPath :: FilePath
+  , cabalFilePath :: FilePath
+  , originalCabalFilePath :: FilePath
+  , cabalFileRevisions :: [(UTCTime, FilePath)]
   }
 
 -- @andreabedini comments:
@@ -93,27 +93,27 @@ preparePackageVersion inputDir metaFile = do
   let pkgId = PackageIdentifier pkgName pkgVersion
 
   pkgSpec <-
-    readPackageVersionSpec' (inputDir </> metaFile) >>= \meta@PackageVersionSpec {..} -> do
+    readPackageVersionSpec' (inputDir </> metaFile) >>= \meta@PackageVersionSpec{..} -> do
       case (NE.nonEmpty packageVersionRevisions, packageVersionTimestamp) of
         (Just _someRevisions, Nothing) ->
           error $
             unlines
-              [ inputDir </> metaFile <> " has cabal file revisions but the package has no timestamp.",
-                "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
+              [ inputDir </> metaFile <> " has cabal file revisions but the package has no timestamp."
+              , "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
               ]
         (Just (NE.sort -> someRevisions), Just ts)
           -- WARN: this should really be a <=
           | revisionTimestamp (NE.head someRevisions) < ts ->
               error $
                 unlines
-                  [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself.",
-                    "Adjust the timestamps so that all revisions come after the package publication."
+                  [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself."
+                  , "Adjust the timestamps so that all revisions come after the package publication."
                   ]
           | not (null $ duplicates (revisionTimestamp <$> someRevisions)) ->
               error $
                 unlines
-                  [ inputDir </> metaFile <> " has two revisions entries with the same timestamp.",
-                    "Adjust the timestamps so that all the revisions happen at a different time."
+                  [ inputDir </> metaFile <> " has two revisions entries with the same timestamp."
+                  , "Adjust the timestamps so that all the revisions happen at a different time."
                   ]
         _otherwise -> return ()
 
@@ -121,15 +121,15 @@ preparePackageVersion inputDir metaFile = do
         (Just _someDeprecations, Nothing) ->
           error $
             unlines
-              [ inputDir </> metaFile <> " has deprecations but the package has no timestamp.",
-                "This combination doesn't make sense. Either add a timestamp on the original package or remove the deprecation."
+              [ inputDir </> metaFile <> " has deprecations but the package has no timestamp."
+              , "This combination doesn't make sense. Either add a timestamp on the original package or remove the deprecation."
               ]
         (Just (NE.sort -> someDeprecations), Just ts)
           | deprecationTimestamp (NE.head someDeprecations) <= ts ->
               error $
                 unlines
-                  [ inputDir </> metaFile <> " has a deprecation entry with timestamp earlier (or equal) than the package itself.",
-                    "Adjust the timestamps so that all the (un-)deprecations come after the package publication."
+                  [ inputDir </> metaFile <> " has a deprecation entry with timestamp earlier (or equal) than the package itself."
+                  , "Adjust the timestamps so that all the (un-)deprecations come after the package publication."
                   ]
           | not (deprecationIsDeprecated (NE.head someDeprecations)) ->
               error $
@@ -137,14 +137,14 @@ preparePackageVersion inputDir metaFile = do
           | not (null $ duplicates (deprecationTimestamp <$> someDeprecations)) ->
               error $
                 unlines
-                  [ inputDir </> metaFile <> " has two deprecation entries with the same timestamp.",
-                    "Adjust the timestamps so that all the (un-)deprecations happen at a different time."
+                  [ inputDir </> metaFile <> " has two deprecation entries with the same timestamp."
+                  , "Adjust the timestamps so that all the (un-)deprecations happen at a different time."
                   ]
           | not (null $ doubleDeprecations someDeprecations) ->
               error $
                 unlines
-                  [ inputDir </> metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations.",
-                    "Make sure deprecations and un-deprecations alternate in time."
+                  [ inputDir </> metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations."
+                  , "Make sure deprecations and un-deprecations alternate in time."
                   ]
         _otherwise -> return ()
 
@@ -156,11 +156,11 @@ preparePackageVersion inputDir metaFile = do
 
       cabalFileRevisionPath revisionNumber =
         joinPath
-          [ inputDir,
-            prettyShow pkgName,
-            prettyShow pkgVersion,
-            "revisions",
-            show revisionNumber
+          [ inputDir
+          , prettyShow pkgName
+          , prettyShow pkgVersion
+          , "revisions"
+          , show revisionNumber
           ]
           <.> "cabal"
 
@@ -178,47 +178,47 @@ preparePackageVersion inputDir metaFile = do
   unless (takeFileName sdistPath == expectedSdistName) $ do
     error $
       unlines
-        [ "creating a source distribution for " ++ prettyShow pkgId ++ " has failed because",
-          "cabal has produced a source distribtion that does not match the expected file name:",
-          "actual: " ++ takeBaseName sdistPath,
-          "expected: " ++ expectedSdistName,
-          "possible cause: the package name and/or version implied by the metadata file path does not match what is contained in the cabal file",
-          "metadata file: " ++ metaFile,
-          "version in cabal file: " ++ prettyShow (Distribution.Types.PackageId.pkgVersion $ package $ packageDescription pkgDesc)
+        [ "creating a source distribution for " ++ prettyShow pkgId ++ " has failed because"
+        , "cabal has produced a source distribtion that does not match the expected file name:"
+        , "actual: " ++ takeBaseName sdistPath
+        , "expected: " ++ expectedSdistName
+        , "possible cause: the package name and/or version implied by the metadata file path does not match what is contained in the cabal file"
+        , "metadata file: " ++ metaFile
+        , "version in cabal file: " ++ prettyShow (Distribution.Types.PackageId.pkgVersion $ package $ packageDescription pkgDesc)
         ]
 
   let cabalFileRevisions =
         sortOn
           Down
           [ (revisionTimestamp, cabalFileRevisionPath revisionNumber)
-            | RevisionSpec {revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec
+          | RevisionSpec{revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec
           ]
 
   let pkgVersionDeprecationChanges =
         sortOn
           Down
           [ (deprecationTimestamp, deprecationIsDeprecated)
-            | DeprecationSpec {deprecationTimestamp, deprecationIsDeprecated} <- packageVersionDeprecations pkgSpec
+          | DeprecationSpec{deprecationTimestamp, deprecationIsDeprecated} <- packageVersionDeprecations pkgSpec
           ]
 
   let pkgVersionIsDeprecated = maybe False snd $ listToMaybe pkgVersionDeprecationChanges
 
   return
     PreparedPackageVersion
-      { pkgId,
-        pkgTimestamp = packageVersionTimestamp pkgSpec,
-        pkgVersionSource = packageVersionSource pkgSpec,
-        pkgVersionForce = packageVersionForce pkgSpec,
-        pkgVersionDeprecationChanges,
-        pkgVersionIsDeprecated,
-        pkgDesc,
-        sdistPath,
-        cabalFilePath,
-        originalCabalFilePath,
-        cabalFileRevisions
+      { pkgId
+      , pkgTimestamp = packageVersionTimestamp pkgSpec
+      , pkgVersionSource = packageVersionSource pkgSpec
+      , pkgVersionForce = packageVersionForce pkgSpec
+      , pkgVersionDeprecationChanges
+      , pkgVersionIsDeprecated
+      , pkgDesc
+      , sdistPath
+      , cabalFilePath
+      , originalCabalFilePath
+      , cabalFileRevisions
       }
 
-duplicates :: Ord a => NE.NonEmpty a -> [a]
+duplicates :: (Ord a) => NE.NonEmpty a -> [a]
 duplicates = mapMaybe (listToMaybe . NE.tail) . NE.group
 
 doubleDeprecations :: NE.NonEmpty DeprecationSpec -> [NE.NonEmpty DeprecationSpec]

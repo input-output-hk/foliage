@@ -13,7 +13,7 @@ newtype TarballAccessFn = TarballAccessFn
   { lookupEntry :: FilePath -> IO (Maybe Entry)
   }
 
-withTarball :: HasCallStack => FilePath -> (TarballAccessFn -> IO r) -> IO r
+withTarball :: (HasCallStack) => FilePath -> (TarballAccessFn -> IO r) -> IO r
 withTarball path action = do
   eIdx <- Tar.build . Tar.read <$> B.readFile path
   case eIdx of

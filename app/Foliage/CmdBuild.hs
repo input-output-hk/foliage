@@ -46,24 +46,24 @@ cmdBuild buildOptions = do
       addPrepareSdistRule outputDirRoot
       phony "buildAction" (buildAction buildOptions)
       want ["buildAction"]
-  where
-    cacheDir = "_cache"
-    opts =
-      shakeOptions
-        { shakeFiles = cacheDir,
-          shakeVerbosity = buildOptsVerbosity buildOptions,
-          shakeThreads = buildOptsNumThreads buildOptions
-        }
+ where
+  cacheDir = "_cache"
+  opts =
+    shakeOptions
+      { shakeFiles = cacheDir
+      , shakeVerbosity = buildOptsVerbosity buildOptions
+      , shakeThreads = buildOptsNumThreads buildOptions
+      }
 
 buildAction :: BuildOptions -> Action ()
 buildAction
   BuildOptions
-    { buildOptsSignOpts = signOpts,
-      buildOptsCurrentTime = mCurrentTime,
-      buildOptsExpireSignaturesOn = mExpireSignaturesOn,
-      buildOptsInputDir = inputDir,
-      buildOptsOutputDir = outputDir,
-      buildOptsWriteMetadata = doWritePackageMeta
+    { buildOptsSignOpts = signOpts
+    , buildOptsCurrentTime = mCurrentTime
+    , buildOptsExpireSignaturesOn = mExpireSignaturesOn
+    , buildOptsInputDir = inputDir
+    , buildOptsOutputDir = outputDir
+    , buildOptsWriteMetadata = doWritePackageMeta
     } = do
     outputDirRoot <- liftIO $ makeAbsolute (fromFilePath outputDir)
 
@@ -106,7 +106,7 @@ buildAction
 
     cabalEntries <-
       foldMap
-        ( \PreparedPackageVersion {pkgId, pkgTimestamp, cabalFilePath, originalCabalFilePath, cabalFileRevisions} -> do
+        ( \PreparedPackageVersion{pkgId, pkgTimestamp, cabalFilePath, originalCabalFilePath, cabalFileRevisions} -> do
             -- original cabal file, with its timestamp (if specified)
             copyFileChanged originalCabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> "0" <.> "cabal")
             cf <- prepareIndexPkgCabal pkgId (fromMaybe currentTime pkgTimestamp) originalCabalFilePath
@@ -129,7 +129,7 @@ buildAction
     targetKeys <- maybeReadKeysAt "target"
 
     metadataEntries <-
-      forP packageVersions $ \ppv@PreparedPackageVersion {pkgId, pkgTimestamp} -> do
+      forP packageVersions $ \ppv@PreparedPackageVersion{pkgId, pkgTimestamp} -> do
         targets <- prepareIndexPkgMetadata expiryTime ppv
         pure $
           mkTarEntry
@@ -154,51 +154,51 @@ buildAction
     liftIO $
       writeSignedJSON outputDirRoot repoLayoutMirrors privateKeysMirrors $
         Mirrors
-          { mirrorsVersion = FileVersion 1,
-            mirrorsExpires = FileExpires expiryTime,
-            mirrorsMirrors = []
+          { mirrorsVersion = FileVersion 1
+          , mirrorsExpires = FileExpires expiryTime
+          , mirrorsMirrors = []
           }
 
     liftIO $
       writeSignedJSON outputDirRoot repoLayoutRoot privateKeysRoot $
         Root
-          { rootVersion = FileVersion 1,
-            rootExpires = FileExpires expiryTime,
-            rootKeys =
+          { rootVersion = FileVersion 1
+          , rootExpires = FileExpires expiryTime
+          , rootKeys =
               fromKeys $
                 concat
-                  [ privateKeysRoot,
-                    privateKeysTarget,
-                    privateKeysSnapshot,
-                    privateKeysTimestamp,
-                    privateKeysMirrors
-                  ],
-            rootRoles =
+                  [ privateKeysRoot
+                  , privateKeysTarget
+                  , privateKeysSnapshot
+                  , privateKeysTimestamp
+                  , privateKeysMirrors
+                  ]
+          , rootRoles =
               RootRoles
                 { rootRolesRoot =
                     RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysRoot,
-                        roleSpecThreshold = KeyThreshold 2
-                      },
-                  rootRolesSnapshot =
+                      { roleSpecKeys = map somePublicKey privateKeysRoot
+                      , roleSpecThreshold = KeyThreshold 2
+                      }
+                , rootRolesSnapshot =
                     RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysSnapshot,
-                        roleSpecThreshold = KeyThreshold 1
-                      },
-                  rootRolesTargets =
+                      { roleSpecKeys = map somePublicKey privateKeysSnapshot
+                      , roleSpecThreshold = KeyThreshold 1
+                      }
+                , rootRolesTargets =
                     RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysTarget,
-                        roleSpecThreshold = KeyThreshold 1
-                      },
-                  rootRolesTimestamp =
+                      { roleSpecKeys = map somePublicKey privateKeysTarget
+                      , roleSpecThreshold = KeyThreshold 1
+                      }
+                , rootRolesTimestamp =
                     RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysTimestamp,
-                        roleSpecThreshold = KeyThreshold 1
-                      },
-                  rootRolesMirrors =
+                      { roleSpecKeys = map somePublicKey privateKeysTimestamp
+                      , roleSpecThreshold = KeyThreshold 1
+                      }
+                , rootRolesMirrors =
                     RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysMirrors,
-                        roleSpecThreshold = KeyThreshold 1
+                      { roleSpecKeys = map somePublicKey privateKeysMirrors
+                      , roleSpecThreshold = KeyThreshold 1
                       }
                 }
           }
@@ -211,21 +211,21 @@ buildAction
     liftIO $
       writeSignedJSON outputDirRoot repoLayoutSnapshot privateKeysSnapshot $
         Snapshot
-          { snapshotVersion = FileVersion 1,
-            snapshotExpires = FileExpires expiryTime,
-            snapshotInfoRoot = rootInfo,
-            snapshotInfoMirrors = mirrorsInfo,
-            snapshotInfoTar = Just tarInfo,
-            snapshotInfoTarGz = tarGzInfo
+          { snapshotVersion = FileVersion 1
+          , snapshotExpires = FileExpires expiryTime
+          , snapshotInfoRoot = rootInfo
+          , snapshotInfoMirrors = mirrorsInfo
+          , snapshotInfoTar = Just tarInfo
+          , snapshotInfoTarGz = tarGzInfo
           }
 
     snapshotInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutSnapshot)
     liftIO $
       writeSignedJSON outputDirRoot repoLayoutTimestamp privateKeysTimestamp $
         Timestamp
-          { timestampVersion = FileVersion 1,
-            timestampExpires = FileExpires expiryTime,
-            timestampInfoSnapshot = snapshotInfo
+          { timestampVersion = FileVersion 1
+          , timestampExpires = FileExpires expiryTime
+          , timestampInfoSnapshot = snapshotInfo
           }
 
 makeMetadataFile :: FilePath -> [PreparedPackageVersion] -> Action ()
@@ -234,22 +234,22 @@ makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
   Aeson.encodeFile
     (outputDir </> "foliage" </> "packages.json")
     (map encodePackageVersion packageVersions)
-  where
-    encodePackageVersion
-      PreparedPackageVersion
-        { pkgId = PackageIdentifier {pkgName, pkgVersion},
-          pkgTimestamp,
-          pkgVersionForce,
-          pkgVersionSource
-        } =
-        Aeson.object
-          ( [ "pkg-name" Aeson..= pkgName,
-              "pkg-version" Aeson..= pkgVersion,
-              "url" Aeson..= packageVersionSourceToUri pkgVersionSource
-            ]
-              ++ ["forced-version" Aeson..= True | pkgVersionForce]
-              ++ (case pkgTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
-          )
+ where
+  encodePackageVersion
+    PreparedPackageVersion
+      { pkgId = PackageIdentifier{pkgName, pkgVersion}
+      , pkgTimestamp
+      , pkgVersionForce
+      , pkgVersionSource
+      } =
+      Aeson.object
+        ( [ "pkg-name" Aeson..= pkgName
+          , "pkg-version" Aeson..= pkgVersion
+          , "url" Aeson..= packageVersionSourceToUri pkgVersionSource
+          ]
+            ++ ["forced-version" Aeson..= True | pkgVersionForce]
+            ++ (case pkgTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
+        )
 
 getPackageVersions :: FilePath -> Action [PreparedPackageVersion]
 getPackageVersions inputDir = do
@@ -258,8 +258,8 @@ getPackageVersions inputDir = do
   when (null metaFiles) $ do
     error $
       unlines
-        [ "We could not find any package metadata file (i.e. _sources/<name>/<version>/meta.toml)",
-          "Make sure you are passing the right input directory. The default input directory is _sources"
+        [ "We could not find any package metadata file (i.e. _sources/<name>/<version>/meta.toml)"
+        , "Make sure you are passing the right input directory. The default input directory is _sources"
         ]
 
   forP metaFiles $ preparePackageVersion inputDir
@@ -271,46 +271,48 @@ prepareIndexPkgCabal pkgId timestamp filePath = do
   pure $ mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PreparedPackageVersion -> Action Targets
-prepareIndexPkgMetadata expiryTime PreparedPackageVersion {pkgId, sdistPath} = do
+prepareIndexPkgMetadata expiryTime PreparedPackageVersion{pkgId, sdistPath} = do
   targetFileInfo <- liftIO $ computeFileInfoSimple sdistPath
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
   return
     Targets
-      { targetsVersion = FileVersion 1,
-        targetsExpires = FileExpires expiryTime,
-        targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)],
-        targetsDelegations = Nothing
+      { targetsVersion = FileVersion 1
+      , targetsExpires = FileExpires expiryTime
+      , targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)]
+      , targetsDelegations = Nothing
       }
 
 -- Currently `extraEntries` are only used for encoding `prefered-versions`.
 getExtraEntries :: [PreparedPackageVersion] -> [Tar.Entry]
 getExtraEntries packageVersions =
-  let -- Group all (package) versions by package (name)
-      groupedPackageVersions :: [NE.NonEmpty PreparedPackageVersion]
-      groupedPackageVersions = NE.groupWith (pkgName . pkgId) packageVersions
+  let
+    -- Group all (package) versions by package (name)
+    groupedPackageVersions :: [NE.NonEmpty PreparedPackageVersion]
+    groupedPackageVersions = NE.groupWith (pkgName . pkgId) packageVersions
 
-      -- All versions of a given package together form a list of entries
-      -- The list of entries might be empty (in case no version has been deprecated)
-      generateEntriesForGroup :: NE.NonEmpty PreparedPackageVersion -> [Tar.Entry]
-      generateEntriesForGroup packageGroup = map createTarEntry effectiveRanges
-        where
-          -- Get the package name of the current group.
-          pn :: PackageName
-          pn = pkgName $ pkgId $ NE.head packageGroup
-          -- Collect and sort the deprecation changes for the package group, turning them into a action on VersionRange
-          deprecationChanges :: [(UTCTime, VersionRange -> VersionRange)]
-          deprecationChanges = sortOn fst $ foldMap versionDeprecationChanges packageGroup
-          -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
-          effectiveRanges :: [(UTCTime, VersionRange)]
-          effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) deprecationChanges
+    -- All versions of a given package together form a list of entries
+    -- The list of entries might be empty (in case no version has been deprecated)
+    generateEntriesForGroup :: NE.NonEmpty PreparedPackageVersion -> [Tar.Entry]
+    generateEntriesForGroup packageGroup = map createTarEntry effectiveRanges
+     where
+      -- Get the package name of the current group.
+      pn :: PackageName
+      pn = pkgName $ pkgId $ NE.head packageGroup
+      -- Collect and sort the deprecation changes for the package group, turning them into a action on VersionRange
+      deprecationChanges :: [(UTCTime, VersionRange -> VersionRange)]
+      deprecationChanges = sortOn fst $ foldMap versionDeprecationChanges packageGroup
+      -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
+      effectiveRanges :: [(UTCTime, VersionRange)]
+      effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) deprecationChanges
 
-          -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
-          createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow dep) (IndexPkgPrefs pn) ts
-            where
-              -- Cabal uses `Dependency` to represent preferred versions, cf.
-              -- `parsePreferredVersions`. The (sub)libraries part is ignored.
-              dep = mkDependency pn effectiveRange mainLibSet
-   in foldMap generateEntriesForGroup groupedPackageVersions
+      -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
+      createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow dep) (IndexPkgPrefs pn) ts
+       where
+        -- Cabal uses `Dependency` to represent preferred versions, cf.
+        -- `parsePreferredVersions`. The (sub)libraries part is ignored.
+        dep = mkDependency pn effectiveRange mainLibSet
+   in
+    foldMap generateEntriesForGroup groupedPackageVersions
 
 -- TODO: the functions belows should be moved to Foliage.PreparedPackageVersion
 
@@ -318,8 +320,8 @@ getExtraEntries packageVersions =
 versionDeprecationChanges :: PreparedPackageVersion -> [(UTCTime, VersionRange -> VersionRange)]
 versionDeprecationChanges
   PreparedPackageVersion
-    { pkgId = PackageIdentifier {pkgVersion},
-      pkgVersionDeprecationChanges
+    { pkgId = PackageIdentifier{pkgVersion}
+    , pkgVersionDeprecationChanges
     } =
     map (second $ applyDeprecation pkgVersion) pkgVersionDeprecationChanges
 
@@ -339,21 +341,21 @@ applyDeprecation pkgVersion deprecated =
 mkTarEntry :: BL.ByteString -> IndexFile dec -> UTCTime -> Tar.Entry
 mkTarEntry contents indexFile timestamp =
   (Tar.fileEntry tarPath contents)
-    { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp,
-      Tar.entryOwnership =
+    { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp
+    , Tar.entryOwnership =
         Tar.Ownership
-          { Tar.ownerName = "foliage",
-            Tar.groupName = "foliage",
-            Tar.ownerId = 0,
-            Tar.groupId = 0
+          { Tar.ownerName = "foliage"
+          , Tar.groupName = "foliage"
+          , Tar.ownerId = 0
+          , Tar.groupId = 0
           }
     }
-  where
-    tarPath = case Tar.toTarPath False indexPath of
-      Left e -> error $ "Invalid tar path " ++ indexPath ++ "(" ++ e ++ ")"
-      Right tp -> tp
+ where
+  tarPath = case Tar.toTarPath False indexPath of
+    Left e -> error $ "Invalid tar path " ++ indexPath ++ "(" ++ e ++ ")"
+    Right tp -> tp
 
-    indexPath = toFilePath $ castRoot $ indexFileToPath hackageIndexLayout indexFile
+  indexPath = toFilePath $ castRoot $ indexFileToPath hackageIndexLayout indexFile
 
 anchorPath :: Path Absolute -> (RepoLayout -> RepoPath) -> FilePath
 anchorPath outputDirRoot p =

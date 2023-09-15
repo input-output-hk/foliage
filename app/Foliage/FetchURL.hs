@@ -2,10 +2,10 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Foliage.FetchURL
-  ( fetchURL,
-    addFetchURLRule,
-  )
+module Foliage.FetchURL (
+  fetchURL,
+  addFetchURLRule,
+)
 where
 
 import Control.Monad
@@ -38,32 +38,32 @@ fetchURL = apply1 . FetchURL
 
 addFetchURLRule :: FilePath -> Rules ()
 addFetchURLRule cacheDir = addBuiltinRule noLint noIdentity run
-  where
-    run :: BuiltinRun FetchURL FilePath
-    run (FetchURL uri) old _mode = do
-      unless (uriQuery uri == "") $
-        error ("Query elements in URI are not supported: " <> show uri)
+ where
+  run :: BuiltinRun FetchURL FilePath
+  run (FetchURL uri) old _mode = do
+    unless (uriQuery uri == "") $
+      error ("Query elements in URI are not supported: " <> show uri)
 
-      unless (uriFragment uri == "") $
-        error ("Fragments in URI are not supported: " <> show uri)
+    unless (uriFragment uri == "") $
+      error ("Fragments in URI are not supported: " <> show uri)
 
-      let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
+    let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
 
-      let host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
+    let host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
 
-      let path = cacheDir </> joinPath (scheme : host : pathSegments uri)
+    let path = cacheDir </> joinPath (scheme : host : pathSegments uri)
 
-      -- parse etag from store
-      let oldETag = fromMaybe BS.empty old
+    -- parse etag from store
+    let oldETag = fromMaybe BS.empty old
 
-      newETag <-
-        withTempFile $ \etagFile -> do
-          liftIO $ createDirectoryIfMissing True (takeDirectory path)
-          liftIO $ BS.writeFile etagFile oldETag
-          actionRetry 5 $ runCurl uri path etagFile
+    newETag <-
+      withTempFile $ \etagFile -> do
+        liftIO $ createDirectoryIfMissing True (takeDirectory path)
+        liftIO $ BS.writeFile etagFile oldETag
+        actionRetry 5 $ runCurl uri path etagFile
 
-      let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
-      return $ RunResult {runChanged = changed, runStore = newETag, runValue = path}
+    let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
+    return $ RunResult{runChanged = changed, runStore = newETag, runValue = path}
 
 runCurl :: URI -> String -> String -> Action ETag
 runCurl uri path etagFile = do
@@ -78,41 +78,41 @@ runCurl uri path etagFile = do
         Left err ->
           error $
             unlines
-              [ "curl failed with return code " ++ show c ++ " while fetching " ++ show uri,
-                "Error while reading curl diagnostic: " ++ err
+              [ "curl failed with return code " ++ show c ++ " while fetching " ++ show uri
+              , "Error while reading curl diagnostic: " ++ err
               ]
         -- We can consider displaying different messages based on some fields (e.g. response_code)
-        Right CurlWriteOut {errormsg} ->
+        Right CurlWriteOut{errormsg} ->
           error $ unlines ["calling", unwords curlInvocation, "failed with", errormsg]
-  where
-    curlInvocation =
-      [ "curl",
-        -- Silent or quiet mode. Do not show progress meter or error messages. Makes Curl mute.
-        "--silent",
-        -- Fail fast with no output at all on server errors.
-        "--fail",
-        -- If the server reports that the requested page has moved to a different location this
-        -- option will make curl redo the request on the new place.
-        -- NOTE: This is needed because github always replies with a redirect
-        "--location",
-        -- This  option  makes  a conditional HTTP request for the specific ETag read from the
-        -- given file by sending a custom If-None-Match header using the stored ETag.
-        -- For correct results, make sure that the specified file contains only a single line
-        -- with the desired ETag. An empty file is parsed as an empty ETag.
-        "--etag-compare",
-        etagFile,
-        -- This option saves an HTTP ETag to the specified file. If no ETag is sent by the server,
-        -- an empty file is created.
-        "--etag-save",
-        etagFile,
-        -- Write output to <file> instead of stdout.
-        "--output",
-        path,
-        "--write-out",
-        "%{json}",
-        -- URL to fetch
-        show uri
-      ]
+ where
+  curlInvocation =
+    [ "curl"
+    , -- Silent or quiet mode. Do not show progress meter or error messages. Makes Curl mute.
+      "--silent"
+    , -- Fail fast with no output at all on server errors.
+      "--fail"
+    , -- If the server reports that the requested page has moved to a different location this
+      -- option will make curl redo the request on the new place.
+      -- NOTE: This is needed because github always replies with a redirect
+      "--location"
+    , -- This  option  makes  a conditional HTTP request for the specific ETag read from the
+      -- given file by sending a custom If-None-Match header using the stored ETag.
+      -- For correct results, make sure that the specified file contains only a single line
+      -- with the desired ETag. An empty file is parsed as an empty ETag.
+      "--etag-compare"
+    , etagFile
+    , -- This option saves an HTTP ETag to the specified file. If no ETag is sent by the server,
+      -- an empty file is created.
+      "--etag-save"
+    , etagFile
+    , -- Write output to <file> instead of stdout.
+      "--output"
+    , path
+    , "--write-out"
+    , "%{json}"
+    , -- URL to fetch
+      show uri
+    ]
 
 type ETag = BS.ByteString
 

@@ -2,14 +2,14 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Foliage.Options
-  ( parseCommand,
-    Command (..),
-    BuildOptions (..),
-    SignOptions (..),
-    ImportIndexOptions (..),
-    ImportFilter (..),
-  )
+module Foliage.Options (
+  parseCommand,
+  Command (..),
+  BuildOptions (..),
+  SignOptions (..),
+  ImportIndexOptions (..),
+  ImportFilter (..),
+)
 where
 
 import Data.Bifunctor (Bifunctor (..))
@@ -52,14 +52,14 @@ data SignOptions
   deriving anyclass (Binary, Hashable, NFData)
 
 data BuildOptions = BuildOptions
-  { buildOptsSignOpts :: SignOptions,
-    buildOptsCurrentTime :: Maybe UTCTime,
-    buildOptsExpireSignaturesOn :: Maybe UTCTime,
-    buildOptsInputDir :: FilePath,
-    buildOptsOutputDir :: FilePath,
-    buildOptsNumThreads :: Int,
-    buildOptsWriteMetadata :: Bool,
-    buildOptsVerbosity :: Verbosity
+  { buildOptsSignOpts :: SignOptions
+  , buildOptsCurrentTime :: Maybe UTCTime
+  , buildOptsExpireSignaturesOn :: Maybe UTCTime
+  , buildOptsInputDir :: FilePath
+  , buildOptsOutputDir :: FilePath
+  , buildOptsNumThreads :: Int
+  , buildOptsWriteMetadata :: Bool
+  , buildOptsVerbosity :: Verbosity
   }
 
 buildCommand :: Parser Command
@@ -122,20 +122,20 @@ buildCommand =
                   <> value Info
               )
         )
-  where
-    signOpts =
-      ( SignOptsSignWithKeys
-          <$> strOption
-            ( long "keys"
-                <> metavar "KEYS"
-                <> help "TUF keys location"
-                <> showDefault
-                <> value "_keys"
-            )
-      )
-        <|> ( SignOptsDon'tSign
-                <$ switch (long "no-signatures" <> help "Don't sign the repository")
-            )
+ where
+  signOpts =
+    ( SignOptsSignWithKeys
+        <$> strOption
+          ( long "keys"
+              <> metavar "KEYS"
+              <> help "TUF keys location"
+              <> showDefault
+              <> value "_keys"
+          )
+    )
+      <|> ( SignOptsDon'tSign
+              <$ switch (long "no-signatures" <> help "Don't sign the repository")
+          )
 
 createKeysCommand :: Parser Command
 createKeysCommand =
