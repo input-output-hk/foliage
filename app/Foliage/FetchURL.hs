@@ -89,6 +89,8 @@ runCurl uri path etagFile = do
     [ "curl"
     , -- Silent or quiet mode. Do not show progress meter or error messages. Makes Curl mute.
       "--silent"
+    , -- ... but still show errors
+      "--show-error"
     , -- Fail fast with no output at all on server errors.
       "--fail"
     , -- If the server reports that the requested page has moved to a different location this
