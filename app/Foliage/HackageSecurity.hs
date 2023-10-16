@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImportQualifiedPost #-}
@@ -14,6 +15,7 @@ where
 
 import Control.Monad (replicateM)
 import Crypto.Sign.Ed25519 (unPublicKey)
+import Data.Base16.Types (extractBase16)
 import Data.ByteString.Base16 (encodeBase16)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -58,7 +60,7 @@ createKeys base = do
       putStrLn $ "  " ++ showKey key
 
 showKey :: Some Key -> [Char]
-showKey k = T.unpack $ encodeBase16 $ exportSomePublicKey $ somePublicKey k
+showKey k = T.unpack $ extractBase16 $ encodeBase16 $ exportSomePublicKey $ somePublicKey k
 
 writeKeyWithId :: FilePath -> Some Key -> IO ()
 writeKeyWithId base k =
