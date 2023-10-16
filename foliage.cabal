@@ -44,7 +44,7 @@ executable foliage
 
     build-depends:
         base                 >=4.14.3.0   && <4.20,
-        aeson                >=2.0.3.0    && <2.3,
+        aeson                >=2.2        && <2.3,
         base16               >=0.3.2.0    && <1.1,
         binary               >=0.8.9.0    && <0.9,
         bytestring           >=0.10.12.0  && <0.13,

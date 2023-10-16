@@ -10,7 +10,6 @@ import Data.Text
 import Distribution.Types.Orphans ()
 import Foliage.Meta
 import Foliage.Utils.Aeson
-import Network.URI (URI)
 
 deriving via MyAesonEncoding RevisionSpec instance ToJSON RevisionSpec
 
@@ -29,7 +28,3 @@ instance ToJSON PackageVersionSource where
         { sumEncoding = ObjectWithSingleField
         , omitNothingFields = True
         }
-
-instance ToJSON URI where
-  toJSON :: URI -> Value
-  toJSON = toJSON . show
