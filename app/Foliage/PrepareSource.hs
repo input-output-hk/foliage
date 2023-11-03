@@ -18,7 +18,6 @@ import Foliage.FetchURL (fetchURL)
 import Foliage.GitClone (gitClone)
 import Foliage.Meta
 import Foliage.UpdateCabalFile (rewritePackageVersion)
-import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
 import Network.URI (URI (..))
 import System.Directory qualified as IO
