@@ -15,6 +15,7 @@ import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.FetchURL (fetchURL)
+import Foliage.GitClone (gitClone)
 import Foliage.Meta
 import Foliage.UpdateCabalFile (rewritePackageVersion)
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
@@ -70,8 +71,9 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             tarballPath <- fetchURL uri
             extractFromTarball tarballPath mSubdir srcDir
           GitHubSource repo rev mSubdir -> do
-            tarballPath <- fetchURL (githubRepoTarballUrl repo rev)
-            extractFromTarball tarballPath mSubdir srcDir
+            workDir <- gitClone repo rev
+            let packageDir = maybe workDir (workDir </>) mSubdir
+            copyDirectoryContents packageDir srcDir
 
         let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
         hasPatches <- doesDirectoryExist patchesDir
@@ -117,16 +119,18 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
           applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
           srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
 
-      cmd_
-        [ "cp"
-        , -- copy directories recursively
-          "--recursive"
-        , -- treat DEST as a normal file
-          "--no-target-directory"
-        , -- always follow symbolic links in SOURCE
-          "--dereference"
-        , -- SOURCE
-          srcDir
-        , -- DEST
-          outDir
-        ]
+      copyDirectoryContents srcDir outDir
+
+copyDirectoryContents :: FilePath -> FilePath -> Action ()
+copyDirectoryContents source destination =
+  cmd_
+    [ "cp"
+    , -- copy directories recursively
+      "--recursive"
+    , -- treat DEST as a normal file
+      "--no-target-directory"
+    , -- always follow symbolic links in SOURCE
+      "--dereference"
+    , source
+    , destination
+    ]

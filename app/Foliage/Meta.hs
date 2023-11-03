@@ -51,10 +51,16 @@ import Toml (TomlCodec, (.=))
 import Toml qualified
 
 newtype GitHubRepo = GitHubRepo {unGitHubRepo :: Text}
-  deriving (Show, Eq, Binary, Hashable, NFData) via Text
+  deriving (Eq, Binary, Hashable, NFData) via Text
+
+instance Show GitHubRepo where
+  show = T.unpack . unGitHubRepo
 
 newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
-  deriving (Show, Eq, Binary, Hashable, NFData) via Text
+  deriving (Eq, Binary, Hashable, NFData) via Text
+
+instance Show GitHubRev where
+  show = T.unpack . unGitHubRev
 
 data PackageVersionSource
   = URISource
