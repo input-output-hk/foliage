@@ -35,7 +35,8 @@ main = do
                   assertFailure "entry for pkg-a-2.3.4.5 is missing"
                 Just entry -> do
                   entryTime entry @?= 1648534790
-      , testCaseSteps "git submodules" $ \step ->
+      , ---
+        testCaseSteps "git submodules" $ \step ->
           inTemporaryDirectoryWithFixture "tests/fixtures/git-submodule" $ do
             step "Building repository"
             callCommand "foliage build"

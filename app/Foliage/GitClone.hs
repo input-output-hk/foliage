@@ -10,7 +10,6 @@ module Foliage.GitClone (
 )
 where
 
-import Control.Monad (unless)
 import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
@@ -46,9 +45,11 @@ addGitCloneRule cacheDir = addBuiltinRule noLint noIdentity run
     let path = cacheDir </> "git" </> show repo
 
     alreadyCloned <- doesDirectoryExist path
-    unless alreadyCloned $ do
-      let url = "https://github.com/" <> show repo <> ".git"
-      command_ [] "git" ["clone", "--recursive", url, path]
+    if alreadyCloned
+      then command_ [Cwd path] "git" ["fetch"]
+      else do
+        let url = "https://github.com/" <> show repo <> ".git"
+        command_ [] "git" ["clone", "--recursive", url, path]
 
     command_ [Cwd path] "git" ["checkout", show rev]
     command_ [Cwd path] "git" ["submodule", "update"]
