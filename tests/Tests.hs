@@ -35,6 +35,12 @@ main = do
                   assertFailure "entry for pkg-a-2.3.4.5 is missing"
                 Just entry -> do
                   entryTime entry @?= 1648534790
+      , testCaseSteps "git submodules" $ \step ->
+          inTemporaryDirectoryWithFixture "tests/fixtures/git-submodule" $ do
+            step "Building repository"
+            -- TODO: build fails because of cabal-install not finding the
+            -- referenced files from the submodule
+            callCommand "foliage build"
       , ---
         testCaseSteps "accepts --no-signatures" $ \step ->
           inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
