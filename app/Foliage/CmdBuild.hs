@@ -23,7 +23,6 @@ import Distribution.Package
 import Distribution.Pretty (prettyShow)
 import Distribution.Version
 import Foliage.FetchURL (addFetchURLRule)
-import Foliage.GitClone (addGitCloneRule)
 import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Meta.Aeson ()
@@ -43,7 +42,6 @@ cmdBuild buildOptions = do
   shake opts $
     do
       addFetchURLRule cacheDir
-      addGitCloneRule cacheDir
       addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
       addPrepareSdistRule outputDirRoot
       phony "buildAction" (buildAction buildOptions)

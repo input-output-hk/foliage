@@ -27,7 +27,6 @@ executable foliage
         Foliage.CmdCreateKeys
         Foliage.CmdImportIndex
         Foliage.FetchURL
-        Foliage.GitClone
         Foliage.HackageSecurity
         Foliage.Meta
         Foliage.Meta.Aeson

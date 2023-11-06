@@ -15,7 +15,6 @@ import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.FetchURL (fetchURL)
-import Foliage.GitClone (gitClone)
 import Foliage.Meta
 import Foliage.UpdateCabalFile (rewritePackageVersion)
 import GHC.Generics
@@ -70,8 +69,8 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             tarballPath <- fetchURL uri
             extractFromTarball tarballPath mSubdir srcDir
           GitHubSource repo rev mSubdir -> do
-            workDir <- gitClone repo rev
-            let packageDir = maybe workDir (workDir </>) mSubdir
+            workingCopy <- gitCheckout cacheDir repo rev
+            let packageDir = maybe workingCopy (workingCopy </>) mSubdir
             copyDirectoryContents packageDir srcDir
 
         let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
@@ -119,6 +118,20 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
           srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
 
       copyDirectoryContents srcDir outDir
+
+gitCheckout :: FilePath -> GitHubRepo -> GitHubRev -> Action FilePath
+gitCheckout cacheDir repo rev = do
+  alreadyCloned <- doesDirectoryExist path
+  if alreadyCloned
+    then command_ [Cwd path] "git" ["fetch"]
+    else command_ [] "git" ["clone", "--recursive", url, path]
+  command_ [Cwd path] "git" ["checkout", show rev]
+  command_ [Cwd path] "git" ["submodule", "update"]
+  pure path
+ where
+  path = cacheDir </> "git" </> show repo
+
+  url = "https://github.com/" <> show repo <> ".git"
 
 copyDirectoryContents :: FilePath -> FilePath -> Action ()
 copyDirectoryContents source destination =
