@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -20,66 +21,66 @@ import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
 import Distribution.Client.SrcDist (packageDirToSdist)
-import Distribution.Package (packageId)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Verbosity qualified as Verbosity
-import Foliage.HackageSecurity
 import Foliage.Meta ()
-import Foliage.Oracles
 import GHC.Generics (Generic)
-import Hackage.Security.Util.Path qualified as Sec
 import System.Directory qualified as IO
 import System.IO.Error (tryIOError)
 
-newtype PrepareSdistRule = PrepareSdistRule FilePath
+data PrepareSdistRule = PrepareSdistRule FilePath FilePath
   deriving (Show, Eq, Generic)
-  deriving (Hashable, Binary, NFData)
+  deriving anyclass (Hashable, Binary, NFData)
 
-type instance RuleResult PrepareSdistRule = FilePath
+type instance RuleResult PrepareSdistRule = ()
 
-prepareSdist :: FilePath -> Action FilePath
-prepareSdist srcDir = apply1 $ PrepareSdistRule srcDir
+prepareSdist :: FilePath -> FilePath -> Action ()
+prepareSdist srcDir dstPath = apply1 $ PrepareSdistRule srcDir dstPath
 
 addPrepareSdistRule :: Rules ()
 addPrepareSdistRule = addBuiltinRule noLint noIdentity run
  where
-  run :: PrepareSdistRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
-  run (PrepareSdistRule srcDir) (Just old) RunDependenciesSame = do
-    let (hvExpected, path) = load old
+  run (PrepareSdistRule srcDir dstPath) (Just old) RunDependenciesSame = do
+    let hvExpected = load old
 
     -- Check of has of the sdist, if the sdist is still there and it is
     -- indeed what we expect, signal that nothing changed. Otherwise
     -- warn the user and proceed to recompute.
-    ehvExisting <- liftIO $ tryIOError $ readFileHashValue path
+    ehvExisting <- liftIO $ tryIOError $ readFileHashValue dstPath
     case ehvExisting of
       Right hvExisting
         | hvExisting == hvExpected ->
-            return RunResult{runChanged = ChangedNothing, runStore = old, runValue = path}
+            return
+              RunResult
+                { runChanged = ChangedNothing
+                , runStore = old
+                , runValue = ()
+                }
       Right hvExisting -> do
-        putWarn $ "Changed " ++ path ++ " (expecting hash " ++ showHashValue hvExpected ++ " found " ++ showHashValue hvExisting ++ "). I will rebuild it."
-        run (PrepareSdistRule srcDir) (Just old) RunDependenciesChanged
-      Left _e -> do
-        putWarn $ "Unable to read " ++ path ++ ". I will rebuild it."
-        run (PrepareSdistRule srcDir) (Just old) RunDependenciesChanged
-  run (PrepareSdistRule srcDir) old _mode = do
+        putWarn $ "Changed " ++ dstPath ++ " (expecting hash " ++ showHashValue hvExpected ++ " found " ++ showHashValue hvExisting ++ "). I will rebuild it."
+        run (PrepareSdistRule srcDir dstPath) (Just old) RunDependenciesChanged
+      Left _ -> do
+        putWarn $ "Unable to read " ++ dstPath ++ ". I will rebuild it."
+        run (PrepareSdistRule srcDir dstPath) (Just old) RunDependenciesChanged
+  run (PrepareSdistRule srcDir dstPath) old _mode = do
     -- create the sdist distribution
-    (hv, path) <- makeSdist srcDir
+    hv <- makeSdist srcDir dstPath
 
-    let new = save (hv, path)
+    let new = save hv
 
-    let changed = case fmap ((== hv) . fst . load) old of
+    let changed = case fmap ((== hv) . load) old of
           Just True -> ChangedRecomputeSame
           _differentOrMissing -> ChangedRecomputeDiff
 
     when (changed == ChangedRecomputeSame) $
-      putInfo ("Wrote " ++ path ++ " (same hash " ++ showHashValue hv ++ ")")
+      putInfo ("Wrote " ++ dstPath ++ " (same hash " ++ showHashValue hv ++ ")")
 
     when (changed == ChangedRecomputeDiff) $
-      putInfo ("Wrote " ++ path ++ " (new hash " ++ showHashValue hv ++ ")")
+      putInfo ("Wrote " ++ dstPath ++ " (new hash " ++ showHashValue hv ++ ")")
 
-    return $ RunResult{runChanged = changed, runStore = new, runValue = path}
+    return $ RunResult{runChanged = changed, runStore = new, runValue = ()}
 
-  makeSdist srcDir = do
+  makeSdist srcDir dstPath = do
     cabalFiles <- getDirectoryFiles srcDir ["*.cabal"]
     let cabalFile = case cabalFiles of
           [f] -> f
@@ -92,23 +93,16 @@ addPrepareSdistRule = addBuiltinRule noLint noIdentity run
                 ]
 
     need [srcDir </> cabalFile]
+
     gpd <- liftIO $ readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
 
-    let pkgId = packageId gpd
-        packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
-
-    path <- Sec.toFilePath <$> anchorRepoPath packagePath
-
     traced "cabal sdist" $ do
-      IO.createDirectoryIfMissing True (takeDirectory path)
+      IO.createDirectoryIfMissing True (takeDirectory dstPath)
       sdist <- packageDirToSdist Verbosity.normal gpd srcDir
-      BSL.writeFile path sdist
-      return (SHA256.hashlazy sdist, path)
+      BSL.writeFile dstPath sdist
+      return $ SHA256.hashlazy sdist
 
-  save :: (BS.ByteString, FilePath) -> BS.ByteString
   save = BSL.toStrict . Binary.encode
-
-  load :: BS.ByteString -> (BS.ByteString, FilePath)
   load = Binary.decode . BSL.fromStrict
 
 readFileHashValue :: FilePath -> IO BS.ByteString

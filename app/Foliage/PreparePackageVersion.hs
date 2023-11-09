@@ -27,7 +27,6 @@ import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Ord (Down (..))
-import Data.Traversable (for)
 import Development.Shake (Action, askOracle, need)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
@@ -37,13 +36,14 @@ import Distribution.Types.PackageDescription (PackageDescription (package))
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Distribution.Verbosity qualified as Verbosity
+import Foliage.HackageSecurity (RepoLayout (repoLayoutPkgTarGz))
 import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber, readPackageVersionSpec)
 import Foliage.Oracles
 import Foliage.PrepareSdist (prepareSdist)
 import Foliage.PrepareSource (prepareSource)
 import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Pretty qualified as Sec
-import System.FilePath (takeBaseName, takeFileName, (<.>), (</>))
+import System.FilePath (takeBaseName, takeDirectory, takeFileName, (<.>), (</>))
 
 -- TODO: can we ensure that `pkgVersionDeprecationChanges` and `cabalFileRevisions` are
 -- sorted by timestamp? e.g https://hackage.haskell.org/package/sorted-list
@@ -158,7 +158,8 @@ preparePackageVersion metaFile = do
                 [ Sec.pretty metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations."
                 , "Make sure deprecations and un-deprecations alternate in time."
                 ]
-      _otherwise -> return ()
+      _otherwise ->
+        return ()
 
     return meta
 
@@ -167,28 +168,28 @@ preparePackageVersion metaFile = do
 
   prepareSource srcDir pkgId pkgSpec
 
+  -- TODO: revisit if InputPath is worth it
+  metaFile' <- Sec.toFilePath <$> anchorInputPath metaFile
   let originalCabalFilePath = srcDir </> prettyShow pkgName <.> "cabal"
 
-      cabalFileRevisionPath :: Int -> Action FilePath
+      cabalFileRevisionPath :: Int -> FilePath
       cabalFileRevisionPath revisionNumber =
-        Sec.toFilePath
-          <$> anchorInputPath
-            ( Sec.takeDirectory metaFile
-                Sec.</> Sec.fragment "revisions"
-                Sec.</> Sec.fragment (show revisionNumber)
-                Sec.<.> "cabal"
-            )
+        takeDirectory metaFile'
+          </> "revisions"
+          </> show revisionNumber
+          <.> "cabal"
 
-  cabalFilePath <-
-    maybe
-      (return originalCabalFilePath)
-      cabalFileRevisionPath
-      (latestRevisionNumber pkgSpec)
+  let cabalFilePath =
+        maybe
+          originalCabalFilePath
+          cabalFileRevisionPath
+          (latestRevisionNumber pkgSpec)
 
   need [cabalFilePath]
   pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
 
-  sdistPath <- prepareSdist srcDir
+  sdistPath <- Sec.toFilePath <$> anchorRepoPath' (`repoLayoutPkgTarGz` pkgId)
+  prepareSdist srcDir sdistPath
 
   let expectedSdistName = prettyShow pkgId <.> "tar.gz"
   unless (takeFileName sdistPath == expectedSdistName) $ do
@@ -203,13 +204,12 @@ preparePackageVersion metaFile = do
         , "version in cabal file: " ++ prettyShow (Distribution.Types.PackageId.pkgVersion $ package $ packageDescription pkgDesc)
         ]
 
-  cabalFileRevisions <-
-    sortOn Down
-      <$> for
-        (packageVersionRevisions pkgSpec)
-        ( \RevisionSpec{revisionTimestamp, revisionNumber} ->
-            (revisionTimestamp,) <$> cabalFileRevisionPath revisionNumber
-        )
+  let cabalFileRevisions =
+        sortOn
+          Down
+          [ (revisionTimestamp, cabalFileRevisionPath revisionNumber)
+          | RevisionSpec{revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec
+          ]
 
   let pkgVersionDeprecationChanges =
         sortOn
