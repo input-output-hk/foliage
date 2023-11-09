@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.FetchURL (
@@ -11,7 +12,6 @@ where
 import Control.Monad
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
-import Data.Maybe (fromMaybe)
 import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
@@ -20,6 +20,7 @@ import GHC.Generics (Generic)
 import Network.URI (URI (..))
 import Network.URI.Orphans ()
 import System.Directory (createDirectoryIfMissing)
+import System.Directory qualified as IO
 import System.Exit (ExitCode (..))
 
 data FetchURL = FetchURL URI FilePath
@@ -37,32 +38,37 @@ fetchURL uri path = apply1 (FetchURL uri path)
 addFetchURLRule :: Rules ()
 addFetchURLRule = addBuiltinRule noLint noIdentity run
  where
-  run (FetchURL uri path) old _mode = do
+  run (FetchURL uri path) oldETag _mode = do
+    -- For safety promise shake that we are going to produce that file
+    produces [path]
+
     unless (uriQuery uri == "") $
       error ("Query elements in URI are not supported: " <> show uri)
 
     unless (uriFragment uri == "") $
       error ("Fragments in URI are not supported: " <> show uri)
 
-    -- parse etag from store
-    let oldETag = fromMaybe BS.empty old
-
     newETag <-
       withTempFile $ \etagFile -> do
-        liftIO $ createDirectoryIfMissing True (takeDirectory path)
-        liftIO $ BS.writeFile etagFile oldETag
+        liftIO $ do
+          createDirectoryIfMissing True (takeDirectory path)
+          -- We write the etag file only if we have already have both an etag and a downloaded file. Otherwise the file could be missing and curl will still not redownload it.
+          fe <- IO.doesFileExist path
+          when fe $
+            case oldETag of
+              Just tag | fe -> BS.writeFile etagFile tag
+              _otherwise -> pure ()
         actionRetry 5 $ runCurl uri path etagFile
 
-    let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
+    let changed = if Just newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
     return RunResult{runChanged = changed, runStore = newETag, runValue = ()}
 
 runCurl :: URI -> String -> String -> Action ETag
-runCurl uri path etagFile = do
-  (Exit exitCode, Stdout out) <-
-    traced "curl" $ cmd Shell curlInvocation
-  case exitCode of
-    ExitSuccess -> liftIO $ BS.readFile etagFile
-    ExitFailure c -> do
+runCurl uri path etagFile =
+  cmd Shell curlInvocation >>= \case
+    (Exit ExitSuccess, Stdout _out) ->
+      liftIO $ BS.readFile etagFile
+    (Exit (ExitFailure c), Stdout out) -> do
       -- We show the curl exit code only if we cannot parse curl's write-out.
       -- If we can parse it, we can craft a better error message.
       case Aeson.eitherDecode out :: Either String CurlWriteOut of
