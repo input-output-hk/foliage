@@ -15,6 +15,7 @@ module Foliage.Pages (
 where
 
 import Data.Aeson (KeyValue ((.=)), ToJSON, object)
+import Data.Foldable1 (minimumBy)
 import Data.Function (on, (&))
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
@@ -29,7 +30,7 @@ import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
 import Foliage.Meta (PackageVersionSource)
 import Foliage.Meta.Aeson ()
-import Foliage.Oracles (OutputDir (..))
+import Foliage.Oracles (CurrentTime (..), OutputDir (..))
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
@@ -58,40 +59,39 @@ data AllPackagesPageEntry = AllPackagesPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeAllPackagesPage :: UTCTime -> [PreparedPackageVersion] -> Action ()
-makeAllPackagesPage currentTime packageVersions = do
+makeAllPackagesPage :: [PreparedPackageVersion] -> Action ()
+makeAllPackagesPage packageVersions = do
   outputDir <- askOracle OutputDir
+
+  currentTime <- askOracle CurrentTime
+  let packages =
+        packageVersions
+          -- group package versions by package name
+          & NE.groupBy ((==) `on` (pkgName . pkgId))
+          -- for each package name pick the most recent version
+          & map
+            ( \group ->
+                -- pick the most recent version
+                minimumBy (comparing $ Down . pkgVersion . pkgId) group
+                  -- turn it into the template data
+                  & ( \(PreparedPackageVersion{pkgId, pkgTimestamp, cabalFileRevisions, pkgVersionSource}) ->
+                        AllPackagesPageEntry
+                          { allPackagesPageEntryPkgId = pkgId
+                          , allPackagesPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
+                          , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
+                          , allPackagesPageEntrySource = pkgVersionSource
+                          , allPackagesPageEntryLatestRevisionTimestamp = fst <$> listToMaybe cabalFileRevisions
+                          }
+                    )
+            )
+          -- sort packages by pkgId
+          & sortOn allPackagesPageEntryPkgId
+
   traced "webpages / all-packages" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-packages")
     TL.writeFile (outputDir </> "all-packages" </> "index.html") $
       renderMustache allPackagesPageTemplate $
         object ["packages" .= packages]
- where
-  packages =
-    packageVersions
-      -- group package versions by package name
-      & NE.groupBy ((==) `on` (pkgName . pkgId))
-      -- for each package name pick the most recent version
-      & map
-        ( \group ->
-            group
-              -- sort them from the most recent version to the least recent
-              & NE.sortBy (comparing $ Down . pkgVersion . pkgId)
-              -- pick the most recent version
-              & NE.head
-              -- turn it into the template data
-              & ( \(PreparedPackageVersion{pkgId, pkgTimestamp, cabalFileRevisions, pkgVersionSource}) ->
-                    AllPackagesPageEntry
-                      { allPackagesPageEntryPkgId = pkgId
-                      , allPackagesPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
-                      , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
-                      , allPackagesPageEntrySource = pkgVersionSource
-                      , allPackagesPageEntryLatestRevisionTimestamp = fst <$> listToMaybe cabalFileRevisions
-                      }
-                )
-        )
-      -- sort packages by pkgId
-      & sortOn allPackagesPageEntryPkgId
 
 -- FIXME: refactor this
 data AllPackageVersionsPageEntry
@@ -111,40 +111,42 @@ data AllPackageVersionsPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeAllPackageVersionsPage :: UTCTime -> [PreparedPackageVersion] -> Action ()
-makeAllPackageVersionsPage currentTime packageVersions = do
+makeAllPackageVersionsPage :: [PreparedPackageVersion] -> Action ()
+makeAllPackageVersionsPage packageVersions = do
   outputDir <- askOracle OutputDir
+  currentTime <- askOracle CurrentTime
+
+  let entries =
+        -- collect all cabal file revisions including the original cabal file
+        foldMap
+          ( \PreparedPackageVersion{pkgId, pkgTimestamp, pkgVersionSource, pkgVersionIsDeprecated, cabalFileRevisions} ->
+              -- original cabal file
+              AllPackageVersionsPageEntryPackage
+                { allPackageVersionsPageEntryPkgId = pkgId
+                , allPackageVersionsPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
+                , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
+                , allPackageVersionsPageEntrySource = pkgVersionSource
+                , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
+                }
+                -- list of revisions
+                : [ AllPackageVersionsPageEntryRevision
+                    { allPackageVersionsPageEntryPkgId = pkgId
+                    , allPackageVersionsPageEntryTimestamp = revisionTimestamp
+                    , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                    , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
+                    }
+                  | (revisionTimestamp, _) <- cabalFileRevisions
+                  ]
+          )
+          packageVersions
+          -- sort them by timestamp
+          & sortOn (Down . allPackageVersionsPageEntryTimestamp)
+
   traced "webpages / all-package-versions" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-package-versions")
     TL.writeFile (outputDir </> "all-package-versions" </> "index.html") $
       renderMustache allPackageVersionsPageTemplate $
         object ["entries" .= entries]
- where
-  entries =
-    -- collect all cabal file revisions including the original cabal file
-    foldMap
-      ( \PreparedPackageVersion{pkgId, pkgTimestamp, pkgVersionSource, pkgVersionIsDeprecated, cabalFileRevisions} ->
-          -- original cabal file
-          AllPackageVersionsPageEntryPackage
-            { allPackageVersionsPageEntryPkgId = pkgId
-            , allPackageVersionsPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
-            , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
-            , allPackageVersionsPageEntrySource = pkgVersionSource
-            , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
-            }
-            -- list of revisions
-            : [ AllPackageVersionsPageEntryRevision
-                { allPackageVersionsPageEntryPkgId = pkgId
-                , allPackageVersionsPageEntryTimestamp = revisionTimestamp
-                , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
-                }
-              | (revisionTimestamp, _) <- cabalFileRevisions
-              ]
-      )
-      packageVersions
-      -- sort them by timestamp
-      & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
 makePackageVersionPage :: PreparedPackageVersion -> Action ()
 makePackageVersionPage

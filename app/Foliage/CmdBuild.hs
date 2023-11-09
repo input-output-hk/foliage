@@ -42,6 +42,8 @@ cmdBuild buildOptions = do
     _ <- addOutputDirOracle (buildOptsOutputDir buildOptions)
     _ <- addInputDirOracle (buildOptsInputDir buildOptions)
     _ <- addCacheDirOracle cacheDir
+    _ <- addExpiryTimeOracle (buildOptsExpireSignaturesOn buildOptions)
+    _ <- addCurrentTimeOracle (buildOptsCurrentTime buildOptions)
     addFetchURLRule
     addPrepareSdistRule
     phony "buildAction" (buildAction buildOptions)
@@ -60,8 +62,6 @@ buildAction :: BuildOptions -> Action ()
 buildAction
   BuildOptions
     { buildOptsSignOpts = signOpts
-    , buildOptsCurrentTime = mCurrentTime
-    , buildOptsExpireSignaturesOn = mExpireSignaturesOn
     , buildOptsWriteMetadata = doWritePackageMeta
     } = do
     maybeReadKeysAt <- case signOpts of
@@ -74,27 +74,13 @@ buildAction
       SignOptsDon'tSign ->
         return $ const $ pure []
 
-    expiryTime <-
-      for mExpireSignaturesOn $ \expireSignaturesOn -> do
-        putInfo $ "Expiry time set to " <> Time.iso8601Show expireSignaturesOn
-        return expireSignaturesOn
-
-    currentTime <- case mCurrentTime of
-      Nothing -> do
-        t <- Time.truncateSeconds <$> liftIO Time.getCurrentTime
-        putInfo $ "Current time set to " <> Time.iso8601Show t <> ". You can set a fixed time using the --current-time option."
-        return t
-      Just t -> do
-        putInfo $ "Current time set to " <> Time.iso8601Show t <> "."
-        return t
-
     packageVersions <- getPackageVersions
 
     makeIndexPage
 
-    makeAllPackagesPage currentTime packageVersions
+    makeAllPackagesPage packageVersions
 
-    makeAllPackageVersionsPage currentTime packageVersions
+    makeAllPackageVersionsPage packageVersions
 
     void $ forP packageVersions makePackageVersionPage
 
@@ -105,6 +91,7 @@ buildAction
       foldMap
         ( \PreparedPackageVersion{pkgId, pkgTimestamp, cabalFilePath, originalCabalFilePath, cabalFileRevisions} -> do
             outputDir <- askOracle OutputDir
+            currentTime <- askOracle CurrentTime
             -- original cabal file, with its timestamp (if specified)
             copyFileChanged originalCabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> "0" <.> "cabal")
             cf <- prepareIndexPkgCabal pkgId (fromMaybe currentTime pkgTimestamp) originalCabalFilePath
@@ -128,6 +115,8 @@ buildAction
 
     metadataEntries <-
       forP packageVersions $ \ppv@PreparedPackageVersion{pkgId, pkgTimestamp} -> do
+        expiryTime <- askOracle ExpiryTime
+        currentTime <- askOracle CurrentTime
         targets <- prepareIndexPkgMetadata expiryTime ppv
         pure $
           mkTarEntry
@@ -155,7 +144,8 @@ buildAction
     privateKeysTimestamp <- maybeReadKeysAt "timestamp"
     privateKeysMirrors <- maybeReadKeysAt "mirrors"
 
-    anchorRepoPath' repoLayoutMirrors >>= \path ->
+    anchorRepoPath' repoLayoutMirrors >>= \path -> do
+      expiryTime <- askOracle ExpiryTime
       liftIO $
         writeSignedJSON path privateKeysMirrors $
           Mirrors
@@ -164,7 +154,8 @@ buildAction
             , mirrorsMirrors = []
             }
 
-    anchorRepoPath' repoLayoutRoot >>= \path ->
+    anchorRepoPath' repoLayoutRoot >>= \path -> do
+      expiryTime <- askOracle ExpiryTime
       liftIO $
         writeSignedJSON path privateKeysRoot $
           Root
@@ -214,7 +205,8 @@ buildAction
     tarInfo <- anchorRepoPath' repoLayoutIndexTar >>= computeFileInfoSimple
     tarGzInfo <- anchorRepoPath' repoLayoutIndexTarGz >>= computeFileInfoSimple
 
-    anchorRepoPath' repoLayoutSnapshot >>= \path ->
+    anchorRepoPath' repoLayoutSnapshot >>= \path -> do
+      expiryTime <- askOracle ExpiryTime
       liftIO $
         writeSignedJSON path privateKeysSnapshot $
           Snapshot
@@ -228,7 +220,8 @@ buildAction
 
     snapshotInfo <- anchorRepoPath' repoLayoutSnapshot >>= computeFileInfoSimple
 
-    anchorRepoPath' repoLayoutTimestamp >>= \path ->
+    anchorRepoPath' repoLayoutTimestamp >>= \path -> do
+      expiryTime <- askOracle ExpiryTime
       liftIO $
         writeSignedJSON path privateKeysTimestamp $
           Timestamp

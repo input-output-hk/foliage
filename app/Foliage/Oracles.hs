@@ -4,8 +4,10 @@
 
 module Foliage.Oracles where
 
+import Data.Foldable (for_)
 import Development.Shake
 import Development.Shake.Classes
+import Foliage.Time qualified as Time
 import GHC.Generics (Generic)
 import Hackage.Security.Client (
   RepoLayout,
@@ -15,6 +17,9 @@ import Hackage.Security.Client (
  )
 import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Pretty qualified as Sec
+
+-- | Just a shortcut to write types
+type Oracle q = q -> Action (RuleResult q)
 
 data InputRoot
 
@@ -29,7 +34,7 @@ data InputDir = InputDir
 
 type instance RuleResult InputDir = FilePath
 
-addInputDirOracle :: FilePath -> Rules (InputDir -> Action FilePath)
+addInputDirOracle :: FilePath -> Rules (Oracle InputDir)
 addInputDirOracle inputDir =
   addOracle $ \InputDir -> return inputDir
 
@@ -52,7 +57,7 @@ data CacheDir = CacheDir
 
 type instance RuleResult CacheDir = FilePath
 
-addCacheDirOracle :: FilePath -> Rules (CacheDir -> Action FilePath)
+addCacheDirOracle :: FilePath -> Rules (Oracle CacheDir)
 addCacheDirOracle inputDir =
   addOracle $ \CacheDir -> return inputDir
 
@@ -83,6 +88,36 @@ anchorRepoPath' p = do
   outputDir <- getOutputDir
   return $ anchorRepoPathLocally outputDir $ p hackageRepoLayout
 
-addOutputDirOracle :: FilePath -> Rules (OutputDir -> Action FilePath)
+addOutputDirOracle :: FilePath -> Rules (Oracle OutputDir)
 addOutputDirOracle outputDir =
   addOracle $ \OutputDir -> return outputDir
+
+data CurrentTime = CurrentTime
+  deriving stock (Show, Generic, Typeable, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult CurrentTime = Time.UTCTime
+
+addCurrentTimeOracle :: Maybe Time.UTCTime -> Rules (Oracle CurrentTime)
+addCurrentTimeOracle mCurrentTime = do
+  currentTime <- case mCurrentTime of
+    Nothing -> do
+      t <- Time.truncateSeconds <$> liftIO Time.getCurrentTime
+      liftIO $ putStrLn $ "Current time set to " <> Time.iso8601Show t <> ". You can set a fixed time using the --current-time option."
+      return t
+    Just t -> do
+      liftIO $ putStrLn $ "Current time set to " <> Time.iso8601Show t <> "."
+      return t
+  addOracle $ \CurrentTime -> return currentTime
+
+data ExpiryTime = ExpiryTime
+  deriving stock (Show, Generic, Typeable, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult ExpiryTime = Maybe Time.UTCTime
+
+addExpiryTimeOracle :: Maybe Time.UTCTime -> Rules (Oracle ExpiryTime)
+addExpiryTimeOracle mExpireSignaturesOn = do
+  liftIO $ for_ mExpireSignaturesOn $ \expireSignaturesOn ->
+    putStrLn $ "Expiry time set to " <> Time.iso8601Show expireSignaturesOn
+  addOracle $ \ExpiryTime -> return mExpireSignaturesOn

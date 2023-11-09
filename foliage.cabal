@@ -71,6 +71,9 @@ executable foliage
         with-utf8            >=1.0.2.3    && <1.1,
         zlib                 >=0.6.2.3    && <0.7,
 
+    if impl(GHC <= 9.6)
+      build-depends: foldable1-classes-compat
+
 test-suite foliage-test-suite
   import:              common-settings
   main-is:             Tests.hs
