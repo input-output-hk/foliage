@@ -31,7 +31,6 @@ import Foliage.Oracles
 import Foliage.Pages
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
 import Foliage.PrepareSdist (addPrepareSdistRule)
-import Foliage.PrepareSource (addPrepareSourceRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path qualified as Sec
@@ -44,7 +43,6 @@ cmdBuild buildOptions = do
     _ <- addInputDirOracle (buildOptsInputDir buildOptions)
     _ <- addCacheDirOracle cacheDir
     addFetchURLRule
-    addPrepareSourceRule
     addPrepareSdistRule
     phony "buildAction" (buildAction buildOptions)
     want ["buildAction"]
@@ -55,6 +53,7 @@ cmdBuild buildOptions = do
       { shakeFiles = cacheDir
       , shakeVerbosity = buildOptsVerbosity buildOptions
       , shakeThreads = buildOptsNumThreads buildOptions
+      , shakeLint = Just LintBasic
       }
 
 buildAction :: BuildOptions -> Action ()

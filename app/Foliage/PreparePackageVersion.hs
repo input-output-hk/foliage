@@ -28,12 +28,13 @@ import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Ord (Down (..))
 import Data.Traversable (for)
-import Development.Shake (Action, need)
+import Development.Shake (Action, askOracle, need)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (packageDescription))
 import Distribution.Types.PackageDescription (PackageDescription (package))
 import Distribution.Types.PackageId
+import Distribution.Types.PackageName (unPackageName)
 import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber, readPackageVersionSpec)
 import Foliage.Oracles
 import Foliage.PrepareSdist (prepareSdist)
@@ -160,7 +161,9 @@ preparePackageVersion metaFile = do
 
     return meta
 
-  srcDir <- prepareSource pkgId pkgSpec
+  cacheDir <- askOracle CacheDir
+  let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
+  prepareSource srcDir pkgId pkgSpec
 
   let originalCabalFilePath = srcDir </> prettyShow pkgName <.> "cabal"
 
