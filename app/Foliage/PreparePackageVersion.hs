@@ -31,15 +31,16 @@ import Data.Traversable (for)
 import Development.Shake (Action, askOracle, need)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
+import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (packageDescription))
 import Distribution.Types.PackageDescription (PackageDescription (package))
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
+import Distribution.Verbosity qualified as Verbosity
 import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber, readPackageVersionSpec)
 import Foliage.Oracles
 import Foliage.PrepareSdist (prepareSdist)
 import Foliage.PrepareSource (prepareSource)
-import Foliage.Shake (readGenericPackageDescription')
 import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Pretty qualified as Sec
 import System.FilePath (takeBaseName, takeFileName, (<.>), (</>))
@@ -163,6 +164,7 @@ preparePackageVersion metaFile = do
 
   cacheDir <- askOracle CacheDir
   let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
+
   prepareSource srcDir pkgId pkgSpec
 
   let originalCabalFilePath = srcDir </> prettyShow pkgName <.> "cabal"
@@ -183,7 +185,8 @@ preparePackageVersion metaFile = do
       cabalFileRevisionPath
       (latestRevisionNumber pkgSpec)
 
-  pkgDesc <- readGenericPackageDescription' cabalFilePath
+  need [cabalFilePath]
+  pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
 
   sdistPath <- prepareSdist srcDir
 

@@ -93,9 +93,12 @@ addPrepareSdistRule = addBuiltinRule noLint noIdentity run
 
     need [srcDir </> cabalFile]
     gpd <- liftIO $ readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
+
     let pkgId = packageId gpd
         packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
+
     path <- Sec.toFilePath <$> anchorRepoPath packagePath
+
     traced "cabal sdist" $ do
       IO.createDirectoryIfMissing True (takeDirectory path)
       sdist <- packageDirToSdist Verbosity.normal gpd srcDir
