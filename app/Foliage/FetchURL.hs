@@ -54,7 +54,7 @@ addFetchURLRule = addBuiltinRule noLint noIdentity run
         actionRetry 5 $ runCurl uri path etagFile
 
     let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
-    return $ RunResult{runChanged = changed, runStore = newETag, runValue = ()}
+    return RunResult{runChanged = changed, runStore = newETag, runValue = ()}
 
 runCurl :: URI -> String -> String -> Action ETag
 runCurl uri path etagFile = do

@@ -31,10 +31,10 @@ import Foliage.Oracles
 import Foliage.Pages
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
 import Foliage.PrepareSdist (addPrepareSdistRule)
-import Foliage.Shake
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path qualified as Sec
 import System.Directory (createDirectoryIfMissing)
+import System.Directory qualified as IO
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
@@ -44,6 +44,17 @@ cmdBuild buildOptions = do
     _ <- addCacheDirOracle cacheDir
     _ <- addExpiryTimeOracle (buildOptsExpireSignaturesOn buildOptions)
     _ <- addCurrentTimeOracle (buildOptsCurrentTime buildOptions)
+
+    -- Create keys if needed
+    liftIO $ case buildOptsSignOpts buildOptions of
+      SignOptsSignWithKeys keysPath -> do
+        ks <- IO.doesDirectoryExist keysPath
+        unless ks $ do
+          putStrLn $ "You don't seem to have created a set of TUF keys. I will create one in " <> keysPath
+          createKeys keysPath
+      _otherwise -> pure ()
+    _ <- addSigninigKeysOracle (buildOptsSignOpts buildOptions)
+
     addFetchURLRule
     addPrepareSdistRule
     phony "buildAction" (buildAction buildOptions)
@@ -60,20 +71,7 @@ cmdBuild buildOptions = do
 
 buildAction :: BuildOptions -> Action ()
 buildAction
-  BuildOptions
-    { buildOptsSignOpts = signOpts
-    , buildOptsWriteMetadata = doWritePackageMeta
-    } = do
-    maybeReadKeysAt <- case signOpts of
-      SignOptsSignWithKeys keysPath -> do
-        ks <- doesDirectoryExist keysPath
-        unless ks $ do
-          putWarn $ "You don't seem to have created a set of TUF keys. I will create one in " <> keysPath
-          liftIO $ createKeys keysPath
-        return $ \name -> readKeysAt (keysPath </> name)
-      SignOptsDon'tSign ->
-        return $ const $ pure []
-
+  BuildOptions{buildOptsWriteMetadata = doWritePackageMeta} = do
     packageVersions <- getPackageVersions
 
     makeIndexPage
@@ -111,7 +109,7 @@ buildAction
         )
         packageVersions
 
-    targetKeys <- maybeReadKeysAt "target"
+    targetKeys <- readKeys "target"
 
     metadataEntries <-
       forP packageVersions $ \ppv@PreparedPackageVersion{pkgId, pkgTimestamp} -> do
@@ -138,11 +136,11 @@ buildAction
         BL.writeFile (Sec.toFilePath indexTarGzPath) $
           GZip.compress tarContents
 
-    privateKeysRoot <- maybeReadKeysAt "root"
-    privateKeysTarget <- maybeReadKeysAt "target"
-    privateKeysSnapshot <- maybeReadKeysAt "snapshot"
-    privateKeysTimestamp <- maybeReadKeysAt "timestamp"
-    privateKeysMirrors <- maybeReadKeysAt "mirrors"
+    privateKeysRoot <- readKeys "root"
+    privateKeysTarget <- readKeys "target"
+    privateKeysSnapshot <- readKeys "snapshot"
+    privateKeysTimestamp <- readKeys "timestamp"
+    privateKeysMirrors <- readKeys "mirrors"
 
     anchorRepoPath' repoLayoutMirrors >>= \path -> do
       expiryTime <- askOracle ExpiryTime

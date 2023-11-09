@@ -36,7 +36,6 @@ executable foliage
         Foliage.PreparePackageVersion
         Foliage.PrepareSource
         Foliage.PrepareSdist
-        Foliage.Shake
         Foliage.Time
         Foliage.UpdateCabalFile
         Foliage.Utils.Aeson

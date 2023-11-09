@@ -1,12 +1,16 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.Oracles where
 
 import Data.Foldable (for_)
+import Data.Traversable (for)
 import Development.Shake
 import Development.Shake.Classes
+import Foliage.HackageSecurity (Key, Some, readJSONSimple)
+import Foliage.Options (SignOptions (..))
 import Foliage.Time qualified as Time
 import GHC.Generics (Generic)
 import Hackage.Security.Client (
@@ -17,6 +21,7 @@ import Hackage.Security.Client (
  )
 import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Pretty qualified as Sec
+import System.FilePath ((</>))
 
 -- | Just a shortcut to write types
 type Oracle q = q -> Action (RuleResult q)
@@ -121,3 +126,27 @@ addExpiryTimeOracle mExpireSignaturesOn = do
   liftIO $ for_ mExpireSignaturesOn $ \expireSignaturesOn ->
     putStrLn $ "Expiry time set to " <> Time.iso8601Show expireSignaturesOn
   addOracle $ \ExpiryTime -> return mExpireSignaturesOn
+
+data SignOptionsOracle = SignOptionsOracle
+  deriving stock (Show, Generic, Typeable, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult SignOptionsOracle = SignOptions
+
+addSigninigKeysOracle :: SignOptions -> Rules (Oracle SignOptionsOracle)
+addSigninigKeysOracle signOpts =
+  addOracle $ \SignOptionsOracle -> return signOpts
+
+readKeys :: FilePath -> Action [Some Key]
+readKeys base = do
+  askOracle SignOptionsOracle >>= \case
+    SignOptsSignWithKeys keysPath -> do
+      paths <- getDirectoryFiles (keysPath </> base) ["*.json"]
+      need $ map (\fn -> keysPath </> base </> fn) paths
+      for paths $ \path -> do
+        mKey <- liftIO $ readJSONSimple (keysPath </> base </> path)
+        case mKey of
+          Left err -> fail $ show err
+          Right key -> pure key
+    SignOptsDon'tSign ->
+      return []
