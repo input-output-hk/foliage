@@ -189,7 +189,7 @@ preparePackageVersion metaFile = do
   pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
 
   sdistPath <- Sec.toFilePath <$> anchorRepoPath' (`repoLayoutPkgTarGz` pkgId)
-  prepareSdist srcDir sdistPath
+  prepareSdist pkgDesc srcDir sdistPath
 
   let expectedSdistName = prettyShow pkgId <.> "tar.gz"
   unless (takeFileName sdistPath == expectedSdistName) $ do

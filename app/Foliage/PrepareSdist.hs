@@ -21,26 +21,30 @@ import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
 import Distribution.Client.SrcDist (packageDirToSdist)
-import Distribution.Simple.PackageDescription (readGenericPackageDescription)
+import Distribution.PackageDescription (GenericPackageDescription)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.Meta ()
 import GHC.Generics (Generic)
 import System.Directory qualified as IO
 import System.IO.Error (tryIOError)
 
-data PrepareSdistRule = PrepareSdistRule FilePath FilePath
+data PrepareSdistRule = PrepareSdistRule GenericPackageDescription FilePath FilePath
   deriving (Show, Eq, Generic)
-  deriving anyclass (Hashable, Binary, NFData)
+  deriving anyclass (Binary, NFData)
+
+instance Hashable PrepareSdistRule where
+  hashWithSalt s (PrepareSdistRule gpd srcDir dstPath) =
+    s `hashWithSalt` show gpd `hashWithSalt` srcDir `hashWithSalt` dstPath
 
 type instance RuleResult PrepareSdistRule = ()
 
-prepareSdist :: FilePath -> FilePath -> Action ()
-prepareSdist srcDir dstPath = apply1 $ PrepareSdistRule srcDir dstPath
+prepareSdist :: GenericPackageDescription -> FilePath -> FilePath -> Action ()
+prepareSdist gpd srcDir dstPath = apply1 $ PrepareSdistRule gpd srcDir dstPath
 
 addPrepareSdistRule :: Rules ()
 addPrepareSdistRule = addBuiltinRule noLint noIdentity run
  where
-  run (PrepareSdistRule srcDir dstPath) (Just old) RunDependenciesSame = do
+  run (PrepareSdistRule gpd srcDir dstPath) (Just old) RunDependenciesSame = do
     let hvExpected = load old
 
     -- Check of has of the sdist, if the sdist is still there and it is
@@ -58,27 +62,29 @@ addPrepareSdistRule = addBuiltinRule noLint noIdentity run
                 }
       Right hvExisting -> do
         putWarn $ "Changed " ++ dstPath ++ " (expecting hash " ++ showHashValue hvExpected ++ " found " ++ showHashValue hvExisting ++ "). I will rebuild it."
-        run (PrepareSdistRule srcDir dstPath) (Just old) RunDependenciesChanged
+        run (PrepareSdistRule gpd srcDir dstPath) (Just old) RunDependenciesChanged
       Left _ -> do
         putWarn $ "Unable to read " ++ dstPath ++ ". I will rebuild it."
-        run (PrepareSdistRule srcDir dstPath) (Just old) RunDependenciesChanged
-  run (PrepareSdistRule srcDir dstPath) old _mode = do
+        run (PrepareSdistRule gpd srcDir dstPath) (Just old) RunDependenciesChanged
+  run (PrepareSdistRule gpd srcDir dstPath) old _mode = do
     -- create the sdist distribution
-    hv <- makeSdist srcDir dstPath
+    hv <- makeSdist gpd srcDir dstPath
 
     let changed = case fmap load old of
           Just hv' | hv' == hv -> ChangedRecomputeSame
           _differentOrMissing -> ChangedRecomputeDiff
 
     when (changed == ChangedRecomputeSame) $
-      putInfo ("Wrote " ++ dstPath ++ " (same hash " ++ showHashValue hv ++ ")")
+      putInfo $
+        "Wrote " ++ dstPath ++ " (same hash " ++ showHashValue hv ++ ")"
 
     when (changed == ChangedRecomputeDiff) $
-      putInfo ("Wrote " ++ dstPath ++ " (new hash " ++ showHashValue hv ++ ")")
+      putInfo $
+        "Wrote " ++ dstPath ++ " (new hash " ++ showHashValue hv ++ ")"
 
     return $ RunResult{runChanged = changed, runStore = save hv, runValue = ()}
 
-  makeSdist srcDir dstPath = do
+  makeSdist gpd srcDir dstPath = do
     cabalFile <-
       assertSingle
         ( \fs ->
@@ -91,8 +97,6 @@ addPrepareSdistRule = addBuiltinRule noLint noIdentity run
         <$> getDirectoryFiles srcDir ["*.cabal"]
 
     need [srcDir </> cabalFile]
-
-    gpd <- liftIO $ readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
 
     traced "cabal sdist" $ do
       IO.createDirectoryIfMissing True (takeDirectory dstPath)
