@@ -22,21 +22,25 @@ module Foliage.PreparePackageVersion (
 where
 
 import Control.Monad (unless)
+import Control.Monad.IO.Class (MonadIO (..))
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Ord (Down (..))
-import Development.Shake (Action)
-import Development.Shake.FilePath (joinPath, splitDirectories)
+import Data.Traversable (for)
+import Development.Shake (Action, need)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (packageDescription))
 import Distribution.Types.PackageDescription (PackageDescription (package))
 import Distribution.Types.PackageId
-import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber)
+import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber, readPackageVersionSpec)
+import Foliage.Oracles
 import Foliage.PrepareSdist (prepareSdist)
 import Foliage.PrepareSource (prepareSource)
-import Foliage.Shake (readGenericPackageDescription', readPackageVersionSpec')
+import Foliage.Shake (readGenericPackageDescription')
+import Hackage.Security.Util.Path qualified as Sec
+import Hackage.Security.Util.Pretty qualified as Sec
 import System.FilePath (takeBaseName, takeFileName, (<.>), (</>))
 
 -- TODO: can we ensure that `pkgVersionDeprecationChanges` and `cabalFileRevisions` are
@@ -82,93 +86,99 @@ data PreparedPackageVersion = PreparedPackageVersion
 -- could be split out in the future if `PreparedPackageVersion` starts to become
 -- a kitchen sink.
 
-preparePackageVersion :: FilePath -> FilePath -> Action PreparedPackageVersion
-preparePackageVersion inputDir metaFile = do
-  let (name, version) = case splitDirectories metaFile of
+preparePackageVersion :: InputPath -> Action PreparedPackageVersion
+preparePackageVersion metaFile = do
+  -- TODO: revisit all this
+  let (name, version) = case Sec.splitFragments (Sec.unrootPath metaFile) of
         [n, v, _] -> (n, v)
-        _else -> error $ "internal error: I should not be looking at " ++ metaFile
+        _else -> error $ "internal error: I should not be looking at " ++ Sec.pretty metaFile
 
   let pkgName = fromMaybe (error $ "invalid package name: " ++ name) $ simpleParsec name
   let pkgVersion = fromMaybe (error $ "invalid package version: " ++ version) $ simpleParsec version
   let pkgId = PackageIdentifier pkgName pkgVersion
 
-  pkgSpec <-
-    readPackageVersionSpec' (inputDir </> metaFile) >>= \meta@PackageVersionSpec{..} -> do
-      case (NE.nonEmpty packageVersionRevisions, packageVersionTimestamp) of
-        (Just _someRevisions, Nothing) ->
-          error $
-            unlines
-              [ inputDir </> metaFile <> " has cabal file revisions but the package has no timestamp."
-              , "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
-              ]
-        (Just (NE.sort -> someRevisions), Just ts)
-          -- WARN: this should really be a <=
-          | revisionTimestamp (NE.head someRevisions) < ts ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has a revision with timestamp earlier than the package itself."
-                  , "Adjust the timestamps so that all revisions come after the package publication."
-                  ]
-          | not (null $ duplicates (revisionTimestamp <$> someRevisions)) ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has two revisions entries with the same timestamp."
-                  , "Adjust the timestamps so that all the revisions happen at a different time."
-                  ]
-        _otherwise -> return ()
+  pkgSpec <- do
+    meta@PackageVersionSpec{..} <-
+      anchorInputPath metaFile >>= \path -> do
+        need [Sec.toFilePath path]
+        liftIO $ readPackageVersionSpec $ Sec.toFilePath path
 
-      case (NE.nonEmpty packageVersionDeprecations, packageVersionTimestamp) of
-        (Just _someDeprecations, Nothing) ->
-          error $
-            unlines
-              [ inputDir </> metaFile <> " has deprecations but the package has no timestamp."
-              , "This combination doesn't make sense. Either add a timestamp on the original package or remove the deprecation."
-              ]
-        (Just (NE.sort -> someDeprecations), Just ts)
-          | deprecationTimestamp (NE.head someDeprecations) <= ts ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has a deprecation entry with timestamp earlier (or equal) than the package itself."
-                  , "Adjust the timestamps so that all the (un-)deprecations come after the package publication."
-                  ]
-          | not (deprecationIsDeprecated (NE.head someDeprecations)) ->
-              error $
-                "The first deprecation entry in" <> inputDir </> metaFile <> " cannot be an un-deprecation"
-          | not (null $ duplicates (deprecationTimestamp <$> someDeprecations)) ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " has two deprecation entries with the same timestamp."
-                  , "Adjust the timestamps so that all the (un-)deprecations happen at a different time."
-                  ]
-          | not (null $ doubleDeprecations someDeprecations) ->
-              error $
-                unlines
-                  [ inputDir </> metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations."
-                  , "Make sure deprecations and un-deprecations alternate in time."
-                  ]
-        _otherwise -> return ()
+    case (NE.nonEmpty packageVersionRevisions, packageVersionTimestamp) of
+      (Just _someRevisions, Nothing) ->
+        error $
+          unlines
+            [ Sec.pretty metaFile <> " has cabal file revisions but the package has no timestamp."
+            , "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
+            ]
+      (Just (NE.sort -> someRevisions), Just ts)
+        -- WARN: this should really be a <=
+        | revisionTimestamp (NE.head someRevisions) < ts ->
+            error $
+              unlines
+                [ Sec.pretty metaFile <> " has a revision with timestamp earlier than the package itself."
+                , "Adjust the timestamps so that all revisions come after the package publication."
+                ]
+        | not (null $ duplicates (revisionTimestamp <$> someRevisions)) ->
+            error $
+              unlines
+                [ Sec.pretty metaFile <> " has two revisions entries with the same timestamp."
+                , "Adjust the timestamps so that all the revisions happen at a different time."
+                ]
+      _otherwise ->
+        return ()
 
-      return meta
+    case (NE.nonEmpty packageVersionDeprecations, packageVersionTimestamp) of
+      (Just _someDeprecations, Nothing) ->
+        error $
+          unlines
+            [ Sec.pretty metaFile <> " has deprecations but the package has no timestamp."
+            , "This combination doesn't make sense. Either add a timestamp on the original package or remove the deprecation."
+            ]
+      (Just (NE.sort -> someDeprecations), Just ts)
+        | deprecationTimestamp (NE.head someDeprecations) <= ts ->
+            error $
+              unlines
+                [ Sec.pretty metaFile <> " has a deprecation entry with timestamp earlier (or equal) than the package itself."
+                , "Adjust the timestamps so that all the (un-)deprecations come after the package publication."
+                ]
+        | not (deprecationIsDeprecated (NE.head someDeprecations)) ->
+            error $
+              "The first deprecation entry in" <> Sec.pretty metaFile <> " cannot be an un-deprecation"
+        | not (null $ duplicates (deprecationTimestamp <$> someDeprecations)) ->
+            error $
+              unlines
+                [ Sec.pretty metaFile <> " has two deprecation entries with the same timestamp."
+                , "Adjust the timestamps so that all the (un-)deprecations happen at a different time."
+                ]
+        | not (null $ doubleDeprecations someDeprecations) ->
+            error $
+              unlines
+                [ Sec.pretty metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations."
+                , "Make sure deprecations and un-deprecations alternate in time."
+                ]
+      _otherwise -> return ()
+
+    return meta
 
   srcDir <- prepareSource pkgId pkgSpec
 
   let originalCabalFilePath = srcDir </> prettyShow pkgName <.> "cabal"
 
+      cabalFileRevisionPath :: Int -> Action FilePath
       cabalFileRevisionPath revisionNumber =
-        joinPath
-          [ inputDir
-          , prettyShow pkgName
-          , prettyShow pkgVersion
-          , "revisions"
-          , show revisionNumber
-          ]
-          <.> "cabal"
+        Sec.toFilePath
+          <$> anchorInputPath
+            ( Sec.takeDirectory metaFile
+                Sec.</> Sec.fragment "revisions"
+                Sec.</> Sec.fragment (show revisionNumber)
+                Sec.<.> "cabal"
+            )
 
-      cabalFilePath =
-        maybe
-          originalCabalFilePath
-          cabalFileRevisionPath
-          (latestRevisionNumber pkgSpec)
+  cabalFilePath <-
+    maybe
+      (return originalCabalFilePath)
+      cabalFileRevisionPath
+      (latestRevisionNumber pkgSpec)
 
   pkgDesc <- readGenericPackageDescription' cabalFilePath
 
@@ -183,16 +193,17 @@ preparePackageVersion inputDir metaFile = do
         , "actual: " ++ takeBaseName sdistPath
         , "expected: " ++ expectedSdistName
         , "possible cause: the package name and/or version implied by the metadata file path does not match what is contained in the cabal file"
-        , "metadata file: " ++ metaFile
+        , "metadata file: " ++ Sec.pretty metaFile
         , "version in cabal file: " ++ prettyShow (Distribution.Types.PackageId.pkgVersion $ package $ packageDescription pkgDesc)
         ]
 
-  let cabalFileRevisions =
-        sortOn
-          Down
-          [ (revisionTimestamp, cabalFileRevisionPath revisionNumber)
-          | RevisionSpec{revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec
-          ]
+  cabalFileRevisions <-
+    sortOn Down
+      <$> for
+        (packageVersionRevisions pkgSpec)
+        ( \RevisionSpec{revisionTimestamp, revisionNumber} ->
+            (revisionTimestamp,) <$> cabalFileRevisionPath revisionNumber
+        )
 
   let pkgVersionDeprecationChanges =
         sortOn

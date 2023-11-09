@@ -14,6 +14,30 @@ import Hackage.Security.Client (
   hackageRepoLayout,
  )
 import Hackage.Security.Util.Path qualified as Sec
+import Hackage.Security.Util.Pretty qualified as Sec
+
+data InputRoot
+
+type InputPath = Sec.Path InputRoot
+
+instance Sec.Pretty InputPath where
+  pretty (Sec.Path fp) = "<input>/" ++ fp
+
+data InputDir = InputDir
+  deriving stock (Show, Generic, Typeable, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult InputDir = FilePath
+
+addInputDirOracle :: FilePath -> Rules (InputDir -> Action FilePath)
+addInputDirOracle inputDir =
+  addOracle $ \InputDir -> return inputDir
+
+anchorInputPath :: InputPath -> Action (Sec.Path Sec.Absolute)
+anchorInputPath ip = do
+  inputDir <- askOracle InputDir
+  inputDirRoot <- liftIO $ Sec.makeAbsolute (Sec.fromFilePath inputDir)
+  return $ inputDirRoot Sec.</> Sec.unrootPath ip
 
 data OutputDir = OutputDir
   deriving stock (Show, Generic, Typeable, Eq)

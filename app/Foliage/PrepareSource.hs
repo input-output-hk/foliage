@@ -16,6 +16,7 @@ import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.FetchURL (fetchURL)
 import Foliage.Meta
+import Foliage.Oracles (InputDir (..))
 import Foliage.UpdateCabalFile (rewritePackageVersion)
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
@@ -39,8 +40,8 @@ type instance RuleResult PrepareSourceRule = FilePath
 prepareSource :: PackageId -> PackageVersionSpec -> Action FilePath
 prepareSource pkgId pkgMeta = apply1 $ PrepareSourceRule pkgId pkgMeta
 
-addPrepareSourceRule :: FilePath -> FilePath -> Rules ()
-addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
+addPrepareSourceRule :: FilePath -> Rules ()
+addPrepareSourceRule cacheDir = addBuiltinRule noLint noIdentity run
  where
   run :: PrepareSourceRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
   run (PrepareSourceRule pkgId pkgMeta) _old mode = do
@@ -73,6 +74,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             tarballPath <- fetchURL (githubRepoTarballUrl repo rev)
             extractFromTarball tarballPath mSubdir srcDir
 
+        inputDir <- askOracle InputDir
         let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
         hasPatches <- doesDirectoryExist patchesDir
 

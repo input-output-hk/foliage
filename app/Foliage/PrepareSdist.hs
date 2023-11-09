@@ -91,7 +91,7 @@ addPrepareSdistRule = addBuiltinRule noLint noIdentity run
                 , unwords fs
                 ]
 
-    -- TODO: need?
+    need [srcDir </> cabalFile]
     gpd <- liftIO $ readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
     let pkgId = packageId gpd
         packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId

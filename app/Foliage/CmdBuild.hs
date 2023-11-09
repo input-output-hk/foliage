@@ -41,8 +41,9 @@ cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
   shake opts $ do
     _ <- addOutputDirOracle (buildOptsOutputDir buildOptions)
+    _ <- addInputDirOracle (buildOptsInputDir buildOptions)
     addFetchURLRule cacheDir
-    addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
+    addPrepareSourceRule cacheDir
     addPrepareSdistRule
     phony "buildAction" (buildAction buildOptions)
     want ["buildAction"]
@@ -61,7 +62,6 @@ buildAction
     { buildOptsSignOpts = signOpts
     , buildOptsCurrentTime = mCurrentTime
     , buildOptsExpireSignaturesOn = mExpireSignaturesOn
-    , buildOptsInputDir = inputDir
     , buildOptsWriteMetadata = doWritePackageMeta
     } = do
     maybeReadKeysAt <- case signOpts of
@@ -88,7 +88,7 @@ buildAction
         putInfo $ "Current time set to " <> Time.iso8601Show t <> "."
         return t
 
-    packageVersions <- getPackageVersions inputDir
+    packageVersions <- getPackageVersions
 
     makeIndexPage
 
@@ -262,9 +262,12 @@ makeMetadataFile packageVersions = do
             ++ (case pkgTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
         )
 
-getPackageVersions :: FilePath -> Action [PreparedPackageVersion]
-getPackageVersions inputDir = do
+getPackageVersions :: Action [PreparedPackageVersion]
+getPackageVersions = do
+  inputDir <- askOracle InputDir
   metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
+  -- As InputPaths
+  let metaFiles' = map (Sec.rootPath @InputRoot . Sec.fromUnrootedFilePath) metaFiles
 
   when (null metaFiles) $ do
     error $
@@ -273,7 +276,7 @@ getPackageVersions inputDir = do
         , "Make sure you are passing the right input directory. The default input directory is _sources"
         ]
 
-  forP metaFiles $ preparePackageVersion inputDir
+  forP metaFiles' preparePackageVersion
 
 prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 prepareIndexPkgCabal pkgId timestamp filePath = do
