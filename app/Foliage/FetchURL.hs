@@ -18,6 +18,7 @@ import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
+import Foliage.Oracles
 import GHC.Generics (Generic)
 import Network.URI (URI (..), URIAuth (..), pathSegments)
 import Network.URI.Orphans ()
@@ -36,8 +37,8 @@ type instance RuleResult FetchURL = FilePath
 fetchURL :: URI -> Action FilePath
 fetchURL = apply1 . FetchURL
 
-addFetchURLRule :: FilePath -> Rules ()
-addFetchURLRule cacheDir = addBuiltinRule noLint noIdentity run
+addFetchURLRule :: Rules ()
+addFetchURLRule = addBuiltinRule noLint noIdentity run
  where
   run :: BuiltinRun FetchURL FilePath
   run (FetchURL uri) old _mode = do
@@ -51,6 +52,7 @@ addFetchURLRule cacheDir = addBuiltinRule noLint noIdentity run
 
     let host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
 
+    cacheDir <- askOracle CacheDir
     let path = cacheDir </> joinPath (scheme : host : pathSegments uri)
 
     -- parse etag from store

@@ -42,8 +42,9 @@ cmdBuild buildOptions = do
   shake opts $ do
     _ <- addOutputDirOracle (buildOptsOutputDir buildOptions)
     _ <- addInputDirOracle (buildOptsInputDir buildOptions)
-    addFetchURLRule cacheDir
-    addPrepareSourceRule cacheDir
+    _ <- addCacheDirOracle cacheDir
+    addFetchURLRule
+    addPrepareSourceRule
     addPrepareSdistRule
     phony "buildAction" (buildAction buildOptions)
     want ["buildAction"]

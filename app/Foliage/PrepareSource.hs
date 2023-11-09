@@ -16,7 +16,7 @@ import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.FetchURL (fetchURL)
 import Foliage.Meta
-import Foliage.Oracles (InputDir (..))
+import Foliage.Oracles (CacheDir (..), InputDir (..))
 import Foliage.UpdateCabalFile (rewritePackageVersion)
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
@@ -40,13 +40,15 @@ type instance RuleResult PrepareSourceRule = FilePath
 prepareSource :: PackageId -> PackageVersionSpec -> Action FilePath
 prepareSource pkgId pkgMeta = apply1 $ PrepareSourceRule pkgId pkgMeta
 
-addPrepareSourceRule :: FilePath -> Rules ()
-addPrepareSourceRule cacheDir = addBuiltinRule noLint noIdentity run
+addPrepareSourceRule :: Rules ()
+addPrepareSourceRule = addBuiltinRule noLint noIdentity run
  where
   run :: PrepareSourceRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
   run (PrepareSourceRule pkgId pkgMeta) _old mode = do
     let PackageIdentifier{pkgName, pkgVersion} = pkgId
     let PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgMeta
+
+    cacheDir <- askOracle CacheDir
     let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
 
     case mode of

@@ -39,6 +39,29 @@ anchorInputPath ip = do
   inputDirRoot <- liftIO $ Sec.makeAbsolute (Sec.fromFilePath inputDir)
   return $ inputDirRoot Sec.</> Sec.unrootPath ip
 
+data CacheRoot
+
+type CachePath = Sec.Path CacheRoot
+
+instance Sec.Pretty CachePath where
+  pretty (Sec.Path fp) = "<cache>/" ++ fp
+
+data CacheDir = CacheDir
+  deriving stock (Show, Generic, Typeable, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult CacheDir = FilePath
+
+addCacheDirOracle :: FilePath -> Rules (CacheDir -> Action FilePath)
+addCacheDirOracle inputDir =
+  addOracle $ \CacheDir -> return inputDir
+
+anchorCachePath :: CachePath -> Action (Sec.Path Sec.Absolute)
+anchorCachePath ip = do
+  cacheDir <- askOracle CacheDir
+  cacheDirRoot <- liftIO $ Sec.makeAbsolute (Sec.fromFilePath cacheDir)
+  return $ cacheDirRoot Sec.</> Sec.unrootPath ip
+
 data OutputDir = OutputDir
   deriving stock (Show, Generic, Typeable, Eq)
   deriving anyclass (Hashable, Binary, NFData)
