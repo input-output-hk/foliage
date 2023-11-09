@@ -66,10 +66,8 @@ addPrepareSdistRule = addBuiltinRule noLint noIdentity run
     -- create the sdist distribution
     hv <- makeSdist srcDir dstPath
 
-    let new = save hv
-
-    let changed = case fmap ((== hv) . load) old of
-          Just True -> ChangedRecomputeSame
+    let changed = case fmap load old of
+          Just hv' | hv' == hv -> ChangedRecomputeSame
           _differentOrMissing -> ChangedRecomputeDiff
 
     when (changed == ChangedRecomputeSame) $
@@ -78,19 +76,19 @@ addPrepareSdistRule = addBuiltinRule noLint noIdentity run
     when (changed == ChangedRecomputeDiff) $
       putInfo ("Wrote " ++ dstPath ++ " (new hash " ++ showHashValue hv ++ ")")
 
-    return $ RunResult{runChanged = changed, runStore = new, runValue = ()}
+    return $ RunResult{runChanged = changed, runStore = save hv, runValue = ()}
 
   makeSdist srcDir dstPath = do
-    cabalFiles <- getDirectoryFiles srcDir ["*.cabal"]
-    let cabalFile = case cabalFiles of
-          [f] -> f
-          fs ->
-            error $
-              unlines
-                [ "Invalid source directory: " ++ srcDir
-                , "It contains multiple cabal files, while only one is allowed"
-                , unwords fs
-                ]
+    cabalFile <-
+      assertSingle
+        ( \fs ->
+            unlines
+              [ "Invalid source directory: " ++ srcDir
+              , "It contains multiple cabal files, while only one is allowed"
+              , unwords fs
+              ]
+        )
+        <$> getDirectoryFiles srcDir ["*.cabal"]
 
     need [srcDir </> cabalFile]
 
@@ -110,3 +108,7 @@ readFileHashValue = fmap SHA256.hash . BS.readFile
 
 showHashValue :: BS.ByteString -> [Char]
 showHashValue = T.unpack . encodeBase16
+
+assertSingle :: ([a] -> [Char]) -> [a] -> a
+assertSingle _err [f] = f
+assertSingle err fs = error (err fs)
