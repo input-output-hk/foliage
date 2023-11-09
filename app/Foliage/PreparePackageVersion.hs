@@ -27,7 +27,7 @@ import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Ord (Down (..))
-import Development.Shake (Action, askOracle, need)
+import Development.Shake (Action, askOracle, need, produces)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
@@ -43,7 +43,7 @@ import Foliage.PrepareSdist (prepareSdist)
 import Foliage.PrepareSource (prepareSource)
 import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Pretty qualified as Sec
-import System.FilePath (takeBaseName, takeDirectory, takeFileName, (<.>), (</>))
+import System.FilePath (takeDirectory, (<.>), (</>))
 
 -- TODO: can we ensure that `pkgVersionDeprecationChanges` and `cabalFileRevisions` are
 -- sorted by timestamp? e.g https://hackage.haskell.org/package/sorted-list
@@ -188,21 +188,19 @@ preparePackageVersion metaFile = do
   need [cabalFilePath]
   pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
 
-  sdistPath <- Sec.toFilePath <$> anchorRepoPath' (`repoLayoutPkgTarGz` pkgId)
-  prepareSdist pkgDesc srcDir sdistPath
-
-  let expectedSdistName = prettyShow pkgId <.> "tar.gz"
-  unless (takeFileName sdistPath == expectedSdistName) $ do
+  let sdistPkgId = package (packageDescription pkgDesc)
+  unless (pkgId == sdistPkgId) $ do
     error $
       unlines
         [ "creating a source distribution for " ++ prettyShow pkgId ++ " has failed because"
-        , "cabal has produced a source distribtion that does not match the expected file name:"
-        , "actual: " ++ takeBaseName sdistPath
-        , "expected: " ++ expectedSdistName
+        , "the source distribtion is for " ++ prettyShow sdistPkgId ++ "."
         , "possible cause: the package name and/or version implied by the metadata file path does not match what is contained in the cabal file"
         , "metadata file: " ++ Sec.pretty metaFile
-        , "version in cabal file: " ++ prettyShow (Distribution.Types.PackageId.pkgVersion $ package $ packageDescription pkgDesc)
         ]
+
+  sdistPath <- Sec.toFilePath <$> anchorRepoPath' (`repoLayoutPkgTarGz` pkgId)
+  prepareSdist pkgDesc srcDir sdistPath
+  produces [sdistPath]
 
   let cabalFileRevisions =
         sortOn
