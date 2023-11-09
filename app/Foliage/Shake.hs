@@ -1,5 +1,4 @@
 module Foliage.Shake (
-  computeFileInfoSimple',
   readKeysAt,
   readPackageVersionSpec',
   readGenericPackageDescription',
@@ -14,11 +13,6 @@ import Distribution.Types.GenericPackageDescription
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta
-
-computeFileInfoSimple' :: FilePath -> Action FileInfo
-computeFileInfoSimple' fp = do
-  need [fp]
-  liftIO $ computeFileInfoSimple fp
 
 readKeysAt :: FilePath -> Action [Some Key]
 readKeysAt base = do

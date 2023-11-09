@@ -7,38 +7,45 @@ module Foliage.HackageSecurity (
   module Hackage.Security.Server,
   module Hackage.Security.TUF.FileMap,
   module Hackage.Security.Key.Env,
-  module Hackage.Security.Util.Path,
+  -- module Hackage.Security.Util.Path,
   module Hackage.Security.Util.Some,
 )
 where
 
 import Control.Monad (replicateM)
+import Control.Monad.IO.Class (MonadIO (..))
 import Crypto.Sign.Ed25519 (unPublicKey)
 import Data.ByteString.Base16 (encodeBase16)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (for_)
 import Data.Text qualified as T
+import Development.Shake (Action, need)
 import Hackage.Security.Key.Env (fromKeys)
 import Hackage.Security.Server
 import Hackage.Security.TUF.FileMap
-import Hackage.Security.Util.Path (Absolute, Path, fromFilePath, fromUnrootedFilePath, makeAbsolute, rootPath, writeLazyByteString)
+import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Some
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath
 
 readJSONSimple :: (FromJSON ReadJSON_NoKeys_NoLayout a) => FilePath -> IO (Either DeserializationError a)
 readJSONSimple fp = do
-  p <- makeAbsolute (fromFilePath fp)
+  p <- Sec.makeAbsolute (Sec.fromFilePath fp)
   readJSON_NoKeys_NoLayout p
 
 forceFileInfo :: FileInfo -> ()
 forceFileInfo (FileInfo a b) = a `seq` b `seq` ()
 
-computeFileInfoSimple :: FilePath -> IO FileInfo
-computeFileInfoSimple fp = do
-  p <- makeAbsolute (fromFilePath fp)
-  fi <- computeFileInfo p
+computeFileInfoSimple :: Sec.Path Sec.Absolute -> Action FileInfo
+computeFileInfoSimple path = do
+  need [Sec.toFilePath path]
+  fi <- liftIO $ computeFileInfo path
+  return $! forceFileInfo fi `seq` fi
+
+computeFileInfoSimple' :: FilePath -> IO FileInfo
+computeFileInfoSimple' path = do
+  fi <- Sec.makeAbsolute (Sec.fromFilePath path) >>= computeFileInfo
   return $! forceFileInfo fi `seq` fi
 
 createKeys :: FilePath -> IO ()
@@ -72,7 +79,7 @@ exportPublicKey (PublicKeyEd25519 pub) = unPublicKey pub
 
 writeKey :: FilePath -> Some Key -> IO ()
 writeKey fp key = do
-  p <- makeAbsolute (fromFilePath fp)
+  p <- Sec.makeAbsolute (Sec.fromFilePath fp)
   writeJSON_NoLayout p key
 
 renderSignedJSON :: (ToJSON WriteJSON a) => [Some Key] -> a -> BSL.ByteString
@@ -81,8 +88,6 @@ renderSignedJSON keys thing =
     hackageRepoLayout
     (withSignatures hackageRepoLayout keys thing)
 
-writeSignedJSON :: (ToJSON WriteJSON a) => Path Absolute -> (RepoLayout -> RepoPath) -> [Some Key] -> a -> IO ()
-writeSignedJSON outputDirRoot repoPath keys thing = do
-  writeLazyByteString fp $ renderSignedJSON keys thing
- where
-  fp = anchorRepoPathLocally outputDirRoot $ repoPath hackageRepoLayout
+writeSignedJSON :: (Sec.FsRoot root, ToJSON WriteJSON a) => Sec.Path root -> [Some Key] -> a -> IO ()
+writeSignedJSON path keys thing = do
+  Sec.writeLazyByteString path $ renderSignedJSON keys thing

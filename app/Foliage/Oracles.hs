@@ -1,0 +1,41 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeFamilies #-}
+
+module Foliage.Oracles where
+
+import Development.Shake
+import Development.Shake.Classes
+import GHC.Generics (Generic)
+import Hackage.Security.Client (
+  RepoLayout,
+  RepoPath,
+  anchorRepoPathLocally,
+  hackageRepoLayout,
+ )
+import Hackage.Security.Util.Path qualified as Sec
+
+data OutputDir = OutputDir
+  deriving stock (Show, Generic, Typeable, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult OutputDir = FilePath
+
+getOutputDir :: Action (Sec.Path Sec.Absolute)
+getOutputDir = do
+  outputDirRoot <- askOracle OutputDir
+  liftIO $ Sec.makeAbsolute (Sec.fromFilePath outputDirRoot)
+
+anchorRepoPath :: RepoPath -> Action (Sec.Path Sec.Absolute)
+anchorRepoPath rp = do
+  outputDir <- getOutputDir
+  return $ anchorRepoPathLocally outputDir rp
+
+anchorRepoPath' :: (RepoLayout -> RepoPath) -> Action (Sec.Path Sec.Absolute)
+anchorRepoPath' p = do
+  outputDir <- getOutputDir
+  return $ anchorRepoPathLocally outputDir $ p hackageRepoLayout
+
+addOutputDirOracle :: FilePath -> Rules (OutputDir -> Action FilePath)
+addOutputDirOracle outputDir =
+  addOracle $ \OutputDir -> return outputDir

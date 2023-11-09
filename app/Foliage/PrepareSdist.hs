@@ -25,8 +25,9 @@ import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta ()
+import Foliage.Oracles
 import GHC.Generics (Generic)
-import Hackage.Security.Util.Path (toFilePath)
+import Hackage.Security.Util.Path qualified as Sec
 import System.Directory qualified as IO
 import System.IO.Error (tryIOError)
 
@@ -39,8 +40,8 @@ type instance RuleResult PrepareSdistRule = FilePath
 prepareSdist :: FilePath -> Action FilePath
 prepareSdist srcDir = apply1 $ PrepareSdistRule srcDir
 
-addPrepareSdistRule :: Path Absolute -> Rules ()
-addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
+addPrepareSdistRule :: Rules ()
+addPrepareSdistRule = addBuiltinRule noLint noIdentity run
  where
   run :: PrepareSdistRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
   run (PrepareSdistRule srcDir) (Just old) RunDependenciesSame = do
@@ -90,11 +91,12 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
                 , unwords fs
                 ]
 
+    -- TODO: need?
+    gpd <- liftIO $ readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
+    let pkgId = packageId gpd
+        packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
+    path <- Sec.toFilePath <$> anchorRepoPath packagePath
     traced "cabal sdist" $ do
-      gpd <- readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
-      let pkgId = packageId gpd
-          packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
-          path = toFilePath $ anchorRepoPathLocally outputDirRoot packagePath
       IO.createDirectoryIfMissing True (takeDirectory path)
       sdist <- packageDirToSdist Verbosity.normal gpd srcDir
       BSL.writeFile path sdist

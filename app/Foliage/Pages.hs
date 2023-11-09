@@ -23,12 +23,13 @@ import Data.Ord (Down (Down), comparing)
 import Data.Text.Lazy.IO.Utf8 qualified as TL
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
-import Development.Shake (Action, traced)
+import Development.Shake (Action, askOracle, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
 import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
 import Foliage.Meta (PackageVersionSource)
 import Foliage.Meta.Aeson ()
+import Foliage.Oracles (OutputDir (..))
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
@@ -38,8 +39,9 @@ import Text.Mustache (Template)
 import Text.Mustache.Compile.TH (compileMustacheDir)
 import Text.Mustache.Render (renderMustache)
 
-makeIndexPage :: FilePath -> Action ()
-makeIndexPage outputDir =
+makeIndexPage :: Action ()
+makeIndexPage = do
+  outputDir <- askOracle OutputDir
   traced "webpages / index" $ do
     IO.createDirectoryIfMissing True outputDir
     TL.writeFile (outputDir </> "index.html") $
@@ -56,8 +58,9 @@ data AllPackagesPageEntry = AllPackagesPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeAllPackagesPage :: UTCTime -> FilePath -> [PreparedPackageVersion] -> Action ()
-makeAllPackagesPage currentTime outputDir packageVersions =
+makeAllPackagesPage :: UTCTime -> [PreparedPackageVersion] -> Action ()
+makeAllPackagesPage currentTime packageVersions = do
+  outputDir <- askOracle OutputDir
   traced "webpages / all-packages" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-packages")
     TL.writeFile (outputDir </> "all-packages" </> "index.html") $
@@ -108,8 +111,9 @@ data AllPackageVersionsPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeAllPackageVersionsPage :: UTCTime -> FilePath -> [PreparedPackageVersion] -> Action ()
-makeAllPackageVersionsPage currentTime outputDir packageVersions =
+makeAllPackageVersionsPage :: UTCTime -> [PreparedPackageVersion] -> Action ()
+makeAllPackageVersionsPage currentTime packageVersions = do
+  outputDir <- askOracle OutputDir
   traced "webpages / all-package-versions" $ do
     IO.createDirectoryIfMissing True (outputDir </> "all-package-versions")
     TL.writeFile (outputDir </> "all-package-versions" </> "index.html") $
@@ -142,19 +146,28 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
       -- sort them by timestamp
       & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
-makePackageVersionPage :: FilePath -> PreparedPackageVersion -> Action ()
-makePackageVersionPage outputDir PreparedPackageVersion{pkgId, pkgTimestamp, pkgVersionSource, pkgDesc, cabalFileRevisions, pkgVersionIsDeprecated} = do
-  traced ("webpages / package / " ++ prettyShow pkgId) $ do
-    IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
-    TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
-      renderMustache packageVersionPageTemplate $
-        object
-          [ "pkgVersionSource" .= pkgVersionSource
-          , "cabalFileRevisions" .= map fst cabalFileRevisions
-          , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
-          , "pkgTimestamp" .= pkgTimestamp
-          , "pkgVersionDeprecated" .= pkgVersionIsDeprecated
-          ]
+makePackageVersionPage :: PreparedPackageVersion -> Action ()
+makePackageVersionPage
+  PreparedPackageVersion
+    { pkgId
+    , pkgTimestamp
+    , pkgVersionSource
+    , pkgDesc
+    , cabalFileRevisions
+    , pkgVersionIsDeprecated
+    } = do
+    outputDir <- askOracle OutputDir
+    traced ("webpages / package / " ++ prettyShow pkgId) $ do
+      IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
+      TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
+        renderMustache packageVersionPageTemplate $
+          object
+            [ "pkgVersionSource" .= pkgVersionSource
+            , "cabalFileRevisions" .= map fst cabalFileRevisions
+            , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
+            , "pkgTimestamp" .= pkgTimestamp
+            , "pkgVersionDeprecated" .= pkgVersionIsDeprecated
+            ]
 
 indexPageTemplate :: Template
 indexPageTemplate = $(compileMustacheDir "index" "templates")

@@ -27,25 +27,25 @@ import Foliage.HackageSecurity hiding (ToJSON, toJSON)
 import Foliage.Meta
 import Foliage.Meta.Aeson ()
 import Foliage.Options
+import Foliage.Oracles
 import Foliage.Pages
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
 import Foliage.PrepareSdist (addPrepareSdistRule)
 import Foliage.PrepareSource (addPrepareSourceRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
-import Hackage.Security.Util.Path (castRoot, toFilePath)
+import Hackage.Security.Util.Path qualified as Sec
 import System.Directory (createDirectoryIfMissing)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
-  outputDirRoot <- makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
-  shake opts $
-    do
-      addFetchURLRule cacheDir
-      addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
-      addPrepareSdistRule outputDirRoot
-      phony "buildAction" (buildAction buildOptions)
-      want ["buildAction"]
+  shake opts $ do
+    _ <- addOutputDirOracle (buildOptsOutputDir buildOptions)
+    addFetchURLRule cacheDir
+    addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
+    addPrepareSdistRule
+    phony "buildAction" (buildAction buildOptions)
+    want ["buildAction"]
  where
   cacheDir = "_cache"
   opts =
@@ -62,11 +62,8 @@ buildAction
     , buildOptsCurrentTime = mCurrentTime
     , buildOptsExpireSignaturesOn = mExpireSignaturesOn
     , buildOptsInputDir = inputDir
-    , buildOptsOutputDir = outputDir
     , buildOptsWriteMetadata = doWritePackageMeta
     } = do
-    outputDirRoot <- liftIO $ makeAbsolute (fromFilePath outputDir)
-
     maybeReadKeysAt <- case signOpts of
       SignOptsSignWithKeys keysPath -> do
         ks <- doesDirectoryExist keysPath
@@ -93,20 +90,21 @@ buildAction
 
     packageVersions <- getPackageVersions inputDir
 
-    makeIndexPage outputDir
+    makeIndexPage
 
-    makeAllPackagesPage currentTime outputDir packageVersions
+    makeAllPackagesPage currentTime packageVersions
 
-    makeAllPackageVersionsPage currentTime outputDir packageVersions
+    makeAllPackageVersionsPage currentTime packageVersions
 
-    void $ forP packageVersions $ makePackageVersionPage outputDir
+    void $ forP packageVersions makePackageVersionPage
 
     when doWritePackageMeta $
-      makeMetadataFile outputDir packageVersions
+      makeMetadataFile packageVersions
 
     cabalEntries <-
       foldMap
         ( \PreparedPackageVersion{pkgId, pkgTimestamp, cabalFilePath, originalCabalFilePath, cabalFileRevisions} -> do
+            outputDir <- askOracle OutputDir
             -- original cabal file, with its timestamp (if specified)
             copyFileChanged originalCabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> "0" <.> "cabal")
             cf <- prepareIndexPkgCabal pkgId (fromMaybe currentTime pkgTimestamp) originalCabalFilePath
@@ -141,9 +139,15 @@ buildAction
 
     -- WARN: See note above, the sorting here has to be stable
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries ++ extraEntries)
-    traced "Writing index" $ do
-      BL.writeFile (anchorPath outputDirRoot repoLayoutIndexTar) tarContents
-      BL.writeFile (anchorPath outputDirRoot repoLayoutIndexTarGz) $ GZip.compress tarContents
+
+    anchorRepoPath' repoLayoutIndexTar >>= \indexTarPath ->
+      traced ("Writing " ++ Sec.toFilePath indexTarPath) $
+        BL.writeFile (Sec.toFilePath indexTarPath) tarContents
+
+    anchorRepoPath' repoLayoutIndexTarGz >>= \indexTarGzPath ->
+      traced ("Writing " ++ Sec.toFilePath indexTarGzPath) $
+        BL.writeFile (Sec.toFilePath indexTarGzPath) $
+          GZip.compress tarContents
 
     privateKeysRoot <- maybeReadKeysAt "root"
     privateKeysTarget <- maybeReadKeysAt "target"
@@ -151,89 +155,96 @@ buildAction
     privateKeysTimestamp <- maybeReadKeysAt "timestamp"
     privateKeysMirrors <- maybeReadKeysAt "mirrors"
 
-    liftIO $
-      writeSignedJSON outputDirRoot repoLayoutMirrors privateKeysMirrors $
-        Mirrors
-          { mirrorsVersion = FileVersion 1
-          , mirrorsExpires = FileExpires expiryTime
-          , mirrorsMirrors = []
-          }
+    anchorRepoPath' repoLayoutMirrors >>= \path ->
+      liftIO $
+        writeSignedJSON path privateKeysMirrors $
+          Mirrors
+            { mirrorsVersion = FileVersion 1
+            , mirrorsExpires = FileExpires expiryTime
+            , mirrorsMirrors = []
+            }
 
-    liftIO $
-      writeSignedJSON outputDirRoot repoLayoutRoot privateKeysRoot $
-        Root
-          { rootVersion = FileVersion 1
-          , rootExpires = FileExpires expiryTime
-          , rootKeys =
-              fromKeys $
-                concat
-                  [ privateKeysRoot
-                  , privateKeysTarget
-                  , privateKeysSnapshot
-                  , privateKeysTimestamp
-                  , privateKeysMirrors
-                  ]
-          , rootRoles =
-              RootRoles
-                { rootRolesRoot =
-                    RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysRoot
-                      , roleSpecThreshold = KeyThreshold 2
-                      }
-                , rootRolesSnapshot =
-                    RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysSnapshot
-                      , roleSpecThreshold = KeyThreshold 1
-                      }
-                , rootRolesTargets =
-                    RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysTarget
-                      , roleSpecThreshold = KeyThreshold 1
-                      }
-                , rootRolesTimestamp =
-                    RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysTimestamp
-                      , roleSpecThreshold = KeyThreshold 1
-                      }
-                , rootRolesMirrors =
-                    RoleSpec
-                      { roleSpecKeys = map somePublicKey privateKeysMirrors
-                      , roleSpecThreshold = KeyThreshold 1
-                      }
-                }
-          }
+    anchorRepoPath' repoLayoutRoot >>= \path ->
+      liftIO $
+        writeSignedJSON path privateKeysRoot $
+          Root
+            { rootVersion = FileVersion 1
+            , rootExpires = FileExpires expiryTime
+            , rootKeys =
+                fromKeys $
+                  concat
+                    [ privateKeysRoot
+                    , privateKeysTarget
+                    , privateKeysSnapshot
+                    , privateKeysTimestamp
+                    , privateKeysMirrors
+                    ]
+            , rootRoles =
+                RootRoles
+                  { rootRolesRoot =
+                      RoleSpec
+                        { roleSpecKeys = map somePublicKey privateKeysRoot
+                        , roleSpecThreshold = KeyThreshold 2
+                        }
+                  , rootRolesSnapshot =
+                      RoleSpec
+                        { roleSpecKeys = map somePublicKey privateKeysSnapshot
+                        , roleSpecThreshold = KeyThreshold 1
+                        }
+                  , rootRolesTargets =
+                      RoleSpec
+                        { roleSpecKeys = map somePublicKey privateKeysTarget
+                        , roleSpecThreshold = KeyThreshold 1
+                        }
+                  , rootRolesTimestamp =
+                      RoleSpec
+                        { roleSpecKeys = map somePublicKey privateKeysTimestamp
+                        , roleSpecThreshold = KeyThreshold 1
+                        }
+                  , rootRolesMirrors =
+                      RoleSpec
+                        { roleSpecKeys = map somePublicKey privateKeysMirrors
+                        , roleSpecThreshold = KeyThreshold 1
+                        }
+                  }
+            }
 
-    rootInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutRoot)
-    mirrorsInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutMirrors)
-    tarInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutIndexTar)
-    tarGzInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutIndexTarGz)
+    rootInfo <- anchorRepoPath' repoLayoutRoot >>= computeFileInfoSimple
+    mirrorsInfo <- anchorRepoPath' repoLayoutMirrors >>= computeFileInfoSimple
+    tarInfo <- anchorRepoPath' repoLayoutIndexTar >>= computeFileInfoSimple
+    tarGzInfo <- anchorRepoPath' repoLayoutIndexTarGz >>= computeFileInfoSimple
 
-    liftIO $
-      writeSignedJSON outputDirRoot repoLayoutSnapshot privateKeysSnapshot $
-        Snapshot
-          { snapshotVersion = FileVersion 1
-          , snapshotExpires = FileExpires expiryTime
-          , snapshotInfoRoot = rootInfo
-          , snapshotInfoMirrors = mirrorsInfo
-          , snapshotInfoTar = Just tarInfo
-          , snapshotInfoTarGz = tarGzInfo
-          }
+    anchorRepoPath' repoLayoutSnapshot >>= \path ->
+      liftIO $
+        writeSignedJSON path privateKeysSnapshot $
+          Snapshot
+            { snapshotVersion = FileVersion 1
+            , snapshotExpires = FileExpires expiryTime
+            , snapshotInfoRoot = rootInfo
+            , snapshotInfoMirrors = mirrorsInfo
+            , snapshotInfoTar = Just tarInfo
+            , snapshotInfoTarGz = tarGzInfo
+            }
 
-    snapshotInfo <- computeFileInfoSimple' (anchorPath outputDirRoot repoLayoutSnapshot)
-    liftIO $
-      writeSignedJSON outputDirRoot repoLayoutTimestamp privateKeysTimestamp $
-        Timestamp
-          { timestampVersion = FileVersion 1
-          , timestampExpires = FileExpires expiryTime
-          , timestampInfoSnapshot = snapshotInfo
-          }
+    snapshotInfo <- anchorRepoPath' repoLayoutSnapshot >>= computeFileInfoSimple
 
-makeMetadataFile :: FilePath -> [PreparedPackageVersion] -> Action ()
-makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
-  createDirectoryIfMissing True (outputDir </> "foliage")
-  Aeson.encodeFile
-    (outputDir </> "foliage" </> "packages.json")
-    (map encodePackageVersion packageVersions)
+    anchorRepoPath' repoLayoutTimestamp >>= \path ->
+      liftIO $
+        writeSignedJSON path privateKeysTimestamp $
+          Timestamp
+            { timestampVersion = FileVersion 1
+            , timestampExpires = FileExpires expiryTime
+            , timestampInfoSnapshot = snapshotInfo
+            }
+
+makeMetadataFile :: [PreparedPackageVersion] -> Action ()
+makeMetadataFile packageVersions = do
+  outputDir <- askOracle OutputDir
+  traced "writing metadata" $ do
+    createDirectoryIfMissing True (outputDir </> "foliage")
+    Aeson.encodeFile
+      (outputDir </> "foliage" </> "packages.json")
+      (map encodePackageVersion packageVersions)
  where
   encodePackageVersion
     PreparedPackageVersion
@@ -272,7 +283,7 @@ prepareIndexPkgCabal pkgId timestamp filePath = do
 
 prepareIndexPkgMetadata :: Maybe UTCTime -> PreparedPackageVersion -> Action Targets
 prepareIndexPkgMetadata expiryTime PreparedPackageVersion{pkgId, sdistPath} = do
-  targetFileInfo <- liftIO $ computeFileInfoSimple sdistPath
+  targetFileInfo <- liftIO $ computeFileInfoSimple' sdistPath
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
   return
     Targets
@@ -355,8 +366,4 @@ mkTarEntry contents indexFile timestamp =
     Left e -> error $ "Invalid tar path " ++ indexPath ++ "(" ++ e ++ ")"
     Right tp -> tp
 
-  indexPath = toFilePath $ castRoot $ indexFileToPath hackageIndexLayout indexFile
-
-anchorPath :: Path Absolute -> (RepoLayout -> RepoPath) -> FilePath
-anchorPath outputDirRoot p =
-  toFilePath $ anchorRepoPathLocally outputDirRoot $ p hackageRepoLayout
+  indexPath = Sec.toFilePath $ Sec.castRoot $ indexFileToPath hackageIndexLayout indexFile

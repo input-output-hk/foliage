@@ -30,6 +30,7 @@ executable foliage
         Foliage.HackageSecurity
         Foliage.Meta
         Foliage.Meta.Aeson
+        Foliage.Oracles
         Foliage.Options
         Foliage.Pages
         Foliage.PreparePackageVersion
