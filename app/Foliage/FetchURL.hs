@@ -11,49 +11,38 @@ where
 import Control.Monad
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
-import Data.Char (isAlpha)
-import Data.List (dropWhileEnd)
 import Data.Maybe (fromMaybe)
 import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
-import Foliage.Oracles
 import GHC.Generics (Generic)
-import Network.URI (URI (..), URIAuth (..), pathSegments)
+import Network.URI (URI (..))
 import Network.URI.Orphans ()
 import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode (..))
 
-newtype FetchURL = FetchURL URI
-  deriving (Eq)
-  deriving (Hashable, Binary, NFData) via URI
+data FetchURL = FetchURL URI FilePath
+  deriving (Generic, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
 
 instance Show FetchURL where
-  show (FetchURL uri) = "fetchURL " ++ show uri
+  show (FetchURL uri _path) = "fetchURL " ++ show uri
 
-type instance RuleResult FetchURL = FilePath
+type instance RuleResult FetchURL = ()
 
-fetchURL :: URI -> Action FilePath
-fetchURL = apply1 . FetchURL
+fetchURL :: URI -> FilePath -> Action ()
+fetchURL uri path = apply1 (FetchURL uri path)
 
 addFetchURLRule :: Rules ()
 addFetchURLRule = addBuiltinRule noLint noIdentity run
  where
-  run :: BuiltinRun FetchURL FilePath
-  run (FetchURL uri) old _mode = do
+  run (FetchURL uri path) old _mode = do
     unless (uriQuery uri == "") $
       error ("Query elements in URI are not supported: " <> show uri)
 
     unless (uriFragment uri == "") $
       error ("Fragments in URI are not supported: " <> show uri)
-
-    let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
-
-    let host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
-
-    cacheDir <- askOracle CacheDir
-    let path = cacheDir </> joinPath (scheme : host : pathSegments uri)
 
     -- parse etag from store
     let oldETag = fromMaybe BS.empty old
@@ -65,7 +54,7 @@ addFetchURLRule = addBuiltinRule noLint noIdentity run
         actionRetry 5 $ runCurl uri path etagFile
 
     let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
-    return $ RunResult{runChanged = changed, runStore = newETag, runValue = path}
+    return $ RunResult{runChanged = changed, runStore = newETag, runValue = ()}
 
 runCurl :: URI -> String -> String -> Action ETag
 runCurl uri path etagFile = do

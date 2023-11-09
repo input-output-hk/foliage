@@ -7,7 +7,9 @@ module Foliage.PrepareSource where
 
 import Control.Monad (when)
 import Data.ByteString qualified as BS
+import Data.Char (isAlpha)
 import Data.Foldable (for_)
+import Data.List (dropWhileEnd)
 import Development.Shake
 import Development.Shake.Classes
 import Development.Shake.Rule
@@ -20,9 +22,9 @@ import Foliage.Oracles (CacheDir (..), InputDir (..))
 import Foliage.UpdateCabalFile (rewritePackageVersion)
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
-import Network.URI (URI (..))
+import Network.URI (URI (..), URIAuth (..), pathSegments)
 import System.Directory qualified as IO
-import System.FilePath ((<.>), (</>))
+import System.FilePath (joinPath, (<.>), (</>))
 
 data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionSpec
   deriving (Eq, Generic)
@@ -70,10 +72,13 @@ addPrepareSourceRule = addBuiltinRule noLint noIdentity run
             tarballPath <- liftIO $ IO.makeAbsolute uriPath
             extractFromTarball tarballPath mSubdir srcDir
           URISource uri mSubdir -> do
-            tarballPath <- fetchURL uri
+            tarballPath <- cachePathForURL uri
+            fetchURL uri tarballPath
             extractFromTarball tarballPath mSubdir srcDir
           GitHubSource repo rev mSubdir -> do
-            tarballPath <- fetchURL (githubRepoTarballUrl repo rev)
+            let uri = githubRepoTarballUrl repo rev
+            tarballPath <- cachePathForURL uri
+            fetchURL uri tarballPath
             extractFromTarball tarballPath mSubdir srcDir
 
         inputDir <- askOracle InputDir
@@ -134,3 +139,11 @@ addPrepareSourceRule = addBuiltinRule noLint noIdentity run
         , -- DEST
           outDir
         ]
+
+cachePathForURL :: URI -> Action FilePath
+cachePathForURL uri = do
+  let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
+  let host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
+  cacheDir <- askOracle CacheDir
+  let path = cacheDir </> joinPath (scheme : host : pathSegments uri)
+  return path
