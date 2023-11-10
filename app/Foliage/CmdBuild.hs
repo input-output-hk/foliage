@@ -1,6 +1,8 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Foliage.CmdBuild (cmdBuild) where
 
@@ -32,13 +34,18 @@ import Foliage.Pages
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
 
 -- import Foliage.PrepareSdist (addPrepareSdistRule)
+
+import Development.Shake.Classes
 import Foliage.Time qualified as Time
+import GHC.Generics (Generic)
 import Hackage.Security.Util.Path qualified as Sec
 import System.Directory (createDirectoryIfMissing)
 import System.Directory qualified as IO
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
+  let inputDir = buildOptsInputDir buildOptions
+  let outputDir = buildOptsOutputDir buildOptions
   shake opts $ do
     _ <- addOutputDirOracle (buildOptsOutputDir buildOptions)
     _ <- addInputDirOracle (buildOptsInputDir buildOptions)
@@ -56,6 +63,14 @@ cmdBuild buildOptions = do
       _otherwise -> pure ()
     _ <- addSigninigKeysOracle (buildOptsSignOpts buildOptions)
 
+    tufRules outputDir
+
+    outputDir </> "01-index.tar" %> \path ->
+      askOracle TarContents >>= liftIO . BL.writeFile path
+
+    outputDir </> "01-index.tar.gz" %> \path ->
+      askOracle TarContents >>= liftIO . BL.writeFile path . GZip.compress
+
     addFetchURLRule
     -- addPrepareSdistRule
     phony "buildAction" (buildAction buildOptions)
@@ -72,6 +87,106 @@ cmdBuild buildOptions = do
       , shakeThreads = buildOptsNumThreads buildOptions
       , shakeVerbosity = buildOptsVerbosity buildOptions
       }
+
+tufRules :: FilePath -> Rules ()
+tufRules outputDir = do
+  outputDir </> "mirrors.json" %> \path -> do
+    expiryTime <- askOracle ExpiryTime
+    privateKeysMirrors <- readKeys "mirrors"
+    liftIO $
+      writeSignedJSON (Sec.Path path :: Sec.Path Sec.Relative) privateKeysMirrors $
+        Mirrors
+          { mirrorsVersion = FileVersion 1
+          , mirrorsExpires = FileExpires expiryTime
+          , mirrorsMirrors = []
+          }
+
+  outputDir </> "root.json" %> \path -> do
+    expiryTime <- askOracle ExpiryTime
+
+    privateKeysRoot <- readKeys "root"
+    privateKeysTarget <- readKeys "target"
+    privateKeysSnapshot <- readKeys "snapshot"
+    privateKeysTimestamp <- readKeys "timestamp"
+    privateKeysMirrors <- readKeys "mirrors"
+
+    liftIO $
+      writeSignedJSON (Sec.Path path :: Sec.Path Sec.Relative) privateKeysRoot $
+        Root
+          { rootVersion = FileVersion 1
+          , rootExpires = FileExpires expiryTime
+          , rootKeys =
+              fromKeys $
+                concat
+                  [ privateKeysRoot
+                  , privateKeysTarget
+                  , privateKeysSnapshot
+                  , privateKeysTimestamp
+                  , privateKeysMirrors
+                  ]
+          , rootRoles =
+              RootRoles
+                { rootRolesRoot =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysRoot
+                      , roleSpecThreshold = KeyThreshold 2
+                      }
+                , rootRolesSnapshot =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysSnapshot
+                      , roleSpecThreshold = KeyThreshold 1
+                      }
+                , rootRolesTargets =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysTarget
+                      , roleSpecThreshold = KeyThreshold 1
+                      }
+                , rootRolesTimestamp =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysTimestamp
+                      , roleSpecThreshold = KeyThreshold 1
+                      }
+                , rootRolesMirrors =
+                    RoleSpec
+                      { roleSpecKeys = map somePublicKey privateKeysMirrors
+                      , roleSpecThreshold = KeyThreshold 1
+                      }
+                }
+          }
+
+  "snapshot.json" %> \path -> do
+    expiryTime <- askOracle ExpiryTime
+    privateKeysSnapshot <- readKeys "snapshot"
+
+    rootInfo <- anchorRepoPath' repoLayoutRoot >>= computeFileInfoSimple
+    mirrorsInfo <- anchorRepoPath' repoLayoutMirrors >>= computeFileInfoSimple
+    tarInfo <- anchorRepoPath' repoLayoutIndexTar >>= computeFileInfoSimple
+    tarGzInfo <- anchorRepoPath' repoLayoutIndexTarGz >>= computeFileInfoSimple
+
+    liftIO $
+      writeSignedJSON (Sec.Path path :: Sec.Path Sec.Relative) privateKeysSnapshot $
+        Snapshot
+          { snapshotVersion = FileVersion 1
+          , snapshotExpires = FileExpires expiryTime
+          , snapshotInfoRoot = rootInfo
+          , snapshotInfoMirrors = mirrorsInfo
+          , snapshotInfoTar = Just tarInfo
+          , snapshotInfoTarGz = tarGzInfo
+          }
+
+  "timestamp.json" %> \path -> do
+    expiryTime <- askOracle ExpiryTime
+    privateKeysTimestamp <- readKeys "timestamp"
+
+    snapshotInfo <- anchorRepoPath' repoLayoutSnapshot >>= computeFileInfoSimple
+
+    liftIO $
+      writeSignedJSON (Sec.Path path :: Sec.Path Sec.Relative) privateKeysTimestamp $
+        Timestamp
+          { timestampVersion = FileVersion 1
+          , timestampExpires = FileExpires expiryTime
+          , timestampInfoSnapshot = snapshotInfo
+          }
 
 buildAction :: BuildOptions -> Action ()
 buildAction
@@ -131,106 +246,7 @@ buildAction
     -- WARN: See note above, the sorting here has to be stable
     let tarContents = Tar.write $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries ++ extraEntries)
 
-    anchorRepoPath' repoLayoutIndexTar >>= \indexTarPath ->
-      traced ("Writing " ++ Sec.toFilePath indexTarPath) $
-        BL.writeFile (Sec.toFilePath indexTarPath) tarContents
-
-    anchorRepoPath' repoLayoutIndexTarGz >>= \indexTarGzPath ->
-      traced ("Writing " ++ Sec.toFilePath indexTarGzPath) $
-        BL.writeFile (Sec.toFilePath indexTarGzPath) $
-          GZip.compress tarContents
-
-    privateKeysRoot <- readKeys "root"
-    privateKeysTarget <- readKeys "target"
-    privateKeysSnapshot <- readKeys "snapshot"
-    privateKeysTimestamp <- readKeys "timestamp"
-    privateKeysMirrors <- readKeys "mirrors"
-
-    anchorRepoPath' repoLayoutMirrors >>= \path -> do
-      expiryTime <- askOracle ExpiryTime
-      liftIO $
-        writeSignedJSON path privateKeysMirrors $
-          Mirrors
-            { mirrorsVersion = FileVersion 1
-            , mirrorsExpires = FileExpires expiryTime
-            , mirrorsMirrors = []
-            }
-
-    anchorRepoPath' repoLayoutRoot >>= \path -> do
-      expiryTime <- askOracle ExpiryTime
-      liftIO $
-        writeSignedJSON path privateKeysRoot $
-          Root
-            { rootVersion = FileVersion 1
-            , rootExpires = FileExpires expiryTime
-            , rootKeys =
-                fromKeys $
-                  concat
-                    [ privateKeysRoot
-                    , privateKeysTarget
-                    , privateKeysSnapshot
-                    , privateKeysTimestamp
-                    , privateKeysMirrors
-                    ]
-            , rootRoles =
-                RootRoles
-                  { rootRolesRoot =
-                      RoleSpec
-                        { roleSpecKeys = map somePublicKey privateKeysRoot
-                        , roleSpecThreshold = KeyThreshold 2
-                        }
-                  , rootRolesSnapshot =
-                      RoleSpec
-                        { roleSpecKeys = map somePublicKey privateKeysSnapshot
-                        , roleSpecThreshold = KeyThreshold 1
-                        }
-                  , rootRolesTargets =
-                      RoleSpec
-                        { roleSpecKeys = map somePublicKey privateKeysTarget
-                        , roleSpecThreshold = KeyThreshold 1
-                        }
-                  , rootRolesTimestamp =
-                      RoleSpec
-                        { roleSpecKeys = map somePublicKey privateKeysTimestamp
-                        , roleSpecThreshold = KeyThreshold 1
-                        }
-                  , rootRolesMirrors =
-                      RoleSpec
-                        { roleSpecKeys = map somePublicKey privateKeysMirrors
-                        , roleSpecThreshold = KeyThreshold 1
-                        }
-                  }
-            }
-
-    rootInfo <- anchorRepoPath' repoLayoutRoot >>= computeFileInfoSimple
-    mirrorsInfo <- anchorRepoPath' repoLayoutMirrors >>= computeFileInfoSimple
-    tarInfo <- anchorRepoPath' repoLayoutIndexTar >>= computeFileInfoSimple
-    tarGzInfo <- anchorRepoPath' repoLayoutIndexTarGz >>= computeFileInfoSimple
-
-    anchorRepoPath' repoLayoutSnapshot >>= \path -> do
-      expiryTime <- askOracle ExpiryTime
-      liftIO $
-        writeSignedJSON path privateKeysSnapshot $
-          Snapshot
-            { snapshotVersion = FileVersion 1
-            , snapshotExpires = FileExpires expiryTime
-            , snapshotInfoRoot = rootInfo
-            , snapshotInfoMirrors = mirrorsInfo
-            , snapshotInfoTar = Just tarInfo
-            , snapshotInfoTarGz = tarGzInfo
-            }
-
-    snapshotInfo <- anchorRepoPath' repoLayoutSnapshot >>= computeFileInfoSimple
-
-    anchorRepoPath' repoLayoutTimestamp >>= \path -> do
-      expiryTime <- askOracle ExpiryTime
-      liftIO $
-        writeSignedJSON path privateKeysTimestamp $
-          Timestamp
-            { timestampVersion = FileVersion 1
-            , timestampExpires = FileExpires expiryTime
-            , timestampInfoSnapshot = snapshotInfo
-            }
+    _
 
 makeMetadataFile :: [PreparedPackageVersion] -> Action ()
 makeMetadataFile packageVersions = do
@@ -365,3 +381,9 @@ mkTarEntry contents indexFile timestamp =
     Right tp -> tp
 
   indexPath = Sec.toFilePath $ Sec.castRoot $ indexFileToPath hackageIndexLayout indexFile
+
+data TarContents = TarContents
+  deriving stock (Show, Generic, Typeable, Eq)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult TarContents = BL.ByteString
