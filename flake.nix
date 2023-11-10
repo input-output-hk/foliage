@@ -33,11 +33,14 @@
         project = pkgs.haskell-nix.cabalProject' {
           src = ./.;
           compiler-nix-name = "ghc94";
-          shell.tools = {
-            cabal = "latest";
-            hlint = "latest";
-            haskell-language-server = "latest";
-            fourmolu = "0.14.0.0";
+          shell = {
+            buildInputs = [ pkgs.fsatrace ];
+            tools = {
+              cabal = "latest";
+              hlint = "latest";
+              haskell-language-server = "latest";
+              fourmolu = "0.14.0.0";
+            };
           };
         };
 
