@@ -33,7 +33,14 @@ instance Show FetchURL where
 type instance RuleResult FetchURL = ()
 
 fetchURL :: URI -> FilePath -> Action ()
-fetchURL uri path = apply1 (FetchURL uri path)
+fetchURL uri path = do
+  produces [path]
+  liftIO $ do
+    createDirectoryIfMissing True (takeDirectory path)
+  withTempFile $ \etagFile ->
+    void $ actionRetry 5 $ runCurl uri path etagFile
+
+-- apply1 (FetchURL uri path)
 
 addFetchURLRule :: Rules ()
 addFetchURLRule = addBuiltinRule noLint noIdentity run

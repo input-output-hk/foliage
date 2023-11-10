@@ -30,7 +30,8 @@ import Foliage.Options
 import Foliage.Oracles
 import Foliage.Pages
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..), preparePackageVersion)
-import Foliage.PrepareSdist (addPrepareSdistRule)
+
+-- import Foliage.PrepareSdist (addPrepareSdistRule)
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path qualified as Sec
 import System.Directory (createDirectoryIfMissing)
@@ -56,7 +57,7 @@ cmdBuild buildOptions = do
     _ <- addSigninigKeysOracle (buildOptsSignOpts buildOptions)
 
     addFetchURLRule
-    addPrepareSdistRule
+    -- addPrepareSdistRule
     phony "buildAction" (buildAction buildOptions)
     want ["buildAction"]
  where
@@ -64,9 +65,12 @@ cmdBuild buildOptions = do
   opts =
     shakeOptions
       { shakeFiles = cacheDir
-      , shakeVerbosity = buildOptsVerbosity buildOptions
-      , shakeThreads = buildOptsNumThreads buildOptions
+      , shakeChange = ChangeModtimeAndDigest
+      , shakeColor = True
       , shakeLint = Just LintBasic
+      , shakeReport = ["report.html", "report.json"]
+      , shakeThreads = buildOptsNumThreads buildOptions
+      , shakeVerbosity = buildOptsVerbosity buildOptions
       }
 
 buildAction :: BuildOptions -> Action ()
@@ -257,8 +261,6 @@ getPackageVersions :: Action [PreparedPackageVersion]
 getPackageVersions = do
   inputDir <- askOracle InputDir
   metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
-  -- As InputPaths
-  let metaFiles' = map (Sec.rootPath @InputRoot . Sec.fromUnrootedFilePath) metaFiles
 
   when (null metaFiles) $ do
     error $
@@ -267,6 +269,8 @@ getPackageVersions = do
         , "Make sure you are passing the right input directory. The default input directory is _sources"
         ]
 
+  -- Only pass the directory and as a InputPath
+  let metaFiles' = map (Sec.Path @InputRoot . takeDirectory) metaFiles
   forP metaFiles' preparePackageVersion
 
 prepareIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry

@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -21,13 +22,14 @@ module Foliage.PreparePackageVersion (
 )
 where
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.IO.Class (MonadIO (..))
+import Data.Foldable (for_)
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Ord (Down (..))
-import Development.Shake (Action, askOracle, need, produces)
+import Development.Shake (Action, CmdOption (..), askOracle, cmd_, getDirectoryFiles, need, produces, putInfo)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
@@ -36,13 +38,18 @@ import Distribution.Types.PackageDescription (PackageDescription (package))
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Distribution.Verbosity qualified as Verbosity
+import Foliage.FetchURL (fetchURL)
 import Foliage.HackageSecurity (RepoLayout (repoLayoutPkgTarGz))
-import Foliage.Meta (DeprecationSpec (..), PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber, readPackageVersionSpec)
+import Foliage.Meta (DeprecationSpec (..), PackageVersionSource (..), PackageVersionSpec (..), RevisionSpec (..), UTCTime, latestRevisionNumber, readPackageVersionSpec)
 import Foliage.Oracles
 import Foliage.PrepareSdist (prepareSdist)
-import Foliage.PrepareSource (prepareSource)
+import Foliage.PrepareSource (cachePathForURL, extractFromTarball)
+import Foliage.UpdateCabalFile (rewritePackageVersion)
+import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Pretty qualified as Sec
+import Network.URI (URI (..))
+import System.Directory qualified as IO
 import System.FilePath (takeDirectory, (<.>), (</>))
 
 -- TODO: can we ensure that `pkgVersionDeprecationChanges` and `cabalFileRevisions` are
@@ -89,84 +96,64 @@ data PreparedPackageVersion = PreparedPackageVersion
 -- a kitchen sink.
 
 preparePackageVersion :: InputPath -> Action PreparedPackageVersion
-preparePackageVersion metaFile = do
+preparePackageVersion metaDir = do
+  let metaFile = metaDir Sec.</> Sec.fragment "meta.toml"
+
   -- TODO: revisit all this
-  let (name, version) = case Sec.splitFragments (Sec.unrootPath metaFile) of
-        [n, v, _] -> (n, v)
-        _else -> error $ "internal error: I should not be looking at " ++ Sec.pretty metaFile
+  let (name, version) = case Sec.splitFragments (Sec.unrootPath metaDir) of
+        [n, v] -> (n, v)
+        _else -> error $ "internal error: I should not be looking at " ++ Sec.pretty metaDir
 
   let pkgName = fromMaybe (error $ "invalid package name: " ++ name) $ simpleParsec name
   let pkgVersion = fromMaybe (error $ "invalid package version: " ++ version) $ simpleParsec version
   let pkgId = PackageIdentifier pkgName pkgVersion
 
   pkgSpec <- do
-    meta@PackageVersionSpec{..} <-
+    meta <-
       anchorInputPath metaFile >>= \path -> do
         need [Sec.toFilePath path]
         liftIO $ readPackageVersionSpec $ Sec.toFilePath path
 
-    case (NE.nonEmpty packageVersionRevisions, packageVersionTimestamp) of
-      (Just _someRevisions, Nothing) ->
-        error $
-          unlines
-            [ Sec.pretty metaFile <> " has cabal file revisions but the package has no timestamp."
-            , "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
-            ]
-      (Just (NE.sort -> someRevisions), Just ts)
-        -- WARN: this should really be a <=
-        | revisionTimestamp (NE.head someRevisions) < ts ->
-            error $
-              unlines
-                [ Sec.pretty metaFile <> " has a revision with timestamp earlier than the package itself."
-                , "Adjust the timestamps so that all revisions come after the package publication."
-                ]
-        | not (null $ duplicates (revisionTimestamp <$> someRevisions)) ->
-            error $
-              unlines
-                [ Sec.pretty metaFile <> " has two revisions entries with the same timestamp."
-                , "Adjust the timestamps so that all the revisions happen at a different time."
-                ]
-      _otherwise ->
-        return ()
-
-    case (NE.nonEmpty packageVersionDeprecations, packageVersionTimestamp) of
-      (Just _someDeprecations, Nothing) ->
-        error $
-          unlines
-            [ Sec.pretty metaFile <> " has deprecations but the package has no timestamp."
-            , "This combination doesn't make sense. Either add a timestamp on the original package or remove the deprecation."
-            ]
-      (Just (NE.sort -> someDeprecations), Just ts)
-        | deprecationTimestamp (NE.head someDeprecations) <= ts ->
-            error $
-              unlines
-                [ Sec.pretty metaFile <> " has a deprecation entry with timestamp earlier (or equal) than the package itself."
-                , "Adjust the timestamps so that all the (un-)deprecations come after the package publication."
-                ]
-        | not (deprecationIsDeprecated (NE.head someDeprecations)) ->
-            error $
-              "The first deprecation entry in" <> Sec.pretty metaFile <> " cannot be an un-deprecation"
-        | not (null $ duplicates (deprecationTimestamp <$> someDeprecations)) ->
-            error $
-              unlines
-                [ Sec.pretty metaFile <> " has two deprecation entries with the same timestamp."
-                , "Adjust the timestamps so that all the (un-)deprecations happen at a different time."
-                ]
-        | not (null $ doubleDeprecations someDeprecations) ->
-            error $
-              unlines
-                [ Sec.pretty metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations."
-                , "Make sure deprecations and un-deprecations alternate in time."
-                ]
-      _otherwise ->
-        return ()
+    validateMeta metaFile meta
 
     return meta
 
   cacheDir <- askOracle CacheDir
   let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
 
-  prepareSource srcDir pkgId pkgSpec
+  --
+  -- FROM prepareSource
+  --
+
+  case packageVersionSource pkgSpec of
+    URISource (URI{uriScheme, uriPath}) mSubdir | uriScheme == "file:" -> do
+      tarballPath <- liftIO $ IO.makeAbsolute uriPath
+      extractFromTarball tarballPath mSubdir srcDir
+    URISource uri mSubdir -> do
+      tarballPath <- cachePathForURL uri
+      fetchURL uri tarballPath
+      extractFromTarball tarballPath mSubdir srcDir
+    GitHubSource repo rev mSubdir -> do
+      let uri = githubRepoTarballUrl repo rev
+      tarballPath <- cachePathForURL uri
+      fetchURL uri tarballPath
+      extractFromTarball tarballPath mSubdir srcDir
+
+  anchorInputPath metaDir >>= \path -> do
+    patchfiles <-
+      getDirectoryFiles (Sec.toFilePath path) ["patches/*.patch"]
+    for_ patchfiles $ \patchfile -> do
+      let patch = Sec.toFilePath path </> patchfile
+      cmd_ Shell (Cwd srcDir) (FileStdin patch) "patch -p1"
+
+  when (packageVersionForce pkgSpec) $ do
+    let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
+    putInfo $ "Updating version in cabal file" ++ cabalFilePath
+    liftIO $ rewritePackageVersion cabalFilePath pkgVersion
+
+  --
+  -- END prepareSource
+  --
 
   -- TODO: revisit if InputPath is worth it
   metaFile' <- Sec.toFilePath <$> anchorInputPath metaFile
@@ -185,7 +172,7 @@ preparePackageVersion metaFile = do
           cabalFileRevisionPath
           (latestRevisionNumber pkgSpec)
 
-  need [cabalFilePath]
+  -- need [cabalFilePath]
   pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
 
   let sdistPkgId = package (packageDescription pkgDesc)
@@ -238,3 +225,62 @@ duplicates = mapMaybe (listToMaybe . NE.tail) . NE.group
 
 doubleDeprecations :: NE.NonEmpty DeprecationSpec -> [NE.NonEmpty DeprecationSpec]
 doubleDeprecations = filter ((> 1) . length) . NE.groupWith deprecationIsDeprecated
+
+-- | TEMP
+validateMeta :: (MonadFail m) => InputPath -> PackageVersionSpec -> m ()
+validateMeta metaFile PackageVersionSpec{..} = do
+  case (NE.nonEmpty packageVersionRevisions, packageVersionTimestamp) of
+    (Just _someRevisions, Nothing) ->
+      fail $
+        unlines
+          [ Sec.pretty metaFile <> " has cabal file revisions but the package has no timestamp."
+          , "This combination doesn't make sense. Either add a timestamp on the original package or remove the revisions."
+          ]
+    (Just (NE.sort -> someRevisions), Just ts)
+      -- WARN: this should really be a <=
+      | revisionTimestamp (NE.head someRevisions) < ts ->
+          fail $
+            unlines
+              [ Sec.pretty metaFile <> " has a revision with timestamp earlier than the package itself."
+              , "Adjust the timestamps so that all revisions come after the package publication."
+              ]
+      | not (null $ duplicates (revisionTimestamp <$> someRevisions)) ->
+          fail $
+            unlines
+              [ Sec.pretty metaFile <> " has two revisions entries with the same timestamp."
+              , "Adjust the timestamps so that all the revisions happen at a different time."
+              ]
+    _otherwise ->
+      return ()
+
+  case (NE.nonEmpty packageVersionDeprecations, packageVersionTimestamp) of
+    (Just _someDeprecations, Nothing) ->
+      fail $
+        unlines
+          [ Sec.pretty metaFile <> " has deprecations but the package has no timestamp."
+          , "This combination doesn't make sense. Either add a timestamp on the original package or remove the deprecation."
+          ]
+    (Just (NE.sort -> someDeprecations), Just ts)
+      | deprecationTimestamp (NE.head someDeprecations) <= ts ->
+          fail $
+            unlines
+              [ Sec.pretty metaFile <> " has a deprecation entry with timestamp earlier (or equal) than the package itself."
+              , "Adjust the timestamps so that all the (un-)deprecations come after the package publication."
+              ]
+      | not (deprecationIsDeprecated (NE.head someDeprecations)) ->
+          fail $
+            "The first deprecation entry in" <> Sec.pretty metaFile <> " cannot be an un-deprecation"
+      | not (null $ duplicates (deprecationTimestamp <$> someDeprecations)) ->
+          fail $
+            unlines
+              [ Sec.pretty metaFile <> " has two deprecation entries with the same timestamp."
+              , "Adjust the timestamps so that all the (un-)deprecations happen at a different time."
+              ]
+      | not (null $ doubleDeprecations someDeprecations) ->
+          fail $
+            unlines
+              [ Sec.pretty metaFile <> " contains two consecutive deprecations or two consecutive un-deprecations."
+              , "Make sure deprecations and un-deprecations alternate in time."
+              ]
+    _otherwise ->
+      return ()
