@@ -172,7 +172,6 @@ preparePackageVersion metaDir = do
           cabalFileRevisionPath
           (latestRevisionNumber pkgSpec)
 
-  -- need [cabalFilePath]
   pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
 
   let sdistPkgId = package (packageDescription pkgDesc)
