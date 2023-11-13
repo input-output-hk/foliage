@@ -33,7 +33,6 @@ executable foliage
         Foliage.Oracles
         Foliage.Options
         Foliage.Pages
-        Foliage.PreparePackageVersion
         Foliage.PrepareSdist
         Foliage.Time
         Foliage.TUF

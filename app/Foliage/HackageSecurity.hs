@@ -37,11 +37,10 @@ readJSONSimple fp = do
 forceFileInfo :: FileInfo -> ()
 forceFileInfo (FileInfo a b) = a `seq` b `seq` ()
 
-computeFileInfoSimple :: Sec.Path Sec.Absolute -> Action FileInfo
-computeFileInfoSimple path = do
-  need [Sec.toFilePath path]
-  fi <- liftIO $ computeFileInfo path
-  return $! forceFileInfo fi `seq` fi
+computeFileInfoSimple :: Sec.Path Sec.Relative -> Action FileInfo
+computeFileInfoSimple (Sec.Path fp) = do
+  need [fp]
+  liftIO $ computeFileInfoSimple' fp
 
 computeFileInfoSimple' :: FilePath -> IO FileInfo
 computeFileInfoSimple' path = do

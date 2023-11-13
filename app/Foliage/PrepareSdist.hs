@@ -8,6 +8,7 @@ module Foliage.PrepareSdist (
 )
 where
 
+import Control.Monad (when)
 import Data.Char (isAlpha)
 import Data.Foldable (for_)
 import Data.List (dropWhileEnd)
@@ -15,7 +16,6 @@ import Development.Shake
 import Development.Shake.FilePath
 import Distribution.Compat.Lens (set)
 import Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
-import Distribution.Pretty (prettyShow)
 import Distribution.Simple
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.Lens qualified as L
@@ -27,18 +27,16 @@ import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import Network.URI (URI (..), URIAuth (..))
 import System.Directory qualified as IO
 
-prepareSource :: FilePath -> PackageIdentifier -> PackageVersionSpec -> Action L.GenericPackageDescription
-prepareSource metaFile pkgId pkgSpec = do
+prepareSource :: FilePath -> PackageIdentifier -> PackageVersionSpec -> FilePath -> Action ()
+prepareSource metaFile pkgId pkgSpec cacheDir = do
   let PackageIdentifier{pkgName, pkgVersion} = pkgId
       PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgSpec
 
   cacheRoot <- askOracle CacheDir
-  let cacheDir = cacheRoot </> unPackageName pkgName </> prettyShow pkgVersion
-
   let cachePathForURL uri =
         let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
             host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
-         in cacheRoot </> scheme </> host </> uriPath uri
+         in cacheRoot </> scheme </> host <//> uriPath uri
 
   case packageVersionSource of
     URISource (URI{uriScheme, uriPath}) mSubdir | uriScheme == "file:" -> do
@@ -63,14 +61,11 @@ prepareSource metaFile pkgId pkgSpec = do
     cmd_ Shell (Cwd cacheDir) (FileStdin patch) "patch -p1"
 
   let cabalFilePath = cacheDir </> unPackageName pkgName <.> "cabal"
-  pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.normal cabalFilePath
-  if packageVersionForce
-    then do
-      let pkgDesc' = set (L.packageDescription . L.package . L.pkgVersion) pkgVersion pkgDesc
-      putInfo $ "Updating version in cabal file" ++ cabalFilePath
-      liftIO $ writeGenericPackageDescription cabalFilePath pkgDesc'
-      return pkgDesc'
-    else return pkgDesc
+  when packageVersionForce $ do
+    pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.normal cabalFilePath
+    let pkgDesc' = set (L.packageDescription . L.package . L.pkgVersion) pkgVersion pkgDesc
+    putInfo $ "Updating version in cabal file" ++ cabalFilePath
+    liftIO $ writeGenericPackageDescription cabalFilePath pkgDesc'
 
 -- liftIO $ packageDirToSdist Verbosity.normal pkgDesc (takeDirectory cabalFilePath) >>= BSL.writeFile path
 

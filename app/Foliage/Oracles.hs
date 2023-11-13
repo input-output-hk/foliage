@@ -51,13 +51,6 @@ anchorInputPath ip = do
   inputDirRoot <- liftIO $ Sec.makeAbsolute (Sec.fromFilePath inputDir)
   return $ inputDirRoot Sec.</> Sec.unrootPath ip
 
-data CacheRoot
-
-type CachePath = Sec.Path CacheRoot
-
-instance Sec.Pretty CachePath where
-  pretty (Sec.Path fp) = "<cache>/" ++ fp
-
 data CacheDir = CacheDir
   deriving stock (Show, Generic, Typeable, Eq)
   deriving anyclass (Hashable, Binary, NFData)
@@ -68,32 +61,24 @@ addCacheDirOracle :: FilePath -> Rules (Oracle CacheDir)
 addCacheDirOracle inputDir =
   addOracle $ \CacheDir -> return inputDir
 
-anchorCachePath :: CachePath -> Action (Sec.Path Sec.Absolute)
-anchorCachePath ip = do
-  cacheDir <- askOracle CacheDir
-  cacheDirRoot <- liftIO $ Sec.makeAbsolute (Sec.fromFilePath cacheDir)
-  return $ cacheDirRoot Sec.</> Sec.unrootPath ip
-
 data OutputDir = OutputDir
   deriving stock (Show, Generic, Typeable, Eq)
   deriving anyclass (Hashable, Binary, NFData)
 
 type instance RuleResult OutputDir = FilePath
 
-getOutputDir :: Action (Sec.Path Sec.Absolute)
+getOutputDir :: Action (Sec.Path Sec.Relative)
 getOutputDir = do
   outputDirRoot <- askOracle OutputDir
-  liftIO $ Sec.makeAbsolute (Sec.fromFilePath outputDirRoot)
+  return $ Sec.Path outputDirRoot
 
-anchorRepoPath :: RepoPath -> Action (Sec.Path Sec.Absolute)
+anchorRepoPath :: RepoPath -> Action (Sec.Path Sec.Relative)
 anchorRepoPath rp = do
   outputDir <- getOutputDir
   return $ anchorRepoPathLocally outputDir rp
 
-anchorRepoPath' :: (RepoLayout -> RepoPath) -> Action (Sec.Path Sec.Absolute)
-anchorRepoPath' p = do
-  outputDir <- getOutputDir
-  return $ anchorRepoPathLocally outputDir $ p hackageRepoLayout
+anchorRepoPath' :: (RepoLayout -> RepoPath) -> Action (Sec.Path Sec.Relative)
+anchorRepoPath' p = anchorRepoPath $ p hackageRepoLayout
 
 addOutputDirOracle :: FilePath -> Rules (Oracle OutputDir)
 addOutputDirOracle outputDir =
