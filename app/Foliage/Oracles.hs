@@ -23,6 +23,8 @@ import Hackage.Security.Util.Path qualified as Sec
 import Hackage.Security.Util.Pretty qualified as Sec
 import System.FilePath ((</>))
 
+-- FIXME: consider using configuration variables (usingConfig/getConfig) or shakeExtra
+
 -- | Just a shortcut to write types
 type Oracle q = q -> Action (RuleResult q)
 

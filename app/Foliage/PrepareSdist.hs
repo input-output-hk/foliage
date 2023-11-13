@@ -1,104 +1,120 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.PrepareSdist (
-  prepareSdist,
-  addPrepareSdistRule,
+  -- prepareSdist,
+  prepareSource,
 )
 where
 
-import Control.Monad (when)
-import Crypto.Hash.SHA256 qualified as SHA256
-import Data.Binary qualified as Binary
-import Data.ByteString qualified as BS
-import Data.ByteString.Base16
-import Data.ByteString.Lazy qualified as BSL
-import Data.Text qualified as T
+import Data.Char (isAlpha)
+import Data.Foldable (for_)
+import Data.List (dropWhileEnd)
 import Development.Shake
-import Development.Shake.Classes
 import Development.Shake.FilePath
-import Development.Shake.Rule
-import Distribution.Client.SrcDist (packageDirToSdist)
-import Distribution.PackageDescription (GenericPackageDescription)
+import Distribution.Compat.Lens (set)
+import Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
+import Distribution.Pretty (prettyShow)
+import Distribution.Simple
+import Distribution.Simple.PackageDescription (readGenericPackageDescription)
+import Distribution.Types.Lens qualified as L
 import Distribution.Verbosity qualified as Verbosity
-import Foliage.Meta ()
-import GHC.Generics (Generic)
+import Foliage.FetchURL (fetchURL)
+import Foliage.Meta (PackageVersionSource (..), PackageVersionSpec (..))
+import Foliage.Oracles (CacheDir (..))
+import Foliage.Utils.GitHub (githubRepoTarballUrl)
+import Network.URI (URI (..), URIAuth (..))
 import System.Directory qualified as IO
-import System.IO.Error (tryIOError)
 
-data PrepareSdistRule = PrepareSdistRule GenericPackageDescription FilePath FilePath
-  deriving (Show, Eq, Generic)
-  deriving anyclass (Binary, NFData)
+prepareSource :: FilePath -> PackageIdentifier -> PackageVersionSpec -> Action L.GenericPackageDescription
+prepareSource metaFile pkgId pkgSpec = do
+  let PackageIdentifier{pkgName, pkgVersion} = pkgId
+      PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgSpec
 
-instance Hashable PrepareSdistRule where
-  hashWithSalt s (PrepareSdistRule gpd srcDir dstPath) =
-    s `hashWithSalt` show gpd `hashWithSalt` srcDir `hashWithSalt` dstPath
+  cacheRoot <- askOracle CacheDir
+  let cacheDir = cacheRoot </> unPackageName pkgName </> prettyShow pkgVersion
 
-type instance RuleResult PrepareSdistRule = ()
+  let cachePathForURL uri =
+        let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
+            host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
+         in cacheRoot </> scheme </> host </> uriPath uri
 
-prepareSdist :: GenericPackageDescription -> FilePath -> FilePath -> Action ()
-prepareSdist gpd srcDir dstPath = apply1 $ PrepareSdistRule gpd srcDir dstPath
+  case packageVersionSource of
+    URISource (URI{uriScheme, uriPath}) mSubdir | uriScheme == "file:" -> do
+      tarballPath <- liftIO $ IO.makeAbsolute uriPath
+      extractFromTarball tarballPath mSubdir cacheDir
+    URISource uri mSubdir -> do
+      let tarballPath = cachePathForURL uri
+      fetchURL uri tarballPath
+      extractFromTarball tarballPath mSubdir cacheDir
+    GitHubSource repo rev mSubdir -> do
+      let uri = githubRepoTarballUrl repo rev
+          tarballPath = cachePathForURL uri
+      fetchURL uri tarballPath
+      extractFromTarball tarballPath mSubdir cacheDir
 
-addPrepareSdistRule :: Rules ()
-addPrepareSdistRule = addBuiltinRule noLint noIdentity run
- where
-  run (PrepareSdistRule gpd srcDir dstPath) (Just old) RunDependenciesSame = do
-    let hvExpected = load old
+  patchfiles <- getDirectoryFiles (takeDirectory metaFile) ["patches/*.patch"]
+  for_ patchfiles $ \patchfile -> do
+    -- _sources/name/version/meta.toml -> _sources/name/version/patches/some.patch
+    let patch = replaceBaseName metaFile patchfile
+    -- FileStdin is relative to the current working directory of this process
+    -- but patch needs to be run in srcDir
+    cmd_ Shell (Cwd cacheDir) (FileStdin patch) "patch -p1"
 
-    -- Check of has of the sdist, if the sdist is still there and it is
-    -- indeed what we expect, signal that nothing changed. Otherwise
-    -- warn the user and proceed to recompute.
-    ehvExisting <- liftIO $ tryIOError $ readFileHashValue dstPath
-    case ehvExisting of
-      Right hvExisting
-        | hvExisting == hvExpected ->
-            return
-              RunResult
-                { runChanged = ChangedNothing
-                , runStore = old
-                , runValue = ()
-                }
-      Right hvExisting -> do
-        putWarn $ "Changed " ++ dstPath ++ " (expecting hash " ++ showHashValue hvExpected ++ " found " ++ showHashValue hvExisting ++ "). I will rebuild it."
-        run (PrepareSdistRule gpd srcDir dstPath) (Just old) RunDependenciesChanged
-      Left _ -> do
-        putWarn $ "Unable to read " ++ dstPath ++ ". I will rebuild it."
-        run (PrepareSdistRule gpd srcDir dstPath) (Just old) RunDependenciesChanged
-  run (PrepareSdistRule gpd srcDir dstPath) old _mode = do
-    -- create the sdist distribution
-    makeSdist gpd srcDir dstPath
-    hv <- liftIO $ readFileHashValue dstPath
+  let cabalFilePath = cacheDir </> unPackageName pkgName <.> "cabal"
+  pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.normal cabalFilePath
+  if packageVersionForce
+    then do
+      let pkgDesc' = set (L.packageDescription . L.package . L.pkgVersion) pkgVersion pkgDesc
+      putInfo $ "Updating version in cabal file" ++ cabalFilePath
+      liftIO $ writeGenericPackageDescription cabalFilePath pkgDesc'
+      return pkgDesc'
+    else return pkgDesc
 
-    let changed = case fmap load old of
-          Just hv' | hv' == hv -> ChangedRecomputeSame
-          _differentOrMissing -> ChangedRecomputeDiff
+-- liftIO $ packageDirToSdist Verbosity.normal pkgDesc (takeDirectory cabalFilePath) >>= BSL.writeFile path
 
-    when (changed == ChangedRecomputeSame) $
-      putInfo $
-        "Wrote " ++ dstPath ++ " (same hash " ++ showHashValue hv ++ ")"
+extractFromTarball :: FilePath -> Maybe FilePath -> FilePath -> Action ()
+extractFromTarball tarballPath mSubdir outDir = do
+  withTempDir $ \tmpDir -> do
+    cmd_
+      [ "tar"
+      , -- Extract files from an archive
+        "--extract"
+      , -- Filter the archive through gunzip
+        "--gunzip"
+      , -- Recursively remove all files in the directory prior to extracting it
+        "--recursive-unlink"
+      , -- Use archive file
+        "--file"
+      , tarballPath
+      , -- Change to DIR before performing any operations
+        "--directory"
+      , tmpDir
+      ]
 
-    when (changed == ChangedRecomputeDiff) $
-      putInfo $
-        "Wrote " ++ dstPath ++ " (new hash " ++ showHashValue hv ++ ")"
+    ls <-
+      -- remove "." and ".."
+      filter (not . all (== '.'))
+        -- NOTE: Don't let shake look into tmpDir! it will cause
+        -- unnecessary rework because tmpDir is always new
+        <$> liftIO (IO.getDirectoryContents tmpDir)
 
-    return $ RunResult{runChanged = changed, runStore = save hv, runValue = ()}
+    -- Special treatment of top-level directory: we remove it
+    let byPassSingleTopLevelDir = case ls of [l] -> (</> l); _ -> id
+        applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
+        srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
 
-  save = BSL.toStrict . Binary.encode
-  load = Binary.decode . BSL.fromStrict
-
-makeSdist :: GenericPackageDescription -> [Char] -> FilePath -> Action ()
-makeSdist gpd srcDir dstPath = do
-  produces [dstPath]
-
-  liftIO $ do
-    IO.createDirectoryIfMissing True (takeDirectory dstPath)
-    sdist <- packageDirToSdist Verbosity.normal gpd srcDir
-    BSL.writeFile dstPath sdist
-
-readFileHashValue :: FilePath -> IO BS.ByteString
-readFileHashValue = fmap SHA256.hash . BS.readFile
-
-showHashValue :: BS.ByteString -> [Char]
-showHashValue = T.unpack . encodeBase16
+    cmd_
+      [ "cp"
+      , -- copy directories recursively
+        "--recursive"
+      , -- treat DEST as a normal file
+        "--no-target-directory"
+      , -- always follow symbolic links in SOURCE
+        "--dereference"
+      , -- SOURCE
+        srcDir
+      , -- DEST
+        outDir
+      ]

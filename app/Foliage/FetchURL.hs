@@ -24,23 +24,13 @@ import System.Directory qualified as IO
 import System.Exit (ExitCode (..))
 
 data FetchURL = FetchURL URI FilePath
-  deriving (Generic, Eq)
+  deriving (Eq, Show, Generic)
   deriving anyclass (Hashable, Binary, NFData)
-
-instance Show FetchURL where
-  show (FetchURL uri _path) = "fetchURL " ++ show uri
 
 type instance RuleResult FetchURL = ()
 
 fetchURL :: URI -> FilePath -> Action ()
-fetchURL uri path = do
-  produces [path]
-  liftIO $ do
-    createDirectoryIfMissing True (takeDirectory path)
-  withTempFile $ \etagFile ->
-    void $ actionRetry 5 $ runCurl uri path etagFile
-
--- apply1 (FetchURL uri path)
+fetchURL uri path = apply1 (FetchURL uri path)
 
 addFetchURLRule :: Rules ()
 addFetchURLRule = addBuiltinRule noLint noIdentity run

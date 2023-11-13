@@ -14,6 +14,7 @@ module Foliage.Pages (
 )
 where
 
+import Control.Monad.IO.Class (MonadIO (..))
 import Data.Aeson (KeyValue ((.=)), ToJSON, object)
 import Data.Foldable1 (minimumBy)
 import Data.Function (on, (&))
@@ -24,28 +25,24 @@ import Data.Ord (Down (Down), comparing)
 import Data.Text.Lazy.IO.Utf8 qualified as TL
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
-import Development.Shake (Action, askOracle, traced)
+import Development.Shake (Action, askOracle)
 import Distribution.Aeson (jsonGenericPackageDescription)
-import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
-import Distribution.Pretty (prettyShow)
-import Foliage.Meta (PackageVersionSource)
+import Distribution.PackageDescription (GenericPackageDescription)
+import Distribution.Simple (PackageId, PackageIdentifier (..))
+import Distribution.Utils.Generic (sndOf3)
+import Foliage.Meta (PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), packageVersionIsDeprecated)
 import Foliage.Meta.Aeson ()
-import Foliage.Oracles (CurrentTime (..), OutputDir (..))
-import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
+import Foliage.Oracles (CurrentTime (..))
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
-import System.Directory qualified as IO
-import System.FilePath ((</>))
 import Text.Mustache (Template)
 import Text.Mustache.Compile.TH (compileMustacheDir)
 import Text.Mustache.Render (renderMustache)
 
-makeIndexPage :: Action ()
-makeIndexPage = do
-  outputDir <- askOracle OutputDir
-  traced "webpages / index" $ do
-    IO.createDirectoryIfMissing True outputDir
-    TL.writeFile (outputDir </> "index.html") $
+makeIndexPage :: FilePath -> Action ()
+makeIndexPage path = do
+  liftIO $
+    TL.writeFile path $
       renderMustache indexPageTemplate $
         object []
 
@@ -59,37 +56,36 @@ data AllPackagesPageEntry = AllPackagesPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeAllPackagesPage :: [PreparedPackageVersion] -> Action ()
-makeAllPackagesPage packageVersions = do
-  outputDir <- askOracle OutputDir
-
+makeAllPackagesPage :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
+makeAllPackagesPage path allPkgSpecs = do
   currentTime <- askOracle CurrentTime
-  let packages =
-        packageVersions
+
+  let packages :: [AllPackagesPageEntry]
+      packages =
+        allPkgSpecs
           -- group package versions by package name
-          & NE.groupBy ((==) `on` (pkgName . pkgId))
+          & NE.groupBy ((==) `on` sndOf3)
           -- for each package name pick the most recent version
           & map
             ( \group ->
                 -- pick the most recent version
-                minimumBy (comparing $ Down . pkgVersion . pkgId) group
+                minimumBy (comparing $ Down . pkgVersion . sndOf3) group
                   -- turn it into the template data
-                  & ( \(PreparedPackageVersion{pkgId, pkgTimestamp, cabalFileRevisions, pkgVersionSource}) ->
+                  & ( \(_metaFile, pkgId, PackageVersionSpec{packageVersionTimestamp, packageVersionRevisions, packageVersionSource}) ->
                         AllPackagesPageEntry
                           { allPackagesPageEntryPkgId = pkgId
-                          , allPackagesPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
-                          , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
-                          , allPackagesPageEntrySource = pkgVersionSource
-                          , allPackagesPageEntryLatestRevisionTimestamp = fst <$> listToMaybe cabalFileRevisions
+                          , allPackagesPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp
+                          , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp)
+                          , allPackagesPageEntrySource = packageVersionSource
+                          , allPackagesPageEntryLatestRevisionTimestamp = revisionTimestamp <$> listToMaybe packageVersionRevisions
                           }
                     )
             )
           -- sort packages by pkgId
           & sortOn allPackagesPageEntryPkgId
 
-  traced "webpages / all-packages" $ do
-    IO.createDirectoryIfMissing True (outputDir </> "all-packages")
-    TL.writeFile (outputDir </> "all-packages" </> "index.html") $
+  liftIO $
+    TL.writeFile path $
       renderMustache allPackagesPageTemplate $
         object ["packages" .= packages]
 
@@ -111,65 +107,57 @@ data AllPackageVersionsPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeAllPackageVersionsPage :: [PreparedPackageVersion] -> Action ()
-makeAllPackageVersionsPage packageVersions = do
-  outputDir <- askOracle OutputDir
+makeAllPackageVersionsPage :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
+makeAllPackageVersionsPage path allPkgSpecs = do
   currentTime <- askOracle CurrentTime
 
   let entries =
-        -- collect all cabal file revisions including the original cabal file
-        foldMap
-          ( \PreparedPackageVersion{pkgId, pkgTimestamp, pkgVersionSource, pkgVersionIsDeprecated, cabalFileRevisions} ->
-              -- original cabal file
-              AllPackageVersionsPageEntryPackage
-                { allPackageVersionsPageEntryPkgId = pkgId
-                , allPackageVersionsPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
-                , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
-                , allPackageVersionsPageEntrySource = pkgVersionSource
-                , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
-                }
-                -- list of revisions
-                : [ AllPackageVersionsPageEntryRevision
-                    { allPackageVersionsPageEntryPkgId = pkgId
-                    , allPackageVersionsPageEntryTimestamp = revisionTimestamp
-                    , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                    , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
-                    }
-                  | (revisionTimestamp, _) <- cabalFileRevisions
-                  ]
-          )
-          packageVersions
+        allPkgSpecs
+          -- collect all cabal file revisions including the original cabal file
+          & foldMap
+            ( \(_metaFile, pkgId, pkgSpec@PackageVersionSpec{packageVersionSource, packageVersionTimestamp, packageVersionRevisions}) ->
+                -- original cabal file
+                AllPackageVersionsPageEntryPackage
+                  { allPackageVersionsPageEntryPkgId = pkgId
+                  , allPackageVersionsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp
+                  , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp)
+                  , allPackageVersionsPageEntrySource = packageVersionSource
+                  , allPackageVersionsPageEntryDeprecated = packageVersionIsDeprecated pkgSpec
+                  }
+                  -- list of revisions
+                  : [ AllPackageVersionsPageEntryRevision
+                      { allPackageVersionsPageEntryPkgId = pkgId
+                      , allPackageVersionsPageEntryTimestamp = revisionTimestamp
+                      , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                      , allPackageVersionsPageEntryDeprecated = packageVersionIsDeprecated pkgSpec
+                      }
+                    | RevisionSpec{revisionTimestamp} <- packageVersionRevisions
+                    ]
+            )
           -- sort them by timestamp
           & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
-  traced "webpages / all-package-versions" $ do
-    IO.createDirectoryIfMissing True (outputDir </> "all-package-versions")
-    TL.writeFile (outputDir </> "all-package-versions" </> "index.html") $
+  liftIO $
+    TL.writeFile path $
       renderMustache allPackageVersionsPageTemplate $
         object ["entries" .= entries]
 
-makePackageVersionPage :: PreparedPackageVersion -> Action ()
+makePackageVersionPage :: FilePath -> GenericPackageDescription -> PackageVersionSpec -> Action ()
 makePackageVersionPage
-  PreparedPackageVersion
-    { pkgId
-    , pkgTimestamp
-    , pkgVersionSource
-    , pkgDesc
-    , cabalFileRevisions
-    , pkgVersionIsDeprecated
-    } = do
-    outputDir <- askOracle OutputDir
-    traced ("webpages / package / " ++ prettyShow pkgId) $ do
-      IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
-      TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
-        renderMustache packageVersionPageTemplate $
-          object
-            [ "pkgVersionSource" .= pkgVersionSource
-            , "cabalFileRevisions" .= map fst cabalFileRevisions
-            , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
-            , "pkgTimestamp" .= pkgTimestamp
-            , "pkgVersionDeprecated" .= pkgVersionIsDeprecated
-            ]
+  path
+  pkgDesc
+  pkgSpec@PackageVersionSpec{packageVersionSource, packageVersionRevisions, packageVersionTimestamp} =
+    let
+     in liftIO $
+          TL.writeFile path $
+            renderMustache packageVersionPageTemplate $
+              object
+                [ "pkgVersionSource" .= packageVersionSource
+                , "cabalFileRevisions" .= map revisionTimestamp packageVersionRevisions
+                , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
+                , "pkgTimestamp" .= packageVersionTimestamp
+                , "pkgVersionDeprecated" .= packageVersionIsDeprecated pkgSpec
+                ]
 
 indexPageTemplate :: Template
 indexPageTemplate = $(compileMustacheDir "index" "templates")

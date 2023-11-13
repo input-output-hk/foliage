@@ -28,13 +28,14 @@ module Foliage.Meta (
   UTCTime,
   latestRevisionNumber,
   packageVersionSourceToUri,
+  packageVersionIsDeprecated,
 )
 where
 
 import Control.Applicative ((<|>))
 import Control.Monad (void)
 import Data.List (sortOn)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Ord (Down (Down))
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -137,6 +138,9 @@ data PackageVersionSpec = PackageVersionSpec
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
+
+packageVersionIsDeprecated :: PackageVersionSpec -> Bool
+packageVersionIsDeprecated = maybe False deprecationIsDeprecated . listToMaybe . sortOn Down . packageVersionDeprecations
 
 sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =

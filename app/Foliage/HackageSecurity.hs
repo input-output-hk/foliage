@@ -45,7 +45,7 @@ computeFileInfoSimple path = do
 
 computeFileInfoSimple' :: FilePath -> IO FileInfo
 computeFileInfoSimple' path = do
-  fi <- Sec.makeAbsolute (Sec.fromFilePath path) >>= computeFileInfo
+  fi <- computeFileInfo (Sec.Path path :: Sec.Path Sec.Relative)
   return $! forceFileInfo fi `seq` fi
 
 createKeys :: FilePath -> IO ()

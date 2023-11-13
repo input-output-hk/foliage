@@ -34,10 +34,9 @@ executable foliage
         Foliage.Options
         Foliage.Pages
         Foliage.PreparePackageVersion
-        Foliage.PrepareSource
         Foliage.PrepareSdist
         Foliage.Time
-        Foliage.UpdateCabalFile
+        Foliage.TUF
         Foliage.Utils.Aeson
         Foliage.Utils.GitHub
         Network.URI.Orphans
