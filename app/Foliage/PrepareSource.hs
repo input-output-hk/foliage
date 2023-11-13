@@ -15,6 +15,7 @@ import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.FetchURL (fetchURL)
+import Foliage.GitClone (gitClone)
 import Foliage.Meta
 import Foliage.UpdateCabalFile (rewritePackageVersion)
 import GHC.Generics
@@ -69,9 +70,8 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             tarballPath <- fetchURL uri
             extractFromTarball tarballPath mSubdir srcDir
           GitHubSource repo rev mSubdir -> do
-            workingCopy <- gitCheckout cacheDir repo rev
-            let packageDir = maybe workingCopy (workingCopy </>) mSubdir
-            copyDirectoryContents packageDir srcDir
+            repoDir <- gitClone repo
+            copyGitWorktree repoDir rev mSubdir srcDir
 
         let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
         hasPatches <- doesDirectoryExist patchesDir
@@ -119,20 +119,17 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
 
       copyDirectoryContents srcDir outDir
 
-gitCheckout :: FilePath -> GitHubRepo -> GitHubRev -> Action FilePath
-gitCheckout cacheDir repo rev = do
-  alreadyCloned <- doesDirectoryExist path
-  if alreadyCloned
-    then command_ [Cwd path] "git" ["fetch"]
-    else command_ [] "git" ["clone", "--recursive", url, path]
-  command_ [Cwd path] "git" ["checkout", show rev]
-  command_ [Cwd path] "git" ["submodule", "update"]
-  pure path
- where
-  path = cacheDir </> "git" </> show repo
+-- | Copy package source from a git repository using 'git worktree'.
+copyGitWorktree :: FilePath -> GitHubRev -> Maybe FilePath -> FilePath -> Action ()
+copyGitWorktree repoDir rev mSubdir outDir = do
+  withTempDir $ \tmpDir -> do
+    command_ [Cwd repoDir] "git" ["worktree", "add", tmpDir, show rev]
+    command_ [Cwd tmpDir] "git" ["submodule", "update", "--init"]
+    let packageDir = maybe tmpDir (tmpDir </>) mSubdir
+    copyDirectoryContents packageDir outDir
+    command_ [Cwd repoDir] "git" ["worktree", "prune"]
 
-  url = "https://github.com/" <> show repo <> ".git"
-
+-- | Copy all contents from one directory to another.
 copyDirectoryContents :: FilePath -> FilePath -> Action ()
 copyDirectoryContents source destination =
   cmd_
