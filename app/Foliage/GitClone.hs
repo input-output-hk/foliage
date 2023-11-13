@@ -10,12 +10,13 @@ module Foliage.GitClone (
 )
 where
 
-import Development.Shake
+import Development.Shake hiding (doesDirectoryExist)
 import Development.Shake.Classes
 import Development.Shake.FilePath
 import Development.Shake.Rule
 import Foliage.Meta (GitHubRepo)
 import GHC.Generics (Generic)
+import System.Directory (doesDirectoryExist)
 
 newtype GitClone = GitClone {repo :: GitHubRepo}
   deriving (Eq, Generic)
@@ -45,7 +46,7 @@ addGitCloneRule cacheDir = addBuiltinRule noLint noIdentity run
   run GitClone{repo} _old _mode = do
     let path = cacheDir </> "git" </> show repo
 
-    alreadyCloned <- doesDirectoryExist path
+    alreadyCloned <- liftIO $ doesDirectoryExist path
     if alreadyCloned
       then command_ [Cwd path] "git" ["fetch"]
       else do
