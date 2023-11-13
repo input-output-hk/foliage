@@ -123,7 +123,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
 copyGitWorktree :: FilePath -> GitHubRev -> Maybe FilePath -> FilePath -> Action ()
 copyGitWorktree repoDir rev mSubdir outDir = do
   withTempDir $ \tmpDir -> do
-    command_ [Cwd repoDir] "git" ["worktree", "add", tmpDir, show rev]
+    command_ [Cwd repoDir] "git" ["worktree", "add", tmpDir, gitHubRevToString rev]
     command_ [Cwd tmpDir] "git" ["submodule", "update", "--init"]
     let packageDir = maybe tmpDir (tmpDir </>) mSubdir
     copyDirectoryContents packageDir outDir
