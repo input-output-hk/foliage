@@ -25,14 +25,13 @@ import Data.Ord (Down (Down), comparing)
 import Data.Text.Lazy.IO.Utf8 qualified as TL
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
-import Development.Shake (Action, askOracle)
+import Development.Shake (Action)
 import Distribution.Aeson (jsonGenericPackageDescription)
 import Distribution.PackageDescription (GenericPackageDescription)
 import Distribution.Simple (PackageId, PackageIdentifier (..))
 import Distribution.Utils.Generic (sndOf3)
 import Foliage.Meta (PackageVersionSource, PackageVersionSpec (..), RevisionSpec (..), packageVersionIsDeprecated)
 import Foliage.Meta.Aeson ()
-import Foliage.Oracles (CurrentTime (..))
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
 import GHC.Generics (Generic)
 import Text.Mustache (Template)
@@ -56,10 +55,8 @@ data AllPackagesPageEntry = AllPackagesPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeAllPackagesPage :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
-makeAllPackagesPage path allPkgSpecs = do
-  currentTime <- askOracle $ CurrentTime ()
-
+makeAllPackagesPage :: UTCTime -> FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
+makeAllPackagesPage currentTime path allPkgSpecs = do
   let packages :: [AllPackagesPageEntry]
       packages =
         allPkgSpecs
@@ -107,10 +104,8 @@ data AllPackageVersionsPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeAllPackageVersionsPage :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
-makeAllPackageVersionsPage path allPkgSpecs = do
-  currentTime <- askOracle $ CurrentTime ()
-
+makeAllPackageVersionsPage :: UTCTime -> FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
+makeAllPackageVersionsPage currentTime path allPkgSpecs = do
   let entries =
         allPkgSpecs
           -- collect all cabal file revisions including the original cabal file

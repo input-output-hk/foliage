@@ -2,22 +2,19 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Foliage.Time (
-  iso8601ParseM,
-  iso8601Show,
-  getCurrentTime,
   UTCTime (..),
-  utcTimeToPOSIXSeconds,
-  addUTCTime,
-  nominalDay,
   truncateSeconds,
 )
 where
 
-import Data.Time
-import Data.Time.Clock.POSIX
+import Data.Time (UTCTime (..))
+import Data.Time.Clock.POSIX (
+  posixSecondsToUTCTime,
+  utcTimeToPOSIXSeconds,
+ )
 import Data.Time.Compat ()
-import Data.Time.Format.ISO8601
-import Development.Shake.Classes
+import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
+import Development.Shake.Classes (Binary (get, put))
 
 instance Binary UTCTime where
   get = iso8601ParseM =<< get

@@ -18,7 +18,6 @@ import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Development.Shake
 import Development.Shake.FilePath
 import Distribution.Package
@@ -26,9 +25,6 @@ import Distribution.Pretty (prettyShow)
 import Distribution.Version
 import Foliage.FetchURL (addFetchURLRule)
 import Foliage.HackageSecurity (
-  ExpiryTime (..),
-  addExpiryTimeOracle,
-  addSigninigKeysOracle,
   computeFileInfoSimple,
   createKeys,
   mkMirrors,
@@ -37,7 +33,6 @@ import Foliage.HackageSecurity (
   mkTimestamp,
   readKeys,
   renderSignedJSON,
-  (~/~),
  )
 import Foliage.Meta qualified as Meta
 import Foliage.Meta.Aeson ()
@@ -57,12 +52,14 @@ import Hackage.Security.Server (
  )
 
 import Data.ByteString.Lazy qualified as BSL
+import Data.Foldable (for_)
 import Data.Function ((&))
-import Data.HashMap.Strict qualified as HM
 import Data.Maybe (fromJust, fromMaybe, isJust, listToMaybe, mapMaybe)
+import Data.Time (UTCTime, getCurrentTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
+import Data.Time.Format.ISO8601 (iso8601Show)
 import Data.Traversable (for)
 import Development.Shake.Classes
-import Development.Shake.Config (usingConfig)
 import Distribution.Client.SrcDist (packageDirToSdist)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
@@ -70,7 +67,7 @@ import Distribution.Utils.Generic (sndOf3)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.Meta (DeprecationSpec (..), PackageVersionSpec (..), RevisionSpec (..))
 import Foliage.SourceDist (applyPatches, fetchPackageVersion, updateCabalFileVersion)
-import Foliage.Time qualified as Time
+import Foliage.Time (truncateSeconds)
 import Hackage.Security.TUF.FileMap qualified as FM
 import Hackage.Security.Util.Path qualified as Sec
 import System.Directory qualified as IO
@@ -82,6 +79,30 @@ cmdBuild buildOptions = do
     inputDir = buildOptsInputDir buildOptions
     outputDir = buildOptsOutputDir buildOptions
     cacheDir = "_cache"
+
+  currentTime <- case buildOptsCurrentTime buildOptions of
+    Nothing -> do
+      t <- truncateSeconds <$> liftIO getCurrentTime
+      putStrLn $ "Current time set to " <> iso8601Show t <> ". You can set a fixed time using the --current-time option."
+      return t
+    Just t -> do
+      putStrLn $ "Current time set to " <> iso8601Show t <> "."
+      return t
+
+  let expireSignaturesOn = buildOptsExpireSignaturesOn buildOptions
+  for_ expireSignaturesOn $ \time ->
+    putStrLn $ "Expiry time set to " <> iso8601Show time
+
+  let
+    extra =
+      ( case buildOptsSignOpts buildOptions of
+          SignOptsSignWithKeys keys -> addShakeExtra (SignWithKeys keys)
+          SignOptsDon'tSign -> id
+      )
+        . addShakeExtra (FileExpires expireSignaturesOn)
+        $ mempty
+
+  let
     opts =
       shakeOptions
         { shakeFiles = cacheDir
@@ -91,6 +112,7 @@ cmdBuild buildOptions = do
         , shakeReport = ["report.html", "report.json"]
         , shakeThreads = buildOptsNumThreads buildOptions
         , shakeVerbosity = buildOptsVerbosity buildOptions
+        , shakeExtra = extra
         }
 
   -- Create keys if needed
@@ -103,19 +125,7 @@ cmdBuild buildOptions = do
     _otherwise -> pure ()
 
   shake opts $ do
-    -- FIXME: maybe?
-    usingConfig $
-      HM.fromList
-        [ ("outputDir", buildOptsOutputDir buildOptions)
-        , ("cacheDir", cacheDir)
-        ]
-    -- FIXME: consider using configuration variables (usingConfig/getConfig) or shakeExtra
     _ <- addCacheDirOracle cacheDir
-    _ <- addExpiryTimeOracle (buildOptsExpireSignaturesOn buildOptions)
-    _ <- addCurrentTimeOracle (buildOptsCurrentTime buildOptions)
-
-    -- FIXME: use configuration variable or shakeExtra
-    _ <- addSigninigKeysOracle (buildOptsSignOpts buildOptions)
 
     addFetchURLRule
 
@@ -144,6 +154,10 @@ cmdBuild buildOptions = do
     let cabalFileRevisionForPkgId :: PackageIdentifier -> Int -> FilePath
         cabalFileRevisionForPkgId pkgId revNum =
           metaFileForPkgId pkgId `replaceBaseName` "revisions" </> show revNum <.> "cabal"
+
+    let sdistPathForPkgId :: PackageIdentifier -> FilePath
+        sdistPathForPkgId pkgId =
+          outputDir </> "package" </> prettyShow pkgId <.> "tar.gz"
 
     --
     --
@@ -198,8 +212,8 @@ cmdBuild buildOptions = do
     indexEntries <- do
       getIndexEntries <- newCache $ \IndexEntries{} -> do
         pkgSpecs <- getPkgSpecs
-        cabalEntries <- makeCabalEntries cabalFileForPkgId pkgSpecs
-        metadataEntries <- makeMetadataEntries outputDir pkgSpecs
+        cabalEntries <- makeCabalEntries currentTime cabalFileForPkgId pkgSpecs
+        metadataEntries <- makeMetadataEntries currentTime sdistPathForPkgId pkgSpecs
         let extraEntries = makeExtraEntries pkgSpecs
 
         -- WARN: See note on `makeCabalEntries`, the sorting here has to be stable
@@ -259,11 +273,11 @@ cmdBuild buildOptions = do
 
     outputDir </> "all-packages/index.html"
       %> \path ->
-        getPkgSpecs >>= makeAllPackagesPage path
+        getPkgSpecs >>= makeAllPackagesPage currentTime path
 
     outputDir </> "all-package-versions/index.html"
       %> \path ->
-        getPkgSpecs >>= makeAllPackageVersionsPage path
+        getPkgSpecs >>= makeAllPackageVersionsPage currentTime path
 
     outputDir </> "package/*/index.html"
       ~?~ ( \case
@@ -280,23 +294,31 @@ cmdBuild buildOptions = do
 
 coreRules :: FilePath -> (PackageIdentifier -> FilePath) -> Action [Tar.Entry] -> Rules ()
 coreRules outputDir cabalFileForPkgId indexEntries = do
-  outputDir ~/~ repoLayoutMirrors
+  action $ do
+    need
+      [ outputDir </> "mirrors.json"
+      , outputDir </> "root.json"
+      , outputDir </> "snapshot.json"
+      , outputDir </> "timestamp.json"
+      ]
+
+  outputDir </> "mirrors.json"
     %> mkMirrors
 
-  outputDir ~/~ repoLayoutRoot
+  outputDir </> "root.json"
     %> mkRoot
 
-  outputDir ~/~ repoLayoutSnapshot
+  outputDir </> "snapshot.json"
     %> mkSnapshot outputDir
 
-  outputDir ~/~ repoLayoutTimestamp
+  outputDir </> "timestmap.json"
     %> mkTimestamp outputDir
 
-  outputDir ~/~ repoLayoutIndexTar
+  outputDir </> "01-index.tar"
     %> \path ->
       indexEntries >>= liftIO . BL.writeFile path . Tar.write
 
-  outputDir ~/~ repoLayoutIndexTarGz
+  outputDir </> "01-index.tar.gz"
     %> \path ->
       indexEntries >>= liftIO . BL.writeFile path . GZip.compress . Tar.write
 
@@ -311,36 +333,31 @@ coreRules outputDir cabalFileForPkgId indexEntries = do
       pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
       liftIO $ packageDirToSdist Verbosity.normal pkgDesc (takeDirectory cabalFilePath) >>= BSL.writeFile path
 
-makeCabalEntries :: (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
-makeCabalEntries cabalFileForPkgId allPkgSpecs = do
-  currentTime <- askOracle $ CurrentTime ()
-  allPkgSpecs
-    & foldMap
-      ( \(metaFile, pkgId, pkgSpec) -> do
-          let pkgCabalFile = cabalFileForPkgId pkgId
-              pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
+makeCabalEntries :: UTCTime -> (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
+makeCabalEntries currentTime cabalFileForPkgId allPkgSpecs = do
+  fmap concat $ forP allPkgSpecs $ \(metaFile, pkgId, pkgSpec) -> do
+    let pkgCabalFile = cabalFileForPkgId pkgId
+        pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
 
-          uploadEntry <- makeIndexPkgCabal pkgId pkgTimestamp pkgCabalFile
+    uploadEntry <- makeIndexPkgCabal pkgId pkgTimestamp pkgCabalFile
 
-          revisionEntries <- for (packageVersionRevisions pkgSpec) $ \RevisionSpec{revisionTimestamp, revisionNumber} -> do
-            let cabalFileRevisionPath = takeDirectory metaFile </> "revisions" </> show revisionNumber <.> "cabal"
-            makeIndexPkgCabal pkgId revisionTimestamp cabalFileRevisionPath
+    revisionEntries <- for (packageVersionRevisions pkgSpec) $ \RevisionSpec{revisionTimestamp, revisionNumber} -> do
+      let cabalFileRevisionPath = takeDirectory metaFile </> "revisions" </> show revisionNumber <.> "cabal"
+      makeIndexPkgCabal pkgId revisionTimestamp cabalFileRevisionPath
 
-          -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
-          -- This accidentally works because 1) the following inserts the original cabal file before the revisions
-          -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
-          return $ uploadEntry : revisionEntries
-      )
+    -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
+    -- This accidentally works because 1) the following inserts the original cabal file before the revisions
+    -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
+    return $ uploadEntry : revisionEntries
 
-makeMetadataEntries :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
-makeMetadataEntries outputDir allPkgSpecs = do
-  currentTime <- askOracle $ CurrentTime ()
-  expiryTime <- askOracle $ ExpiryTime ()
+makeMetadataEntries :: UTCTime -> (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
+makeMetadataEntries currentTime sdistPathForPkgId allPkgSpecs = do
+  Just expiryTime <- getShakeExtra
 
   targetKeys <- readKeys "target"
 
-  for allPkgSpecs $ \(_metaFile, pkgId, pkgSpec) -> do
-    let sdistPath = outputDir </> "package" </> prettyShow pkgId <.> "tar.gz"
+  forP allPkgSpecs $ \(_metaFile, pkgId, pkgSpec) -> do
+    let sdistPath = sdistPathForPkgId pkgId
         pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
     targets <- makeIndexPkgMetadata expiryTime pkgId sdistPath
     return $ mkTarEntry (renderSignedJSON targetKeys targets) (IndexPkgMetadata pkgId) pkgTimestamp
@@ -420,14 +437,14 @@ makeIndexPkgCabal pkgId timestamp filePath = do
   contents <- liftIO $ BS.readFile filePath
   pure $ mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
 
-makeIndexPkgMetadata :: Maybe Meta.UTCTime -> PackageId -> FilePath -> Action Targets
+makeIndexPkgMetadata :: FileExpires -> PackageId -> FilePath -> Action Targets
 makeIndexPkgMetadata expiryTime pkgId sdistPath = do
   targetFileInfo <- computeFileInfoSimple sdistPath
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
   return
     Targets
       { targetsVersion = FileVersion 1
-      , targetsExpires = FileExpires expiryTime
+      , targetsExpires = expiryTime
       , targetsTargets = FM.fromList [(TargetPathRepo packagePath, targetFileInfo)]
       , targetsDelegations = Nothing
       }
@@ -504,7 +521,7 @@ mkTarEntry
   -> Tar.Entry
 mkTarEntry contents indexFile timestamp =
   (Tar.fileEntry tarPath contents)
-    { Tar.entryTime = floor $ Time.utcTimeToPOSIXSeconds timestamp
+    { Tar.entryTime = floor $ utcTimeToPOSIXSeconds timestamp
     , Tar.entryOwnership =
         Tar.Ownership
           { Tar.ownerName = "foliage"
@@ -525,6 +542,8 @@ type instance RuleResult IndexEntries = [Tar.Entry]
 
 newtype PkgSpecs = PkgSpecs () deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
 type instance RuleResult PkgSpecs = [(FilePath, PackageId, PackageVersionSpec)]
+
+newtype SignWithKeys = SignWithKeys FilePath
 
 infixr 4 ~?~
 (~?~) :: FilePattern -> ([String] -> Maybe c) -> FilePath -> Maybe c

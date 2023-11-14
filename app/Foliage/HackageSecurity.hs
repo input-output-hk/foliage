@@ -16,22 +16,15 @@ import Data.Text qualified as T
 import Data.Traversable (for)
 import Development.Shake (
   Action,
-  RuleResult,
-  Rules,
-  addOracle,
-  askOracle,
   getDirectoryFiles,
+  getShakeExtra,
   liftIO,
   need,
   trackWrite,
  )
-import Development.Shake.Classes (Binary, Hashable, NFData)
 import Foliage.Options (SignOptions (..))
-import Foliage.Time (UTCTime, iso8601Show)
-import GHC.Generics (Generic)
 import Hackage.Security.Key.Env (fromKeys)
 import Hackage.Security.Server (
-  FileExpires (..),
   FileInfo (..),
   FileVersion (..),
   Key,
@@ -40,8 +33,6 @@ import Hackage.Security.Server (
   KeyType (..),
   Mirrors (..),
   PublicKey (..),
-  RepoLayout (..),
-  RepoPath,
   RoleSpec (..),
   Root (..),
   RootRoles (..),
@@ -49,7 +40,6 @@ import Hackage.Security.Server (
   Timestamp (..),
   ToJSON,
   WriteJSON,
-  anchorRepoPathLocally,
   computeFileInfo,
   createKey',
   hackageRepoLayout,
@@ -67,20 +57,21 @@ import System.FilePath ((<.>), (</>))
 
 mkMirrors :: FilePath -> Action ()
 mkMirrors path = do
-  expiryTime <- askOracle $ ExpiryTime ()
+  Just expiryTime <- getShakeExtra
   privateKeysMirrors <- readKeys "mirrors"
+
   trackWrite [path]
   liftIO $
     writeSignedJSON path privateKeysMirrors $
       Mirrors
         { mirrorsVersion = FileVersion 1
-        , mirrorsExpires = FileExpires expiryTime
+        , mirrorsExpires = expiryTime
         , mirrorsMirrors = []
         }
 
 mkRoot :: FilePath -> Action ()
 mkRoot path = do
-  expiryTime <- askOracle $ ExpiryTime ()
+  Just expiryTime <- getShakeExtra
 
   privateKeysRoot <- readKeys "root"
   privateKeysTarget <- readKeys "target"
@@ -93,7 +84,7 @@ mkRoot path = do
     writeSignedJSON path privateKeysRoot $
       Root
         { rootVersion = FileVersion 1
-        , rootExpires = FileExpires expiryTime
+        , rootExpires = expiryTime
         , rootKeys =
             fromKeys $
               concat
@@ -135,19 +126,20 @@ mkRoot path = do
 
 mkSnapshot :: FilePath -> FilePath -> Action ()
 mkSnapshot outputDir path = do
-  expiryTime <- askOracle $ ExpiryTime ()
+  Just expiryTime <- getShakeExtra
   privateKeysSnapshot <- readKeys "snapshot"
 
-  rootInfo <- computeFileInfoSimple (outputDir ~/~ repoLayoutRoot)
-  mirrorsInfo <- computeFileInfoSimple (outputDir ~/~ repoLayoutMirrors)
-  tarInfo <- computeFileInfoSimple (outputDir ~/~ repoLayoutIndexTar)
-  tarGzInfo <- computeFileInfoSimple (outputDir ~/~ repoLayoutIndexTarGz)
+  rootInfo <- computeFileInfoSimple $ outputDir </> "root.json"
+  mirrorsInfo <- computeFileInfoSimple $ outputDir </> "mirrors.json"
+  tarInfo <- computeFileInfoSimple $ outputDir </> "01-index.tar"
+  tarGzInfo <- computeFileInfoSimple $ outputDir </> "01-index.tar.gz"
 
+  trackWrite [path]
   liftIO $
     writeSignedJSON path privateKeysSnapshot $
       Snapshot
         { snapshotVersion = FileVersion 1
-        , snapshotExpires = FileExpires expiryTime
+        , snapshotExpires = expiryTime
         , snapshotInfoRoot = rootInfo
         , snapshotInfoMirrors = mirrorsInfo
         , snapshotInfoTar = Just tarInfo
@@ -156,16 +148,17 @@ mkSnapshot outputDir path = do
 
 mkTimestamp :: FilePath -> FilePath -> Action ()
 mkTimestamp outputDir path = do
-  expiryTime <- askOracle $ ExpiryTime ()
+  Just expiryTime <- getShakeExtra
   privateKeysTimestamp <- readKeys "timestamp"
 
-  snapshotInfo <- computeFileInfoSimple (outputDir ~/~ repoLayoutSnapshot)
+  snapshotInfo <- computeFileInfoSimple $ outputDir </> "snapshot.json"
 
+  trackWrite [path]
   liftIO $
     writeSignedJSON path privateKeysTimestamp $
       Timestamp
         { timestampVersion = FileVersion 1
-        , timestampExpires = FileExpires expiryTime
+        , timestampExpires = expiryTime
         , timestampInfoSnapshot = snapshotInfo
         }
 
@@ -214,8 +207,8 @@ createKeys base = do
 
 readKeys :: FilePath -> Action [Some Key]
 readKeys base = do
-  askOracle (SignOptionsOracle ()) >>= \case
-    SignOptsSignWithKeys keysPath -> do
+  getShakeExtra @SignOptions >>= \case
+    Just (SignOptsSignWithKeys keysPath) -> do
       paths <- getDirectoryFiles (keysPath </> base) ["*.json"]
       need $ map (\fn -> keysPath </> base </> fn) paths
       for paths $ \path -> do
@@ -223,17 +216,10 @@ readKeys base = do
         case mKey of
           Left err -> fail $ show err
           Right key -> pure key
-    SignOptsDon'tSign ->
+    Just SignOptsDon'tSign ->
       return []
-
-newtype SignOptionsOracle = SignOptionsOracle ()
-  deriving (Eq, Show, Generic, Hashable, Binary, NFData)
-
-type instance RuleResult SignOptionsOracle = SignOptions
-
-addSigninigKeysOracle :: SignOptions -> Rules (SignOptionsOracle -> Action SignOptions)
-addSigninigKeysOracle signOpts =
-  addOracle $ \SignOptionsOracle{} -> return signOpts
+    Nothing ->
+      error "Internal error: missing SignOptions"
 
 renderSignedJSON :: (ToJSON WriteJSON a) => [Some Key] -> a -> BSL.ByteString
 renderSignedJSON keys thing =
@@ -245,22 +231,5 @@ writeSignedJSON :: (ToJSON WriteJSON a) => FilePath -> [Some Key] -> a -> IO ()
 writeSignedJSON path keys thing = do
   BSL.writeFile path $ renderSignedJSON keys thing
 
-newtype ExpiryTime = ExpiryTime ()
-  deriving (Eq, Show, Generic, Hashable, Binary, NFData)
-
-type instance RuleResult ExpiryTime = Maybe UTCTime
-
-addExpiryTimeOracle :: Maybe UTCTime -> Rules (ExpiryTime -> Action (Maybe UTCTime))
-addExpiryTimeOracle mExpireSignaturesOn = do
-  liftIO $ for_ mExpireSignaturesOn $ \expireSignaturesOn ->
-    putStrLn $ "Expiry time set to " <> iso8601Show expireSignaturesOn
-  addOracle $ \ExpiryTime{} -> return mExpireSignaturesOn
-
 asRelativePath :: FilePath -> Sec.Path Sec.Relative
 asRelativePath = Sec.rootPath @Sec.Relative . Sec.fromUnrootedFilePath
-
-infixr 4 ~/~
-(~/~) :: FilePath -> (RepoLayout -> RepoPath) -> FilePath
-(~/~) outputDir p =
-  let Sec.Path fp = anchorRepoPathLocally (asRelativePath outputDir) (p hackageRepoLayout)
-   in fp
