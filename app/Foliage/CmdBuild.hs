@@ -10,6 +10,7 @@ module Foliage.CmdBuild (cmdBuild) where
 
 import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Entry qualified as Tar
+import Codec.Archive.Tar.Entry.Orphans ()
 import Codec.Compression.GZip qualified as GZip
 import Control.Monad (unless, when, (>=>))
 import Data.Aeson qualified as Aeson
@@ -24,38 +25,73 @@ import Distribution.Package
 import Distribution.Pretty (prettyShow)
 import Distribution.Version
 import Foliage.FetchURL (addFetchURLRule)
-import Foliage.HackageSecurity hiding (ToJSON, toJSON)
+import Foliage.HackageSecurity (
+  ExpiryTime (..),
+  addExpiryTimeOracle,
+  addSigninigKeysOracle,
+  computeFileInfoSimple,
+  createKeys,
+  mkMirrors,
+  mkRoot,
+  mkSnapshot,
+  mkTimestamp,
+  readKeys,
+  renderSignedJSON,
+  (~/~),
+ )
 import Foliage.Meta qualified as Meta
 import Foliage.Meta.Aeson ()
 import Foliage.Options
 import Foliage.Oracles
 import Foliage.Pages
-import Foliage.TUF as TUF (
-  mkMirrors,
-  mkRoot,
-  mkSnapshot,
-  mkTimestamp,
+import Hackage.Security.Server (
+  FileExpires (..),
+  FileVersion (..),
+  IndexFile (..),
+  IndexLayout (..),
+  RepoLayout (..),
+  TargetPath (..),
+  Targets (..),
+  hackageIndexLayout,
+  hackageRepoLayout,
  )
 
 import Data.ByteString.Lazy qualified as BSL
 import Data.Function ((&))
+import Data.HashMap.Strict qualified as HM
 import Data.Maybe (fromJust, fromMaybe, isJust, listToMaybe, mapMaybe)
 import Data.Traversable (for)
+import Development.Shake.Classes
+import Development.Shake.Config (usingConfig)
 import Distribution.Client.SrcDist (packageDirToSdist)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Utils.Generic (sndOf3)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.Meta (DeprecationSpec (..), PackageVersionSpec (..), RevisionSpec (..))
-import Foliage.PrepareSdist (prepareSource)
+import Foliage.SourceDist (applyPatches, fetchPackageVersion, updateCabalFileVersion)
 import Foliage.Time qualified as Time
+import Hackage.Security.TUF.FileMap qualified as FM
 import Hackage.Security.Util.Path qualified as Sec
 import System.Directory qualified as IO
+import Text.Read (readMaybe)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
-  let inputDir = buildOptsInputDir buildOptions
-  let outputDir = buildOptsOutputDir buildOptions
+  let
+    inputDir = buildOptsInputDir buildOptions
+    outputDir = buildOptsOutputDir buildOptions
+    cacheDir = "_cache"
+    opts =
+      shakeOptions
+        { shakeFiles = cacheDir
+        , shakeChange = ChangeModtimeAndDigest
+        , shakeColor = True
+        , shakeLint = Just LintBasic
+        , shakeReport = ["report.html", "report.json"]
+        , shakeThreads = buildOptsNumThreads buildOptions
+        , shakeVerbosity = buildOptsVerbosity buildOptions
+        }
 
   -- Create keys if needed
   case buildOptsSignOpts buildOptions of
@@ -67,9 +103,13 @@ cmdBuild buildOptions = do
     _otherwise -> pure ()
 
   shake opts $ do
+    -- FIXME: maybe?
+    usingConfig $
+      HM.fromList
+        [ ("outputDir", buildOptsOutputDir buildOptions)
+        , ("cacheDir", cacheDir)
+        ]
     -- FIXME: consider using configuration variables (usingConfig/getConfig) or shakeExtra
-    _ <- addOutputDirOracle (buildOptsOutputDir buildOptions)
-    _ <- addInputDirOracle (buildOptsInputDir buildOptions)
     _ <- addCacheDirOracle cacheDir
     _ <- addExpiryTimeOracle (buildOptsExpireSignaturesOn buildOptions)
     _ <- addCurrentTimeOracle (buildOptsCurrentTime buildOptions)
@@ -79,18 +119,64 @@ cmdBuild buildOptions = do
 
     addFetchURLRule
 
-    let cacheSrcDir PackageIdentifier{pkgName, pkgVersion} = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
-
     readPackageVersionSpec <- newCache $ \path -> do
       need [path]
       meta <- liftIO $ Meta.readPackageVersionSpec path
       validateMeta path meta
       return meta
 
-    allPkgSpecs <- do
-      cache <- newCache $ const $ do
-        metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
+    action $ do
+      need
+        [ outputDir </> "mirrors.json"
+        , outputDir </> "root.json"
+        , outputDir </> "snapshot.json"
+        , outputDir </> "timestamp.json"
+        ]
 
+    let metaFileForPkgId :: PackageIdentifier -> FilePath
+        metaFileForPkgId PackageIdentifier{pkgName, pkgVersion} =
+          inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
+
+    let cabalFileForPkgId :: PackageIdentifier -> FilePath
+        cabalFileForPkgId PackageIdentifier{pkgName, pkgVersion} =
+          cacheDir </> unPackageName pkgName </> prettyShow pkgVersion </> unPackageName pkgName <.> "cabal"
+
+    let cabalFileRevisionForPkgId :: PackageIdentifier -> Int -> FilePath
+        cabalFileRevisionForPkgId pkgId revNum =
+          metaFileForPkgId pkgId `replaceBaseName` "revisions" </> show revNum <.> "cabal"
+
+    --
+    --
+    --
+
+    cacheDir </> "*/*/*.cabal"
+      ~?~ ( \case
+              [name, version, name']
+                | Just pkgName <- simpleParsec name
+                , Just pkgVersion <- simpleParsec version
+                , name == name' ->
+                    Just $ PackageIdentifier pkgName pkgVersion
+              _ -> Nothing
+          )
+      ~~> \cabalFilePath pkgId -> do
+        let metaFile = metaFileForPkgId pkgId
+        pkgSpec <- readPackageVersionSpec metaFile
+        let PackageIdentifier{pkgVersion} = pkgId
+            PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgSpec
+
+        fetchPackageVersion packageVersionSource (takeDirectory cabalFilePath)
+
+        applyPatches metaFile (takeDirectory cabalFilePath)
+
+        when packageVersionForce $ do
+          updateCabalFileVersion cabalFilePath pkgVersion
+    --
+    -- Index creation
+    --
+
+    getPkgSpecs <- do
+      getPkgSpecs' <- addOracleCache $ \PkgSpecs{} -> do
+        metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
         when (null metaFiles) $ do
           error $
             unlines
@@ -107,82 +193,52 @@ cmdBuild buildOptions = do
               pkgSpec <- readPackageVersionSpec (inputDir </> path)
               return (inputDir </> path, pkgId, pkgSpec)
             _ -> error "the impossible happened"
+      return $ getPkgSpecs' $ PkgSpecs ()
 
-      return $ cache ()
+    indexEntries <- do
+      getIndexEntries <- newCache $ \IndexEntries{} -> do
+        pkgSpecs <- getPkgSpecs
+        cabalEntries <- makeCabalEntries cabalFileForPkgId pkgSpecs
+        metadataEntries <- makeMetadataEntries outputDir pkgSpecs
+        let extraEntries = makeExtraEntries pkgSpecs
 
-    action $ do
-      need
-        [ outputDir </> "mirrors.json"
-        , outputDir </> "root.json"
-        , outputDir </> "snapshot.json"
-        , outputDir </> "timestamp.json"
-        ]
-    -- allPkgSpecs >>= traverse $ \(metaFile, pkgId, pkgSpec) -> do
-
-    --
-    --
-    --
-
-    ( (cacheDir </> "*/*/*.cabal") `matching` \case
-        [name, version, name']
-          | Just pkgName <- simpleParsec name
-          , Just pkgVersion <- simpleParsec version
-          , name == name' ->
-              Just $ PackageIdentifier pkgName pkgVersion
-        _ -> Nothing
-      )
-      ~~> \path pkgId@PackageIdentifier{pkgName, pkgVersion} -> do
-        let metaFile = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
-        pkgSpec <- readPackageVersionSpec metaFile
-        prepareSource metaFile pkgId pkgSpec (takeDirectory path)
+        -- WARN: See note on `makeCabalEntries`, the sorting here has to be stable
+        return $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries ++ extraEntries)
+      -- Return the oracle function applied to IndexEntries ()
+      return $ getIndexEntries $ IndexEntries ()
 
     --
-    -- Core
+    -- Rules for core repository functionality
     --
-
-    outputDir </> "mirrors.json" %> TUF.mkMirrors
-    outputDir </> "root.json" %> TUF.mkRoot
-    outputDir </> "snapshot.json" %> TUF.mkSnapshot
-    outputDir </> "timestamp.json" %> TUF.mkTimestamp
-    outputDir </> "01-index.tar" %> \path ->
-      allPkgSpecs >>= makeIndexEntries cacheSrcDir >>= liftIO . BL.writeFile path . Tar.write
-    outputDir </> "01-index.tar.gz" %> \path ->
-      allPkgSpecs >>= makeIndexEntries cacheSrcDir >>= liftIO . BL.writeFile path . GZip.compress . Tar.write
-
-    ( (outputDir </> "package/*.tar.gz") `matching` \case
-        [pkgId] -> simpleParsec pkgId
-        _ -> Nothing
-      )
-      ~~> \path pkgId@PackageIdentifier{pkgName} -> do
-        let srcDir = cacheSrcDir pkgId
-        need [srcDir </> unPackageName pkgName <.> "cabal"]
-        pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent (srcDir </> unPackageName pkgName <.> "cabal")
-        liftIO $ packageDirToSdist Verbosity.normal pkgDesc srcDir >>= BSL.writeFile path
+    coreRules outputDir cabalFileForPkgId indexEntries
 
     alternatives $ do
-      ( (outputDir </> "package/*/revision/0.cabal") `matching` \case
-          [pkgId] -> simpleParsec pkgId
-          _ -> Nothing
-        )
-        ~~> \path pkgId@PackageIdentifier{pkgName} ->
-          copyFileChanged (cacheSrcDir pkgId <.> unPackageName pkgName <.> "cabal") path
+      outputDir </> "package/*/revision/0.cabal"
+        ~?~ ( \case
+                [pkgId] -> simpleParsec pkgId
+                _ -> Nothing
+            )
+        ~~> \path pkgId ->
+          copyFileChanged (cabalFileForPkgId pkgId) path
 
-      ( (outputDir </> "package/*/revision/*.cabal") `matching` \case
-          [pkgId, revNum] -> (,) <$> simpleParsec pkgId <*> return revNum
-          _ -> Nothing
-        )
-        ~~> \path (PackageIdentifier{pkgName, pkgVersion}, revNum) ->
-          copyFileChanged (inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revision" </> revNum <.> "cabal") path
+      outputDir </> "package/*/revision/*.cabal"
+        ~?~ ( \case
+                [pkgId, revNum] -> (,) <$> simpleParsec pkgId <*> readMaybe revNum
+                _ -> Nothing
+            )
+        ~~> \path (pkgId, revNum) ->
+          copyFileChanged (cabalFileRevisionForPkgId pkgId revNum) path
 
-    ( (outputDir </> "package/*/*.cabal") `matching` \case
-        [pkgIdStr, pkgName']
-          | Just pkgId <- simpleParsec pkgIdStr
-          , unPackageName (pkgName pkgId) == pkgName' ->
-              Just pkgId
-        _ -> Nothing
-      )
-      ~~> \path pkgId@PackageIdentifier{pkgName} ->
-        copyFileChanged (cacheSrcDir pkgId </> unPackageName pkgName <.> "cabal") path
+    outputDir </> "package/*/*.cabal"
+      ~?~ ( \case
+              [pkgIdStr, pkgName']
+                | Just pkgId <- simpleParsec pkgIdStr
+                , unPackageName (pkgName pkgId) == pkgName' ->
+                    Just pkgId
+              _ -> Nothing
+          )
+      ~~> \path pkgId ->
+        copyFileChanged (cabalFileForPkgId pkgId) path
 
     --
     -- Foliage metadata
@@ -190,66 +246,78 @@ cmdBuild buildOptions = do
 
     -- only require this when requested? the rule is always valid
     -- when (buildOptsWriteMetadata buildOptions) $
-    outputDir </> "foliage/packages.json" %> \path ->
-      allPkgSpecs >>= makeMetadataFile path
+    outputDir </> "foliage/packages.json"
+      %> \path ->
+        getPkgSpecs >>= makeMetadataFile path
 
     --
     -- Pages
     --
 
-    outputDir </> "index.html" %> makeIndexPage
+    outputDir </> "index.html"
+      %> makeIndexPage
 
-    outputDir </> "all-packages/index.html" %> \path ->
-      allPkgSpecs >>= makeAllPackagesPage path
+    outputDir </> "all-packages/index.html"
+      %> \path ->
+        getPkgSpecs >>= makeAllPackagesPage path
 
-    outputDir </> "all-package-versions/index.html" %> \path ->
-      allPkgSpecs >>= makeAllPackageVersionsPage path
+    outputDir </> "all-package-versions/index.html"
+      %> \path ->
+        getPkgSpecs >>= makeAllPackageVersionsPage path
 
-    ( (outputDir </> "package/*/index.html") `matching` \case
-        [pkgId] -> simpleParsec pkgId
-        _ -> Nothing
-      )
-      ~~> \path pkgId@PackageIdentifier{pkgName, pkgVersion} -> do
-        let metaFile = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
+    outputDir </> "package/*/index.html"
+      ~?~ ( \case
+              [pkgId] -> simpleParsec pkgId
+              _ -> Nothing
+          )
+      ~~> \path pkgId -> do
+        let metaFile = metaFileForPkgId pkgId
         pkgSpec <- readPackageVersionSpec metaFile
-        pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent (cacheSrcDir pkgId </> unPackageName pkgName <.> "cabal")
+        let cabalFile = cabalFileForPkgId pkgId
+        need [cabalFile]
+        pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFile
         makePackageVersionPage path pkgDesc pkgSpec
- where
-  infixr 3 ~~>
-  (~~>) :: (FilePath -> Maybe a) -> (FilePath -> a -> Action ()) -> Rules ()
-  parser ~~> act = isJust . parser ?> \path -> act path $ fromJust $ parser path
 
-  matching :: FilePattern -> ([String] -> Maybe a) -> FilePath -> Maybe a
-  matching pattern parser = filePattern pattern >=> parser
+coreRules :: FilePath -> (PackageIdentifier -> FilePath) -> Action [Tar.Entry] -> Rules ()
+coreRules outputDir cabalFileForPkgId indexEntries = do
+  outputDir ~/~ repoLayoutMirrors
+    %> mkMirrors
 
-  cacheDir = "_cache"
-  opts =
-    shakeOptions
-      { shakeFiles = cacheDir
-      , shakeChange = ChangeModtimeAndDigest
-      , shakeColor = True
-      , shakeLint = Just LintBasic
-      , shakeReport = ["report.html", "report.json"]
-      , shakeThreads = buildOptsNumThreads buildOptions
-      , shakeVerbosity = buildOptsVerbosity buildOptions
-      }
+  outputDir ~/~ repoLayoutRoot
+    %> mkRoot
 
-makeIndexEntries :: (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
-makeIndexEntries cacheSrcDir allPkgSpecs = do
-  cabalEntries <- makeCabalEntries cacheSrcDir allPkgSpecs
-  metadataEntries <- makeMetadataEntries allPkgSpecs
-  let extraEntries = makeExtraEntries allPkgSpecs
+  outputDir ~/~ repoLayoutSnapshot
+    %> mkSnapshot outputDir
 
-  -- WARN: See note on `makeCabalEntries`, the sorting here has to be stable
-  return $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries ++ extraEntries)
+  outputDir ~/~ repoLayoutTimestamp
+    %> mkTimestamp outputDir
+
+  outputDir ~/~ repoLayoutIndexTar
+    %> \path ->
+      indexEntries >>= liftIO . BL.writeFile path . Tar.write
+
+  outputDir ~/~ repoLayoutIndexTarGz
+    %> \path ->
+      indexEntries >>= liftIO . BL.writeFile path . GZip.compress . Tar.write
+
+  outputDir </> "package/*.tar.gz"
+    ~?~ ( \case
+            [pkgId] -> simpleParsec pkgId
+            _ -> Nothing
+        )
+    ~~> \path pkgId -> do
+      let cabalFilePath = cabalFileForPkgId pkgId
+      need [cabalFilePath]
+      pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
+      liftIO $ packageDirToSdist Verbosity.normal pkgDesc (takeDirectory cabalFilePath) >>= BSL.writeFile path
 
 makeCabalEntries :: (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
-makeCabalEntries cacheSrcDir allPkgSpecs = do
-  currentTime <- askOracle CurrentTime
+makeCabalEntries cabalFileForPkgId allPkgSpecs = do
+  currentTime <- askOracle $ CurrentTime ()
   allPkgSpecs
     & foldMap
       ( \(metaFile, pkgId, pkgSpec) -> do
-          let pkgCabalFile = cacheSrcDir pkgId </> unPackageName (pkgName pkgId) <.> "cabal"
+          let pkgCabalFile = cabalFileForPkgId pkgId
               pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
 
           uploadEntry <- makeIndexPkgCabal pkgId pkgTimestamp pkgCabalFile
@@ -264,11 +332,10 @@ makeCabalEntries cacheSrcDir allPkgSpecs = do
           return $ uploadEntry : revisionEntries
       )
 
-makeMetadataEntries :: [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
-makeMetadataEntries allPkgSpecs = do
-  currentTime <- askOracle CurrentTime
-  expiryTime <- askOracle ExpiryTime
-  outputDir <- askOracle OutputDir
+makeMetadataEntries :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
+makeMetadataEntries outputDir allPkgSpecs = do
+  currentTime <- askOracle $ CurrentTime ()
+  expiryTime <- askOracle $ ExpiryTime ()
 
   targetKeys <- readKeys "target"
 
@@ -355,22 +422,15 @@ makeIndexPkgCabal pkgId timestamp filePath = do
 
 makeIndexPkgMetadata :: Maybe Meta.UTCTime -> PackageId -> FilePath -> Action Targets
 makeIndexPkgMetadata expiryTime pkgId sdistPath = do
-  need [sdistPath]
-  targetFileInfo <- liftIO $ computeFileInfoSimple' sdistPath
+  targetFileInfo <- computeFileInfoSimple sdistPath
   let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
   return
     Targets
       { targetsVersion = FileVersion 1
       , targetsExpires = FileExpires expiryTime
-      , targetsTargets = fromList [(TargetPathRepo packagePath, targetFileInfo)]
+      , targetsTargets = FM.fromList [(TargetPathRepo packagePath, targetFileInfo)]
       , targetsDelegations = Nothing
       }
-
-duplicates :: (Ord a) => NE.NonEmpty a -> [a]
-duplicates = mapMaybe (listToMaybe . NE.tail) . NE.group
-
-doubleDeprecations :: NE.NonEmpty DeprecationSpec -> [NE.NonEmpty DeprecationSpec]
-doubleDeprecations = filter ((> 1) . length) . NE.groupWith deprecationIsDeprecated
 
 -- | TEMP
 validateMeta :: (MonadFail m) => FilePath -> PackageVersionSpec -> m ()
@@ -430,6 +490,12 @@ validateMeta metaFile PackageVersionSpec{..} = do
               ]
     _otherwise ->
       return ()
+ where
+  duplicates :: (Ord a) => NE.NonEmpty a -> [a]
+  duplicates = mapMaybe (listToMaybe . NE.tail) . NE.group
+
+  doubleDeprecations :: NE.NonEmpty DeprecationSpec -> [NE.NonEmpty DeprecationSpec]
+  doubleDeprecations = filter ((> 1) . length) . NE.groupWith deprecationIsDeprecated
 
 mkTarEntry
   :: BL.ByteString
@@ -453,3 +519,17 @@ mkTarEntry contents indexFile timestamp =
     Right tp -> tp
 
   indexPath = Sec.toFilePath $ Sec.castRoot $ indexFileToPath hackageIndexLayout indexFile
+
+newtype IndexEntries = IndexEntries () deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
+type instance RuleResult IndexEntries = [Tar.Entry]
+
+newtype PkgSpecs = PkgSpecs () deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
+type instance RuleResult PkgSpecs = [(FilePath, PackageId, PackageVersionSpec)]
+
+infixr 4 ~?~
+(~?~) :: FilePattern -> ([String] -> Maybe c) -> FilePath -> Maybe c
+pat ~?~ parser = filePattern pat >=> parser
+
+infixr 3 ~~>
+(~~>) :: (FilePath -> Maybe a) -> (FilePath -> a -> Action ()) -> Rules ()
+parser ~~> act = isJust . parser ?> \path -> act path $ fromJust $ parser path

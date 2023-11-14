@@ -44,7 +44,12 @@ unicode: never
 respectful: true
 
 # Fixity information for operators
-fixities: []
+fixities: 
+ - infixr 4 ~/~
+ - infixr 3 ~~>
+ - infixr 4 ~?~
+ # from Shake
+ - infix 1 %>
 
 # Module reexports Fourmolu should know about
 reexports: []

@@ -58,7 +58,7 @@ data AllPackagesPageEntry = AllPackagesPageEntry
 
 makeAllPackagesPage :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
 makeAllPackagesPage path allPkgSpecs = do
-  currentTime <- askOracle CurrentTime
+  currentTime <- askOracle $ CurrentTime ()
 
   let packages :: [AllPackagesPageEntry]
       packages =
@@ -109,7 +109,7 @@ data AllPackageVersionsPageEntry
 
 makeAllPackageVersionsPage :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
 makeAllPackageVersionsPage path allPkgSpecs = do
-  currentTime <- askOracle CurrentTime
+  currentTime <- askOracle $ CurrentTime ()
 
   let entries =
         allPkgSpecs

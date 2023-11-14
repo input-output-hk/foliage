@@ -2,13 +2,15 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Foliage.PrepareSdist (
-  -- prepareSdist,
-  prepareSource,
+module Foliage.SourceDist (
+  extractFromTarball,
+  cachePathForURL,
+  fetchPackageVersion,
+  applyPatches,
+  updateCabalFileVersion,
 )
 where
 
-import Control.Monad (when)
 import Data.Char (isAlpha)
 import Data.Foldable (for_)
 import Data.List (dropWhileEnd)
@@ -21,56 +23,52 @@ import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.Lens qualified as L
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.FetchURL (fetchURL)
-import Foliage.Meta (PackageVersionSource (..), PackageVersionSpec (..))
+import Foliage.Meta (PackageVersionSource (..))
 import Foliage.Oracles (CacheDir (..))
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import Network.URI (URI (..), URIAuth (..))
 import System.Directory qualified as IO
 
-prepareSource :: FilePath -> PackageIdentifier -> PackageVersionSpec -> FilePath -> Action ()
-prepareSource metaFile pkgId pkgSpec cacheDir = do
-  let PackageIdentifier{pkgName, pkgVersion} = pkgId
-      PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgSpec
-
-  cacheRoot <- askOracle CacheDir
-  let cachePathForURL uri =
-        let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
-            host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
-         in cacheRoot </> scheme </> host <//> uriPath uri
-
-  case packageVersionSource of
-    URISource (URI{uriScheme, uriPath}) mSubdir | uriScheme == "file:" -> do
-      tarballPath <- liftIO $ IO.makeAbsolute uriPath
-      extractFromTarball tarballPath mSubdir cacheDir
-    URISource uri mSubdir -> do
-      let tarballPath = cachePathForURL uri
-      fetchURL uri tarballPath
-      extractFromTarball tarballPath mSubdir cacheDir
-    GitHubSource repo rev mSubdir -> do
-      let uri = githubRepoTarballUrl repo rev
-          tarballPath = cachePathForURL uri
-      fetchURL uri tarballPath
-      extractFromTarball tarballPath mSubdir cacheDir
-
+applyPatches :: FilePath -> FilePath -> Action ()
+applyPatches metaFile pkgDir = do
   patchfiles <- getDirectoryFiles (takeDirectory metaFile) ["patches/*.patch"]
   for_ patchfiles $ \patchfile -> do
     -- _sources/name/version/meta.toml -> _sources/name/version/patches/some.patch
     let patch = replaceBaseName metaFile patchfile
     -- FileStdin is relative to the current working directory of this process
     -- but patch needs to be run in srcDir
-    cmd_ Shell (Cwd cacheDir) (FileStdin patch) "patch -p1"
+    cmd_ Shell (Cwd pkgDir) (FileStdin patch) "patch -p1"
 
-  let cabalFilePath = cacheDir </> unPackageName pkgName <.> "cabal"
-  when packageVersionForce $ do
-    pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.normal cabalFilePath
-    let pkgDesc' = set (L.packageDescription . L.package . L.pkgVersion) pkgVersion pkgDesc
-    putInfo $ "Updating version in cabal file" ++ cabalFilePath
-    liftIO $ writeGenericPackageDescription cabalFilePath pkgDesc'
+fetchPackageVersion :: PackageVersionSource -> FilePath -> Action ()
+fetchPackageVersion (URISource (URI{uriScheme, uriPath}) mSubdir) pkgDir | uriScheme == "file:" = do
+  tarballPath <- liftIO $ IO.makeAbsolute uriPath
+  extractFromTarball tarballPath mSubdir pkgDir
+fetchPackageVersion (URISource uri mSubdir) pkgDir = do
+  tarballPath <- cachePathForURL uri
+  fetchURL uri tarballPath
+  extractFromTarball tarballPath mSubdir pkgDir
+fetchPackageVersion (GitHubSource repo rev mSubdir) pkgDir = do
+  let uri = githubRepoTarballUrl repo rev
+  tarballPath <- cachePathForURL uri
+  fetchURL uri tarballPath
+  extractFromTarball tarballPath mSubdir pkgDir
 
--- liftIO $ packageDirToSdist Verbosity.normal pkgDesc (takeDirectory cabalFilePath) >>= BSL.writeFile path
+updateCabalFileVersion :: FilePath -> Version -> Action ()
+updateCabalFileVersion path pkgVersion = do
+  pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.normal path
+  let pkgDesc' = set (L.packageDescription . L.package . L.pkgVersion) pkgVersion pkgDesc
+  putInfo $ "Updating version in cabal file" ++ path
+  liftIO $ writeGenericPackageDescription path pkgDesc'
+
+cachePathForURL :: URI -> Action FilePath
+cachePathForURL uri = do
+  cacheRoot <- askOracle $ CacheDir ()
+  let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
+      host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
+  return $ cacheRoot </> scheme </> host <//> uriPath uri
 
 extractFromTarball :: FilePath -> Maybe FilePath -> FilePath -> Action ()
-extractFromTarball tarballPath mSubdir outDir = do
+extractFromTarball tarballPath mSubdir destDir = do
   withTempDir $ \tmpDir -> do
     cmd_
       [ "tar"
@@ -111,5 +109,5 @@ extractFromTarball tarballPath mSubdir outDir = do
       , -- SOURCE
         srcDir
       , -- DEST
-        outDir
+        destDir
       ]
