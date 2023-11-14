@@ -32,7 +32,6 @@ executable foliage
         Foliage.Meta
         Foliage.Meta.Aeson
         Foliage.Options
-        Foliage.Oracles
         Foliage.Pages
         Foliage.SourceDist
         Foliage.Time

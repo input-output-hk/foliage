@@ -24,7 +24,6 @@ import Distribution.Types.Lens qualified as L
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.FetchURL (fetchURL)
 import Foliage.Meta (PackageVersionSource (..))
-import Foliage.Oracles (CacheDir (..))
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import Network.URI (URI (..), URIAuth (..))
 import System.Directory qualified as IO
@@ -39,17 +38,17 @@ applyPatches metaFile pkgDir = do
     -- but patch needs to be run in srcDir
     cmd_ Shell (Cwd pkgDir) (FileStdin patch) "patch -p1"
 
-fetchPackageVersion :: PackageVersionSource -> FilePath -> Action ()
-fetchPackageVersion (URISource (URI{uriScheme, uriPath}) mSubdir) pkgDir | uriScheme == "file:" = do
+fetchPackageVersion :: FilePath -> PackageVersionSource -> FilePath -> Action ()
+fetchPackageVersion _cacheDir (URISource (URI{uriScheme, uriPath}) mSubdir) pkgDir | uriScheme == "file:" = do
   tarballPath <- liftIO $ IO.makeAbsolute uriPath
   extractFromTarball tarballPath mSubdir pkgDir
-fetchPackageVersion (URISource uri mSubdir) pkgDir = do
-  tarballPath <- cachePathForURL uri
+fetchPackageVersion cacheDir (URISource uri mSubdir) pkgDir = do
+  tarballPath <- cachePathForURL cacheDir uri
   fetchURL uri tarballPath
   extractFromTarball tarballPath mSubdir pkgDir
-fetchPackageVersion (GitHubSource repo rev mSubdir) pkgDir = do
+fetchPackageVersion cacheDir (GitHubSource repo rev mSubdir) pkgDir = do
   let uri = githubRepoTarballUrl repo rev
-  tarballPath <- cachePathForURL uri
+  tarballPath <- cachePathForURL cacheDir uri
   fetchURL uri tarballPath
   extractFromTarball tarballPath mSubdir pkgDir
 
@@ -60,12 +59,11 @@ updateCabalFileVersion path pkgVersion = do
   putInfo $ "Updating version in cabal file" ++ path
   liftIO $ writeGenericPackageDescription path pkgDesc'
 
-cachePathForURL :: URI -> Action FilePath
-cachePathForURL uri = do
-  cacheRoot <- askOracle $ CacheDir ()
+cachePathForURL :: FilePath -> URI -> Action FilePath
+cachePathForURL cacheDir uri = do
   let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
       host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
-  return $ cacheRoot </> scheme </> host <//> uriPath uri
+  return $ cacheDir </> scheme </> host <//> uriPath uri
 
 extractFromTarball :: FilePath -> Maybe FilePath -> FilePath -> Action ()
 extractFromTarball tarballPath mSubdir destDir = do

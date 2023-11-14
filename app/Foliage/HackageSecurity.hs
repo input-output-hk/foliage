@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Foliage.HackageSecurity where
@@ -207,8 +206,9 @@ createKeys base = do
 
 readKeys :: FilePath -> Action [Some Key]
 readKeys base = do
-  getShakeExtra @SignOptions >>= \case
-    Just (SignOptsSignWithKeys keysPath) -> do
+  Just signOptions <- getShakeExtra
+  case signOptions of
+    SignOptsSignWithKeys keysPath -> do
       paths <- getDirectoryFiles (keysPath </> base) ["*.json"]
       need $ map (\fn -> keysPath </> base </> fn) paths
       for paths $ \path -> do
@@ -216,10 +216,8 @@ readKeys base = do
         case mKey of
           Left err -> fail $ show err
           Right key -> pure key
-    Just SignOptsDon'tSign ->
+    SignOptsDon'tSign ->
       return []
-    Nothing ->
-      error "Internal error: missing SignOptions"
 
 renderSignedJSON :: (ToJSON WriteJSON a) => [Some Key] -> a -> BSL.ByteString
 renderSignedJSON keys thing =

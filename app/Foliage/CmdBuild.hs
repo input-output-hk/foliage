@@ -37,7 +37,6 @@ import Foliage.HackageSecurity (
 import Foliage.Meta qualified as Meta
 import Foliage.Meta.Aeson ()
 import Foliage.Options
-import Foliage.Oracles
 import Foliage.Pages
 import Hackage.Security.Server (
   FileExpires (..),
@@ -94,15 +93,6 @@ cmdBuild buildOptions = do
     putStrLn $ "Expiry time set to " <> iso8601Show time
 
   let
-    extra =
-      ( case buildOptsSignOpts buildOptions of
-          SignOptsSignWithKeys keys -> addShakeExtra (SignWithKeys keys)
-          SignOptsDon'tSign -> id
-      )
-        . addShakeExtra (FileExpires expireSignaturesOn)
-        $ mempty
-
-  let
     opts =
       shakeOptions
         { shakeFiles = cacheDir
@@ -112,7 +102,13 @@ cmdBuild buildOptions = do
         , shakeReport = ["report.html", "report.json"]
         , shakeThreads = buildOptsNumThreads buildOptions
         , shakeVerbosity = buildOptsVerbosity buildOptions
-        , shakeExtra = extra
+        , -- "extra" configuration values, which can be retrived with getShakeExtra
+          shakeExtra =
+            -- signing options (at type SignOptions)
+            addShakeExtra (buildOptsSignOpts buildOptions)
+              -- signature expiration (at type FileExpires)
+              . addShakeExtra (FileExpires expireSignaturesOn)
+              $ mempty
         }
 
   -- Create keys if needed
@@ -125,8 +121,6 @@ cmdBuild buildOptions = do
     _otherwise -> pure ()
 
   shake opts $ do
-    _ <- addCacheDirOracle cacheDir
-
     addFetchURLRule
 
     readPackageVersionSpec <- newCache $ \path -> do
@@ -178,7 +172,7 @@ cmdBuild buildOptions = do
         let PackageIdentifier{pkgVersion} = pkgId
             PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgSpec
 
-        fetchPackageVersion packageVersionSource (takeDirectory cabalFilePath)
+        fetchPackageVersion cacheDir packageVersionSource (takeDirectory cabalFilePath)
 
         applyPatches metaFile (takeDirectory cabalFilePath)
 
@@ -542,8 +536,6 @@ type instance RuleResult IndexEntries = [Tar.Entry]
 
 newtype PkgSpecs = PkgSpecs () deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
 type instance RuleResult PkgSpecs = [(FilePath, PackageId, PackageVersionSpec)]
-
-newtype SignWithKeys = SignWithKeys FilePath
 
 infixr 4 ~?~
 (~?~) :: FilePattern -> ([String] -> Maybe c) -> FilePath -> Maybe c
