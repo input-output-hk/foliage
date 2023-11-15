@@ -26,7 +26,7 @@ import Development.Shake (
   (<//>),
  )
 import Development.Shake.FilePath (
-  replaceBaseName,
+  replaceFileName,
   takeDirectory,
   (</>),
  )
@@ -48,7 +48,7 @@ applyPatches metaFile pkgDir = do
   patchfiles <- getDirectoryFiles (takeDirectory metaFile) ["patches/*.patch"]
   for_ patchfiles $ \patchfile -> do
     -- _sources/name/version/meta.toml -> _sources/name/version/patches/some.patch
-    let patch = replaceBaseName metaFile patchfile
+    let patch = replaceFileName metaFile patchfile
     -- FileStdin is relative to the current working directory of this process
     -- but patch needs to be run in srcDir
     cmd_ Shell (Cwd pkgDir) (FileStdin patch) "patch -p1"

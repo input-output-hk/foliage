@@ -41,7 +41,7 @@ import Development.Shake.Classes (
   Typeable,
  )
 import Development.Shake.FilePath (
-  replaceBaseName,
+  replaceFileName,
   takeDirectory,
   (<.>),
   (</>),
@@ -143,7 +143,7 @@ cmdBuild buildOptions = do
 
     let cabalFileRevisionForPkgId :: PackageIdentifier -> Int -> FilePath
         cabalFileRevisionForPkgId pkgId revNum =
-          metaFileForPkgId pkgId `replaceBaseName` "revisions" </> show revNum <.> "cabal"
+          metaFileForPkgId pkgId `replaceFileName` "revisions" </> show revNum <.> "cabal"
 
     let sdistPathForPkgId :: PackageIdentifier -> FilePath
         sdistPathForPkgId pkgId =
@@ -199,7 +199,7 @@ cmdBuild buildOptions = do
     --
     -- Rules for core repository functionality
     --
-    coreRules outputDir cabalFileForPkgId getPkgSpecs sdistPathForPkgId currentTime
+    coreRules outputDir cabalFileForPkgId sdistPathForPkgId currentTime getPkgSpecs
 
     --
     -- Rules for Hackage-like paths, e.g.
@@ -207,7 +207,7 @@ cmdBuild buildOptions = do
     -- package/pkg-id/revision/rev-num.cabal
     -- package/pkg-id/pkg-name.cabal
 
-    hackgageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId
+    hackageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId getPkgSpecs
 
     --
     -- Foliage metadata
