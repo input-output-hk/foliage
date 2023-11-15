@@ -7,16 +7,17 @@ import Development.Shake.FilePath
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple (PackageIdentifier (..), unPackageName)
-import Foliage.Meta (PackageVersionSpec (packageVersionRevisions), RevisionSpec (RevisionSpec, revisionNumber))
+import Foliage.Meta (PackageVersionSpec (packageVersionRevisions), RevisionSpec (RevisionSpec, revisionNumber), latestRevisionNumber)
 import Text.Read (readMaybe)
 
 hackageExtraRules
   :: FilePath
   -> (PackageIdentifier -> FilePath)
   -> (PackageIdentifier -> Int -> FilePath)
+  -> (PackageIdentifier -> Action PackageVersionSpec)
   -> Action [(FilePath, PackageIdentifier, PackageVersionSpec)]
   -> Rules ()
-hackageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId getPkgSpecs = do
+hackageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId pkgSpecForPkgId getPkgSpecs = do
   action $ do
     getPkgSpecs
       >>= need
@@ -45,6 +46,9 @@ hackageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId getPkgSp
       Just [pkgIdStr, pkgNameStr]
         | Just pkgId <- simpleParsec pkgIdStr
         , Just pkgName' <- simpleParsec pkgNameStr
-        , pkgName pkgId == pkgName' ->
-            copyFileChanged (cabalFileForPkgId pkgId) path
+        , pkgName pkgId == pkgName' -> do
+            pkgSpec <- pkgSpecForPkgId pkgId
+            case latestRevisionNumber pkgSpec of
+              Nothing -> copyFileChanged (cabalFileForPkgId pkgId) path
+              Just revNum -> copyFileChanged (cabalFileRevisionForPkgId pkgId revNum) path
       _ -> error $ "The path " ++ path ++ " is not valid."

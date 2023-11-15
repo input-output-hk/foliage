@@ -17,6 +17,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Development.Shake (
+  Action,
   Change (..),
   Lint (..),
   RuleResult,
@@ -137,6 +138,13 @@ cmdBuild buildOptions = do
         metaFileForPkgId PackageIdentifier{pkgName, pkgVersion} =
           inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
 
+    pkgSpecForPkgId <- newCache $ \pkgId -> do
+      let path = metaFileForPkgId pkgId
+      need [path]
+      meta <- liftIO $ readPackageVersionSpec path
+      validateMeta path meta
+      return meta
+
     let cabalFileForPkgId :: PackageIdentifier -> FilePath
         cabalFileForPkgId PackageIdentifier{pkgName, pkgVersion} =
           cacheDir </> unPackageName pkgName </> prettyShow pkgVersion </> unPackageName pkgName <.> "cabal"
@@ -144,6 +152,13 @@ cmdBuild buildOptions = do
     let cabalFileRevisionForPkgId :: PackageIdentifier -> Int -> FilePath
         cabalFileRevisionForPkgId pkgId revNum =
           metaFileForPkgId pkgId `replaceFileName` "revisions" </> show revNum <.> "cabal"
+
+    let latestCabalFileRevisionForPkgId :: PackageIdentifier -> Action FilePath
+        latestCabalFileRevisionForPkgId pkgId = do
+          pkgSpec <- pkgSpecForPkgId pkgId
+          return $ case latestRevisionNumber pkgSpec of
+            Nothing -> cabalFileForPkgId pkgId
+            Just revNum -> cabalFileRevisionForPkgId pkgId revNum
 
     let sdistPathForPkgId :: PackageIdentifier -> FilePath
         sdistPathForPkgId pkgId =
@@ -236,7 +251,7 @@ cmdBuild buildOptions = do
     -- Website pages
     --
 
-    websitePagesRules outputDir currentTime getPkgSpecs metaFileForPkgId packageVersionSpec cabalFileForPkgId
+    websitePagesRules outputDir currentTime getPkgSpecs pkgSpecForPkgId cabalFileForPkgId
 
 validateMeta :: (MonadFail m) => FilePath -> PackageVersionSpec -> m ()
 validateMeta metaFile PackageVersionSpec{..} = do

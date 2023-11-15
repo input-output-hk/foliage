@@ -46,11 +46,10 @@ websitePagesRules
   :: FilePath
   -> UTCTime
   -> Action [(FilePath, PackageId, PackageVersionSpec)]
-  -> (PackageId -> FilePath)
-  -> (FilePath -> Action PackageVersionSpec)
+  -> (PackageId -> Action PackageVersionSpec)
   -> (PackageId -> FilePath)
   -> Rules ()
-websitePagesRules outputDir currentTime getPkgSpecs metaFileForPkgId readPackageVersionSpec cabalFileForPkgId = do
+websitePagesRules outputDir currentTime getPkgSpecs pkgSpecForPkgId cabalFileForPkgId = do
   action $ do
     need
       [ outputDir </> "index.html"
@@ -75,8 +74,7 @@ websitePagesRules outputDir currentTime getPkgSpecs metaFileForPkgId readPackage
   outputDir </> "package/*/index.html" %> \path ->
     case filePattern (outputDir </> "package/*/index.html") path of
       Just [pkgIdStr] | Just pkgId <- simpleParsec pkgIdStr -> do
-        let metaFile = metaFileForPkgId pkgId
-        pkgSpec <- readPackageVersionSpec metaFile
+        pkgSpec <- pkgSpecForPkgId pkgId
         let cabalFile = cabalFileForPkgId pkgId
         need [cabalFile]
         pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFile
