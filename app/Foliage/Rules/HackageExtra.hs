@@ -2,27 +2,25 @@ module Foliage.Rules.HackageExtra (
   hackageExtraRules,
 ) where
 
-import Development.Shake (Action, Rules, action, copyFileChanged, filePattern, need, (%>))
+import Text.Read (readMaybe)
+
+import Data.Map.Strict qualified as M
+import Development.Shake (Action, Rules, action, askOracle, copyFileChanged, filePattern, need, (%>))
 import Development.Shake.FilePath
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple (PackageIdentifier (..), unPackageName)
-import Foliage.Meta (PackageVersionSpec (packageVersionRevisions), RevisionSpec (RevisionSpec, revisionNumber), latestRevisionNumber)
-import Text.Read (readMaybe)
 
-hackageExtraRules
-  :: FilePath
-  -> (PackageIdentifier -> FilePath)
-  -> (PackageIdentifier -> Int -> FilePath)
-  -> (PackageIdentifier -> Action PackageVersionSpec)
-  -> Action [(FilePath, PackageIdentifier, PackageVersionSpec)]
-  -> Rules ()
-hackageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId pkgSpecForPkgId getPkgSpecs = do
-  action $ do
-    getPkgSpecs
+import Foliage.Meta (PackageVersionSpec (..), RevisionSpec (..), latestRevisionNumber)
+import Foliage.Rules.Utils
+
+hackageExtraRules :: FilePath -> Rules ()
+hackageExtraRules outputDir = do
+  action $
+    askOracle PkgSpecs
       >>= need
-        . concatMap
-          ( \(_, pkgId@PackageIdentifier{pkgName}, pkgSpec) ->
+        . M.foldMapWithKey
+          ( \pkgId@PackageIdentifier{pkgName} (_, pkgSpec) ->
               let baseDir = outputDir </> "package" </> prettyShow pkgId
                in (baseDir </> unPackageName pkgName <.> "cabal")
                     : (baseDir </> "revision" </> "0.cabal")

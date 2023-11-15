@@ -34,6 +34,7 @@ executable foliage
         Foliage.Rules.Core
         Foliage.Rules.HackageExtra
         Foliage.Rules.Pages
+        Foliage.Rules.Utils
         Foliage.SourceDist
         Foliage.Time
         Foliage.Utils.Aeson

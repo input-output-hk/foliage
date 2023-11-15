@@ -7,17 +7,16 @@ module Foliage.Rules.Pages (
   websitePagesRules,
 ) where
 
-import Data.Foldable1 (minimumBy)
-import Data.Function (on, (&))
+import Data.Foldable1 qualified as F1
 import Data.List (sortOn)
-import Data.List.NonEmpty qualified as NE
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Ord (Down (Down), comparing)
 import GHC.Generics (Generic)
 
 import Data.Aeson (KeyValue ((.=)), ToJSON, object)
+import Data.Map qualified as M
+import Data.Map.Strict (Map)
 import Data.Text.Lazy.IO.Utf8 qualified as TL
-import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
 import Development.Shake
 import Development.Shake.FilePath
@@ -27,54 +26,47 @@ import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple (PackageId, PackageIdentifier (..))
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
-import Distribution.Utils.Generic (sndOf3)
 import Distribution.Verbosity qualified as Verbosity
 import Text.Mustache (Template)
 import Text.Mustache.Compile.TH (compileMustacheDir)
 import Text.Mustache.Render (renderMustache)
 
-import Foliage.Meta (
-  PackageVersionSource,
-  PackageVersionSpec (..),
-  RevisionSpec (..),
-  packageVersionIsDeprecated,
- )
+import Foliage.Meta
 import Foliage.Meta.Aeson ()
-import Foliage.Utils.Aeson (MyAesonEncoding (..))
+import Foliage.Rules.Utils
+import Foliage.Utils.Aeson
 
 websitePagesRules
   :: FilePath
   -> UTCTime
-  -> Action [(FilePath, PackageId, PackageVersionSpec)]
-  -> (PackageId -> Action PackageVersionSpec)
   -> (PackageId -> FilePath)
   -> Rules ()
-websitePagesRules outputDir currentTime getPkgSpecs pkgSpecForPkgId cabalFileForPkgId = do
+websitePagesRules outputDir currentTime cabalFileForPkgId = do
   action $ do
     need
       [ outputDir </> "index.html"
       , outputDir </> "all-packages/index.html"
       , outputDir </> "all-package-versions/index.html"
       ]
-    getPkgSpecs >>= \pkgSpecs ->
+    askOracle PkgSpecs >>= \pkgSpecs ->
       need
         [ outputDir </> "package" </> prettyShow pkgId </> "index.html"
-        | (_, pkgId, _) <- pkgSpecs
+        | pkgId <- M.keys pkgSpecs
         ]
 
   outputDir </> "index.html"
     %> makeIndexPage
 
   outputDir </> "all-packages/index.html" %> \path ->
-    getPkgSpecs >>= makeAllPackagesPage currentTime path
+    askOracle PkgSpecs >>= makeAllPackagesPage currentTime path
 
   outputDir </> "all-package-versions/index.html" %> \path ->
-    getPkgSpecs >>= makeAllPackageVersionsPage currentTime path
+    askOracle PkgSpecs >>= makeAllPackageVersionsPage currentTime path
 
   outputDir </> "package/*/index.html" %> \path ->
     case filePattern (outputDir </> "package/*/index.html") path of
       Just [pkgIdStr] | Just pkgId <- simpleParsec pkgIdStr -> do
-        pkgSpec <- pkgSpecForPkgId pkgId
+        pkgSpec <- askOracle (PkgSpecFor pkgId)
         let cabalFile = cabalFileForPkgId pkgId
         need [cabalFile]
         pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFile
@@ -98,36 +90,28 @@ data AllPackagesPageEntry = AllPackagesPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackagesPageEntry
 
-makeAllPackagesPage :: UTCTime -> FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
-makeAllPackagesPage currentTime path allPkgSpecs = do
-  let packages :: [AllPackagesPageEntry]
-      packages =
-        allPkgSpecs
-          -- group package versions by package name
-          & NE.groupBy ((==) `on` sndOf3)
-          -- for each package name pick the most recent version
-          & map
-            ( \group ->
-                -- pick the most recent version
-                minimumBy (comparing $ Down . pkgVersion . sndOf3) group
-                  -- turn it into the template data
-                  & ( \(_metaFile, pkgId, PackageVersionSpec{packageVersionTimestamp, packageVersionRevisions, packageVersionSource}) ->
-                        AllPackagesPageEntry
-                          { allPackagesPageEntryPkgId = pkgId
-                          , allPackagesPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp
-                          , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp)
-                          , allPackagesPageEntrySource = packageVersionSource
-                          , allPackagesPageEntryLatestRevisionTimestamp = revisionTimestamp <$> listToMaybe packageVersionRevisions
-                          }
-                    )
-            )
-          -- sort packages by pkgId
-          & sortOn allPackagesPageEntryPkgId
-
+makeAllPackagesPage :: UTCTime -> FilePath -> Map PackageId (FilePath, PackageVersionSpec) -> Action ()
+makeAllPackagesPage currentTime path pkgSpecs =
   liftIO $
     TL.writeFile path $
       renderMustache allPackagesPageTemplate $
         object ["packages" .= packages]
+ where
+  packages =
+    sortOn
+      allPackagesPageEntryPkgId
+      [ AllPackagesPageEntry
+        { allPackagesPageEntryPkgId = pkgId
+        , allPackagesPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp
+        , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp)
+        , allPackagesPageEntrySource = packageVersionSource
+        , allPackagesPageEntryLatestRevisionTimestamp = revisionTimestamp <$> listToMaybe packageVersionRevisions
+        }
+      | (pkgName, pvs) <- M.toList (groupByPackageName pkgSpecs)
+      , let (pkgVersion, pkgSpec) = F1.minimumBy (comparing $ Down . fst) pvs
+      , let PackageVersionSpec{packageVersionTimestamp, packageVersionRevisions, packageVersionSource} = pkgSpec
+      , let pkgId = PackageIdentifier pkgName pkgVersion
+      ]
 
 -- FIXME: refactor this
 data AllPackageVersionsPageEntry
@@ -147,55 +131,51 @@ data AllPackageVersionsPageEntry
   deriving stock (Generic)
   deriving (ToJSON) via MyAesonEncoding AllPackageVersionsPageEntry
 
-makeAllPackageVersionsPage :: UTCTime -> FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
-makeAllPackageVersionsPage currentTime path allPkgSpecs = do
-  let entries =
-        allPkgSpecs
-          -- collect all cabal file revisions including the original cabal file
-          & foldMap
-            ( \(_metaFile, pkgId, pkgSpec@PackageVersionSpec{packageVersionSource, packageVersionTimestamp, packageVersionRevisions}) ->
-                -- original cabal file
-                AllPackageVersionsPageEntryPackage
-                  { allPackageVersionsPageEntryPkgId = pkgId
-                  , allPackageVersionsPageEntryTimestamp = fromMaybe currentTime packageVersionTimestamp
-                  , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime packageVersionTimestamp)
-                  , allPackageVersionsPageEntrySource = packageVersionSource
-                  , allPackageVersionsPageEntryDeprecated = packageVersionIsDeprecated pkgSpec
-                  }
-                  -- list of revisions
-                  : [ AllPackageVersionsPageEntryRevision
-                      { allPackageVersionsPageEntryPkgId = pkgId
-                      , allPackageVersionsPageEntryTimestamp = revisionTimestamp
-                      , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                      , allPackageVersionsPageEntryDeprecated = packageVersionIsDeprecated pkgSpec
-                      }
-                    | RevisionSpec{revisionTimestamp} <- packageVersionRevisions
-                    ]
-            )
-          -- sort them by timestamp
-          & sortOn (Down . allPackageVersionsPageEntryTimestamp)
-
+makeAllPackageVersionsPage :: UTCTime -> FilePath -> Map PackageId (FilePath, PackageVersionSpec) -> Action ()
+makeAllPackageVersionsPage currentTime path pkgSpecs =
   liftIO $
     TL.writeFile path $
       renderMustache allPackageVersionsPageTemplate $
         object ["entries" .= entries]
+ where
+  entries =
+    sortOn (Down . allPackageVersionsPageEntryTimestamp)
+      -- collect all cabal file revisions including the original cabal file
+      . M.foldMapWithKey
+        ( \pkgId (_, pkgSpec) ->
+            -- original cabal file
+            AllPackageVersionsPageEntryPackage
+              { allPackageVersionsPageEntryPkgId = pkgId
+              , allPackageVersionsPageEntryTimestamp = fromMaybe currentTime $ packageVersionTimestamp pkgSpec
+              , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds $ fromMaybe currentTime $ packageVersionTimestamp pkgSpec
+              , allPackageVersionsPageEntrySource = packageVersionSource pkgSpec
+              , allPackageVersionsPageEntryDeprecated = packageVersionIsDeprecated pkgSpec
+              --
+              }
+              -- list of revisions
+              : [ AllPackageVersionsPageEntryRevision
+                  { allPackageVersionsPageEntryPkgId = pkgId
+                  , allPackageVersionsPageEntryTimestamp = revisionTimestamp
+                  , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                  , allPackageVersionsPageEntryDeprecated = packageVersionIsDeprecated pkgSpec
+                  }
+                | RevisionSpec{revisionTimestamp} <- packageVersionRevisions pkgSpec
+                ]
+        )
+      $ pkgSpecs
 
 makePackageVersionPage :: FilePath -> GenericPackageDescription -> PackageVersionSpec -> Action ()
-makePackageVersionPage
-  path
-  pkgDesc
-  pkgSpec@PackageVersionSpec{packageVersionSource, packageVersionRevisions, packageVersionTimestamp} =
-    let
-     in liftIO $
-          TL.writeFile path $
-            renderMustache packageVersionPageTemplate $
-              object
-                [ "pkgVersionSource" .= packageVersionSource
-                , "cabalFileRevisions" .= map revisionTimestamp packageVersionRevisions
-                , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
-                , "pkgTimestamp" .= packageVersionTimestamp
-                , "pkgVersionDeprecated" .= packageVersionIsDeprecated pkgSpec
-                ]
+makePackageVersionPage path pkgDesc pkgSpec =
+  liftIO $
+    TL.writeFile path $
+      renderMustache packageVersionPageTemplate $
+        object
+          [ "pkgVersionSource" .= packageVersionSource pkgSpec
+          , "cabalFileRevisions" .= map revisionTimestamp (packageVersionRevisions pkgSpec)
+          , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
+          , "pkgTimestamp" .= packageVersionTimestamp pkgSpec
+          , "pkgVersionDeprecated" .= packageVersionIsDeprecated pkgSpec
+          ]
 
 indexPageTemplate :: Template
 indexPageTemplate = $(compileMustacheDir "index" "templates")

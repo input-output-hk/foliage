@@ -201,13 +201,13 @@ deprecationMetaCodec =
 timeCodec :: Toml.Key -> TomlCodec UTCTime
 timeCodec key = Toml.dimap (utcToZonedTime utc) zonedTimeToUTC $ Toml.zonedTime key
 
+withDefault :: (Eq a) => a -> TomlCodec a -> TomlCodec a
+withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
+ where
+  f a = if a == d then Nothing else Just a
+
 latestRevisionNumber :: PackageVersionSpec -> Maybe Int
 latestRevisionNumber sm =
   case sortOn (Down . revisionNumber) (packageVersionRevisions sm) of
     [] -> Nothing
     rev : _ -> Just (revisionNumber rev)
-
-withDefault :: (Eq a) => a -> TomlCodec a -> TomlCodec a
-withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
- where
-  f a = if a == d then Nothing else Just a

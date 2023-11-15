@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -18,6 +19,8 @@ import Data.List (dropWhileEnd)
 import Development.Shake (
   Action,
   CmdOption (..),
+  RuleResult,
+  Rules,
   cmd_,
   getDirectoryFiles,
   liftIO,
@@ -32,16 +35,50 @@ import Development.Shake.FilePath (
  )
 import Distribution.Compat.Lens (set)
 import Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
-import Distribution.Simple (Version)
+import Distribution.Simple (PackageId, Version)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.Lens qualified as L
 import Distribution.Verbosity qualified as Verbosity
-import Network.URI (URI (..), URIAuth (..))
+import Network.URI (URI (..), URIAuth (..), pathSegments)
 import System.Directory qualified as IO
 
+import Development.Shake.Classes
+import Development.Shake.Rule
+import Distribution.Pretty (prettyShow)
 import Foliage.FetchURL (fetchURL)
 import Foliage.Meta (PackageVersionSource (..))
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
+import GHC.Generics (Generic)
+import Hackage.Security.Util.Path (joinFragments)
+
+data FetchSource = FetchSource PackageId PackageVersionSource
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (Hashable, Binary, NFData)
+
+type instance RuleResult FetchSource = FilePath
+
+fetchSource :: PackageId -> PackageVersionSource -> Action FilePath
+fetchSource pkgId pvs = apply1 $ FetchSource pkgId pvs
+
+addFetchSourceRule :: Rules ()
+addFetchSourceRule = addBuiltinRule noLint noIdentity run
+ where
+  run (FetchSource pkgId pvs) oldETag _mode = do
+    let dstDir = "_cache/packages" </> prettyShow pkgId
+
+    case pvs of
+      (URISource (URI{uriScheme, uriPath}) mSubdir) | uriScheme == "file:" -> do
+        tarballPath <- liftIO $ IO.makeAbsolute uriPath
+        extractFromTarball tarballPath mSubdir
+      (URISource uri mSubdir) -> do
+        tarballPath <- cachePathForURL cacheDir uri
+        fetchURL uri tarballPath
+        extractFromTarball tarballPath mSubdir
+      (GitHubSource repo rev mSubdir) -> do
+        let uri = githubRepoTarballUrl repo rev
+        tarballPath <- cachePathForURL cacheDir uri
+        fetchURL uri tarballPath
+        extractFromTarball tarballPath mSubdir
 
 applyPatches :: FilePath -> FilePath -> Action ()
 applyPatches metaFile pkgDir = do
@@ -75,10 +112,9 @@ updateCabalFileVersion path pkgVersion = do
   liftIO $ writeGenericPackageDescription path pkgDesc'
 
 cachePathForURL :: FilePath -> URI -> Action FilePath
-cachePathForURL cacheDir uri = do
+cachePathForURL uri = do
   let scheme = dropWhileEnd (not . isAlpha) $ uriScheme uri
       host = maybe (error $ "invalid uri " ++ show uri) uriRegName (uriAuthority uri)
-  return $ cacheDir </> scheme </> host <//> uriPath uri
 
 extractFromTarball :: FilePath -> Maybe FilePath -> FilePath -> Action ()
 extractFromTarball tarballPath mSubdir destDir = do

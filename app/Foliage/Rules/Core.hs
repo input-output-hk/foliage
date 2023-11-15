@@ -15,6 +15,8 @@ import Codec.Compression.GZip qualified as GZip
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.ByteString.Lazy.Char8 qualified as C8L
+import Data.Map (Map)
+import Data.Map.Strict qualified as M
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Data.Traversable (for)
 import Development.Shake
@@ -25,7 +27,6 @@ import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
-import Distribution.Utils.Generic (sndOf3)
 import Distribution.Verbosity qualified as Verbosity
 import Hackage.Security.Key.Env (fromKeys)
 import Hackage.Security.Server (
@@ -52,15 +53,15 @@ import Hackage.Security.Util.Path qualified as Sec
 
 import Foliage.HackageSecurity
 import Foliage.Meta
+import Foliage.Rules.Utils
 
 coreRules
   :: FilePath
   -> (PackageIdentifier -> FilePath)
   -> (PackageId -> FilePath)
   -> UTCTime
-  -> Action [(FilePath, PackageId, PackageVersionSpec)]
   -> Rules ()
-coreRules outputDir cabalFileForPkgId sdistPathForPkgId currentTime getPkgSpecs = do
+coreRules outputDir cabalFileForPkgId sdistPathForPkgId currentTime = do
   action $ do
     -- This is all that is necessary since the single source distributions
     -- are required to build 01-index.tar.
@@ -75,7 +76,7 @@ coreRules outputDir cabalFileForPkgId sdistPathForPkgId currentTime getPkgSpecs 
 
   getIndexEntries <- do
     getIndexEntries <- newCache $ \IndexEntries{} -> do
-      pkgSpecs <- getPkgSpecs
+      pkgSpecs <- askOracle PkgSpecs
       cabalEntries <- makeCabalEntries currentTime cabalFileForPkgId pkgSpecs
       metadataEntries <- makeMetadataEntries currentTime sdistPathForPkgId pkgSpecs
       let extraEntries = makeExtraEntries pkgSpecs
@@ -108,9 +109,9 @@ coreRules outputDir cabalFileForPkgId sdistPathForPkgId currentTime getPkgSpecs 
         liftIO $ packageDirToSdist Verbosity.normal pkgDesc (takeDirectory cabalFilePath) >>= BSL.writeFile path
       _ -> error $ "The path " ++ path ++ " does not correspond to a valid package"
 
-makeCabalEntries :: UTCTime -> (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
+makeCabalEntries :: UTCTime -> (PackageId -> FilePath) -> Map PackageId (FilePath, PackageVersionSpec) -> Action [Tar.Entry]
 makeCabalEntries currentTime cabalFileForPkgId allPkgSpecs = do
-  fmap concat $ forP allPkgSpecs $ \(metaFile, pkgId, pkgSpec) -> do
+  flip M.foldMapWithKey allPkgSpecs $ \pkgId (metaFile, pkgSpec) -> do
     let pkgCabalFile = cabalFileForPkgId pkgId
         pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
 
@@ -125,69 +126,66 @@ makeCabalEntries currentTime cabalFileForPkgId allPkgSpecs = do
     -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
     return $ uploadEntry : revisionEntries
 
-makeMetadataEntries :: UTCTime -> (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
+makeMetadataEntries :: UTCTime -> (PackageId -> FilePath) -> Map PackageId (FilePath, PackageVersionSpec) -> Action [Tar.Entry]
 makeMetadataEntries currentTime sdistPathForPkgId allPkgSpecs = do
   Just expiryTime <- getShakeExtra
 
   targetKeys <- readKeys "target"
 
-  forP allPkgSpecs $ \(_metaFile, pkgId, pkgSpec) -> do
+  flip M.foldMapWithKey allPkgSpecs $ \pkgId (_metaFile, pkgSpec) -> do
     let sdistPath = sdistPathForPkgId pkgId
         pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
     targets <- makeIndexPkgMetadata expiryTime pkgId sdistPath
-    return $ mkTarEntry (renderSignedJSON targetKeys targets) (IndexPkgMetadata pkgId) pkgTimestamp
+    return [mkTarEntry (renderSignedJSON targetKeys targets) (IndexPkgMetadata pkgId) pkgTimestamp]
 
 -- Currently `extraEntries` are only used for encoding `prefered-versions`.
-makeExtraEntries :: [(FilePath, PackageId, PackageVersionSpec)] -> [Tar.Entry]
-makeExtraEntries allPkgSpecs =
-  let
-    -- Group all (package) versions by package (name)
-    groupedPackageVersions :: [NE.NonEmpty (FilePath, PackageId, PackageVersionSpec)]
-    groupedPackageVersions = NE.groupWith sndOf3 allPkgSpecs
+makeExtraEntries :: Map PackageId (FilePath, PackageVersionSpec) -> [Tar.Entry]
+makeExtraEntries = M.foldMapWithKey generateEntriesForGroup . groupByPackageName
 
-    -- All versions of a given package together form a list of entries
-    -- The list of entries might be empty (in case no version has been deprecated)
-    generateEntriesForGroup :: NE.NonEmpty (FilePath, PackageId, PackageVersionSpec) -> [Tar.Entry]
-    generateEntriesForGroup packageGroup = map createTarEntry effectiveRanges
-     where
-      -- Get the package name of the current group.
-      pn :: PackageName
-      pn = packageName $ sndOf3 $ NE.head packageGroup
-      -- Collect and sort the deprecation changes for the package group, turning them into a action on VersionRange
-      deprecationChanges :: [(UTCTime, VersionRange -> VersionRange)]
-      deprecationChanges =
-        packageGroup
-          & foldMap
-            ( \(_metaFile, pkgId, pkgSpec) ->
-                [ (deprecationTimestamp, rangeAct)
-                | DeprecationSpec{deprecationTimestamp, deprecationIsDeprecated} <- packageVersionDeprecations pkgSpec
-                , let rangeAct =
-                        if deprecationIsDeprecated
-                          then intersectVersionRanges (notThisVersion (pkgVersion pkgId))
-                          else unionVersionRanges (thisVersion (pkgVersion pkgId))
-                ]
-            )
+-- All versions of a given package together form a list of entries
+-- The list of entries might be empty (in case no version has been deprecated)
+generateEntriesForGroup :: PackageName -> NE.NonEmpty (Version, PackageVersionSpec) -> [Tar.Entry]
+generateEntriesForGroup pkgName packageGroup =
+  map createTarEntry effectiveRanges
+ where
+  -- Collect and sort the deprecation changes for the package group, turning them into a action on VersionRange
+  deprecationChanges :: [(UTCTime, VersionRange -> VersionRange)]
+  deprecationChanges =
+    packageGroup
+      & foldMap
+        ( \(pkgVersion, pkgSpec) ->
+            [ (deprecationTimestamp, rangeAct)
+            | DeprecationSpec{deprecationTimestamp, deprecationIsDeprecated} <- packageVersionDeprecations pkgSpec
+            , let rangeAct =
+                    if deprecationIsDeprecated
+                      then intersectVersionRanges (notThisVersion pkgVersion)
+                      else unionVersionRanges (thisVersion pkgVersion)
+            ]
+        )
 
-      -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
-      effectiveRanges :: [(UTCTime, VersionRange)]
-      effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) (sortOn fst deprecationChanges)
+  -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
+  effectiveRanges :: [(UTCTime, VersionRange)]
+  effectiveRanges =
+    NE.tail $
+      NE.scanl
+        applyChangeToRange
+        (posixSecondsToUTCTime 0, anyVersion)
+        (sortOn fst deprecationChanges)
 
-      -- Apply a given change (`VersionRange -> VersionRange`) to a `VersionRange` and
-      -- return the simplified the result with a new timestamp.
-      applyChangeToRange
-        :: (UTCTime, VersionRange)
-        -> (UTCTime, VersionRange -> VersionRange)
-        -> (UTCTime, VersionRange)
-      applyChangeToRange (_, range) (ts, change) = (ts, simplifyVersionRange $ change range)
+  -- Apply a given change (`VersionRange -> VersionRange`) to a `VersionRange` and
+  -- return the simplified the result with a new timestamp.
+  applyChangeToRange
+    :: (UTCTime, VersionRange)
+    -> (UTCTime, VersionRange -> VersionRange)
+    -> (UTCTime, VersionRange)
+  applyChangeToRange (_, range) (ts, change) = (ts, simplifyVersionRange $ change range)
 
-      -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
-      createTarEntry (ts, effectiveRange) = mkTarEntry (C8L.pack $ prettyShow dep) (IndexPkgPrefs pn) ts
-       where
-        -- Cabal uses `Dependency` to represent preferred versions, cf.
-        -- `parsePreferredVersions`. The (sub)libraries part is ignored.
-        dep = mkDependency pn effectiveRange mainLibSet
-   in
-    foldMap generateEntriesForGroup groupedPackageVersions
+  -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
+  createTarEntry (ts, effectiveRange) = mkTarEntry (C8L.pack $ prettyShow dep) (IndexPkgPrefs pkgName) ts
+   where
+    -- Cabal uses `Dependency` to represent preferred versions, cf.
+    -- `parsePreferredVersions`. The (sub)libraries part is ignored.
+    dep = mkDependency pkgName effectiveRange mainLibSet
 
 makeIndexPkgCabal :: PackageId -> UTCTime -> FilePath -> Action Tar.Entry
 makeIndexPkgCabal pkgId timestamp filePath = do

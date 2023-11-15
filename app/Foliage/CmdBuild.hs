@@ -25,6 +25,7 @@ import Development.Shake (
   action,
   addOracleCache,
   addShakeExtra,
+  askOracle,
   filePattern,
   forP,
   getDirectoryFiles,
@@ -56,6 +57,8 @@ import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
 import Hackage.Security.Server (FileExpires (..))
 
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as M
 import Distribution.Types.Orphans ()
 import Foliage.FetchURL (addFetchURLRule)
 import Foliage.HackageSecurity (createKeys)
@@ -65,6 +68,7 @@ import Foliage.Options
 import Foliage.Rules.Core
 import Foliage.Rules.HackageExtra
 import Foliage.Rules.Pages
+import Foliage.Rules.Utils (PkgSpecs (..))
 import Foliage.SourceDist
 import Foliage.Time
 
@@ -189,32 +193,31 @@ cmdBuild buildOptions = do
     -- Index creation
     --
 
-    getPkgSpecs <- do
-      getPkgSpecs' <- addOracleCache $ \PkgSpecs{} -> do
-        metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
-        when (null metaFiles) $ do
-          error $
-            unlines
-              [ "We could not find any package metadata file (i.e. _sources/<name>/<version>/meta.toml)"
-              , "Make sure you are passing the right input directory. The default input directory is _sources"
-              ]
+    getPkgSpecs <- addOracleCache $ \PkgSpecs -> do
+      metaFiles <- getDirectoryFiles inputDir ["*/*/meta.toml"]
+      when (null metaFiles) $ do
+        error $
+          unlines
+            [ "We could not find any package metadata file (i.e. _sources/<name>/<version>/meta.toml)"
+            , "Make sure you are passing the right input directory. The default input directory is _sources"
+            ]
 
-        forP metaFiles $ \path ->
-          case filePattern "*/*/meta.toml" path of
-            Just [name, version] -> do
-              let pkgName = fromMaybe (error $ "invalid package name: " ++ name) $ simpleParsec name
-              let pkgVersion = fromMaybe (error $ "invalid package version: " ++ version) $ simpleParsec version
-              let pkgId = PackageIdentifier pkgName pkgVersion
-              pkgSpec <- packageVersionSpec (inputDir </> path)
-              return (inputDir </> path, pkgId, pkgSpec)
-            _ -> error "the impossible happened"
+      entries <- forP metaFiles $ \path ->
+        case filePattern "*/*/meta.toml" path of
+          Just [name, version] -> do
+            let pkgName = fromMaybe (error $ "invalid package name: " ++ name) $ simpleParsec name
+            let pkgVersion = fromMaybe (error $ "invalid package version: " ++ version) $ simpleParsec version
+            let pkgId = PackageIdentifier pkgName pkgVersion
+            pkgSpec <- packageVersionSpec (inputDir </> path)
+            return (pkgId, (inputDir </> path, pkgSpec))
+          _ -> error "the impossible happened"
 
-      return $ getPkgSpecs' $ PkgSpecs ()
+      return $ M.fromList entries
 
     --
     -- Rules for core repository functionality
     --
-    coreRules outputDir cabalFileForPkgId sdistPathForPkgId currentTime getPkgSpecs
+    coreRules outputDir cabalFileForPkgId sdistPathForPkgId currentTime
 
     --
     -- Rules for Hackage-like paths, e.g.
@@ -222,7 +225,7 @@ cmdBuild buildOptions = do
     -- package/pkg-id/revision/rev-num.cabal
     -- package/pkg-id/pkg-name.cabal
 
-    hackageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId getPkgSpecs
+    hackageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId pkgSpecForPkgId
 
     --
     -- Foliage metadata
@@ -233,7 +236,7 @@ cmdBuild buildOptions = do
         need [outputDir </> "foliage/packages.json"]
 
     outputDir </> "foliage/packages.json" %> \path ->
-      getPkgSpecs >>= \pkgSpecs ->
+      askOracle PkgSpecs >>= \pkgSpecs ->
         liftIO $
           Aeson.encodeFile
             path
@@ -244,14 +247,14 @@ cmdBuild buildOptions = do
               ]
                 ++ ["forced-version" Aeson..= True | packageVersionForce pkgSpec]
                 ++ (case packageVersionTimestamp pkgSpec of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
-            | (_, pkgId, pkgSpec) <- pkgSpecs
+            | (pkgId, (_, pkgSpec)) <- M.toList pkgSpecs
             ]
 
     --
     -- Website pages
     --
 
-    websitePagesRules outputDir currentTime getPkgSpecs pkgSpecForPkgId cabalFileForPkgId
+    websitePagesRules outputDir currentTime pkgSpecForPkgId cabalFileForPkgId getPkgSpecs
 
 validateMeta :: (MonadFail m) => FilePath -> PackageVersionSpec -> m ()
 validateMeta metaFile PackageVersionSpec{..} = do
@@ -316,6 +319,3 @@ validateMeta metaFile PackageVersionSpec{..} = do
 
   doubleDeprecations :: NE.NonEmpty DeprecationSpec -> [NE.NonEmpty DeprecationSpec]
   doubleDeprecations = filter ((> 1) . length) . NE.groupWith deprecationIsDeprecated
-
-newtype PkgSpecs = PkgSpecs () deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
-type instance RuleResult PkgSpecs = [(FilePath, PackageId, PackageVersionSpec)]
