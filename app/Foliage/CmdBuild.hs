@@ -1,6 +1,5 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ImportQualifiedPost #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -8,69 +7,65 @@
 
 module Foliage.CmdBuild (cmdBuild) where
 
-import Codec.Archive.Tar qualified as Tar
-import Codec.Archive.Tar.Entry qualified as Tar
-import Codec.Archive.Tar.Entry.Orphans ()
-import Codec.Compression.GZip qualified as GZip
-import Control.Monad (unless, when, (>=>))
+import Control.Monad (unless, when)
+import Data.Foldable (for_)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import System.Directory qualified as IO
+
 import Data.Aeson qualified as Aeson
-import Data.ByteString.Char8 qualified as BS
-import Data.ByteString.Lazy.Char8 qualified as BL
-import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
-import Development.Shake
-import Development.Shake.FilePath
-import Distribution.Package
-import Distribution.Pretty (prettyShow)
-import Distribution.Version
-import Foliage.FetchURL (addFetchURLRule)
-import Foliage.HackageSecurity (
-  computeFileInfoSimple,
-  createKeys,
-  mkMirrors,
-  mkRoot,
-  mkSnapshot,
-  mkTimestamp,
-  readKeys,
-  renderSignedJSON,
+import Data.Time (getCurrentTime)
+import Data.Time.Format.ISO8601 (iso8601Show)
+import Development.Shake (
+  Change (..),
+  Lint (..),
+  RuleResult,
+  ShakeOptions (..),
+  action,
+  addOracleCache,
+  addShakeExtra,
+  filePattern,
+  forP,
+  getDirectoryFiles,
+  liftIO,
+  need,
+  newCache,
+  shake,
+  shakeOptions,
+  (%>),
  )
-import Foliage.Meta qualified as Meta
+import Development.Shake.Classes (
+  Binary,
+  Hashable,
+  NFData,
+  Typeable,
+ )
+import Development.Shake.FilePath (
+  replaceBaseName,
+  takeDirectory,
+  (<.>),
+  (</>),
+ )
+import Distribution.Package (
+  PackageId,
+  PackageIdentifier (..),
+  unPackageName,
+ )
+import Distribution.Parsec (simpleParsec)
+import Distribution.Pretty (prettyShow)
+import Hackage.Security.Server (FileExpires (..))
+
+import Distribution.Types.Orphans ()
+import Foliage.FetchURL (addFetchURLRule)
+import Foliage.HackageSecurity (createKeys)
+import Foliage.Meta
 import Foliage.Meta.Aeson ()
 import Foliage.Options
-import Foliage.Pages
-import Hackage.Security.Server (
-  FileExpires (..),
-  FileVersion (..),
-  IndexFile (..),
-  IndexLayout (..),
-  RepoLayout (..),
-  TargetPath (..),
-  Targets (..),
-  hackageIndexLayout,
-  hackageRepoLayout,
- )
-
-import Data.ByteString.Lazy qualified as BSL
-import Data.Foldable (for_)
-import Data.Function ((&))
-import Data.Maybe (fromJust, fromMaybe, isJust, listToMaybe, mapMaybe)
-import Data.Time (UTCTime, getCurrentTime)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
-import Data.Time.Format.ISO8601 (iso8601Show)
-import Data.Traversable (for)
-import Development.Shake.Classes
-import Distribution.Client.SrcDist (packageDirToSdist)
-import Distribution.Parsec (simpleParsec)
-import Distribution.Simple.PackageDescription (readGenericPackageDescription)
-import Distribution.Utils.Generic (sndOf3)
-import Distribution.Verbosity qualified as Verbosity
-import Foliage.Meta (DeprecationSpec (..), PackageVersionSpec (..), RevisionSpec (..))
-import Foliage.SourceDist (applyPatches, fetchPackageVersion, updateCabalFileVersion)
-import Foliage.Time (truncateSeconds)
-import Hackage.Security.TUF.FileMap qualified as FM
-import Hackage.Security.Util.Path qualified as Sec
-import System.Directory qualified as IO
-import Text.Read (readMaybe)
+import Foliage.Rules.Core
+import Foliage.Rules.HackageExtra
+import Foliage.Rules.Pages
+import Foliage.SourceDist
+import Foliage.Time
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
@@ -121,22 +116,23 @@ cmdBuild buildOptions = do
     _otherwise -> pure ()
 
   shake opts $ do
+    --
+    -- Custom rule to fetch urls
+    --
     addFetchURLRule
 
-    readPackageVersionSpec <- newCache $ \path -> do
+    --
+    -- Read metadata from meta.toml
+    --
+    packageVersionSpec <- newCache $ \path -> do
       need [path]
-      meta <- liftIO $ Meta.readPackageVersionSpec path
+      meta <- liftIO $ readPackageVersionSpec path
       validateMeta path meta
       return meta
 
-    action $ do
-      need
-        [ outputDir </> "mirrors.json"
-        , outputDir </> "root.json"
-        , outputDir </> "snapshot.json"
-        , outputDir </> "timestamp.json"
-        ]
-
+    --
+    -- Functions to map package ids to various locations
+    --
     let metaFileForPkgId :: PackageIdentifier -> FilePath
         metaFileForPkgId PackageIdentifier{pkgName, pkgVersion} =
           inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "meta.toml"
@@ -154,30 +150,26 @@ cmdBuild buildOptions = do
           outputDir </> "package" </> prettyShow pkgId <.> "tar.gz"
 
     --
+    -- Fetching and preparing the package source code
     --
-    --
+    -- Note: we use the package cabal file as a proxy for the whole source code.
 
-    cacheDir </> "*/*/*.cabal"
-      ~?~ ( \case
-              [name, version, name']
-                | Just pkgName <- simpleParsec name
-                , Just pkgVersion <- simpleParsec version
-                , name == name' ->
-                    Just $ PackageIdentifier pkgName pkgVersion
-              _ -> Nothing
-          )
-      ~~> \cabalFilePath pkgId -> do
-        let metaFile = metaFileForPkgId pkgId
-        pkgSpec <- readPackageVersionSpec metaFile
-        let PackageIdentifier{pkgVersion} = pkgId
-            PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgSpec
+    cacheDir </> "*/*/*.cabal" %> \path ->
+      case filePattern (cacheDir </> "*/*/*.cabal") path of
+        Just [name, version, name']
+          | Just pkgId <- PackageIdentifier <$> simpleParsec name <*> simpleParsec version
+          , name == name' -> do
+              let metaFile = metaFileForPkgId pkgId
+              pkgSpec <- packageVersionSpec metaFile
 
-        fetchPackageVersion cacheDir packageVersionSource (takeDirectory cabalFilePath)
+              fetchPackageVersion cacheDir (packageVersionSource pkgSpec) (takeDirectory path)
 
-        applyPatches metaFile (takeDirectory cabalFilePath)
+              applyPatches metaFile (takeDirectory path)
 
-        when packageVersionForce $ do
-          updateCabalFileVersion cabalFilePath pkgVersion
+              when (packageVersionForce pkgSpec) $ do
+                updateCabalFileVersion path (pkgVersion pkgId)
+        _ -> error $ "The path " ++ path ++ " is not valid."
+
     --
     -- Index creation
     --
@@ -198,252 +190,54 @@ cmdBuild buildOptions = do
               let pkgName = fromMaybe (error $ "invalid package name: " ++ name) $ simpleParsec name
               let pkgVersion = fromMaybe (error $ "invalid package version: " ++ version) $ simpleParsec version
               let pkgId = PackageIdentifier pkgName pkgVersion
-              pkgSpec <- readPackageVersionSpec (inputDir </> path)
+              pkgSpec <- packageVersionSpec (inputDir </> path)
               return (inputDir </> path, pkgId, pkgSpec)
             _ -> error "the impossible happened"
+
       return $ getPkgSpecs' $ PkgSpecs ()
-
-    indexEntries <- do
-      getIndexEntries <- newCache $ \IndexEntries{} -> do
-        pkgSpecs <- getPkgSpecs
-        cabalEntries <- makeCabalEntries currentTime cabalFileForPkgId pkgSpecs
-        metadataEntries <- makeMetadataEntries currentTime sdistPathForPkgId pkgSpecs
-        let extraEntries = makeExtraEntries pkgSpecs
-
-        -- WARN: See note on `makeCabalEntries`, the sorting here has to be stable
-        return $ sortOn Tar.entryTime (cabalEntries ++ metadataEntries ++ extraEntries)
-      -- Return the oracle function applied to IndexEntries ()
-      return $ getIndexEntries $ IndexEntries ()
 
     --
     -- Rules for core repository functionality
     --
-    coreRules outputDir cabalFileForPkgId indexEntries
+    coreRules outputDir cabalFileForPkgId getPkgSpecs sdistPathForPkgId currentTime
 
-    alternatives $ do
-      outputDir </> "package/*/revision/0.cabal"
-        ~?~ ( \case
-                [pkgId] -> simpleParsec pkgId
-                _ -> Nothing
-            )
-        ~~> \path pkgId ->
-          copyFileChanged (cabalFileForPkgId pkgId) path
+    --
+    -- Rules for Hackage-like paths, e.g.
+    --
+    -- package/pkg-id/revision/rev-num.cabal
+    -- package/pkg-id/pkg-name.cabal
 
-      outputDir </> "package/*/revision/*.cabal"
-        ~?~ ( \case
-                [pkgId, revNum] -> (,) <$> simpleParsec pkgId <*> readMaybe revNum
-                _ -> Nothing
-            )
-        ~~> \path (pkgId, revNum) ->
-          copyFileChanged (cabalFileRevisionForPkgId pkgId revNum) path
-
-    outputDir </> "package/*/*.cabal"
-      ~?~ ( \case
-              [pkgIdStr, pkgName']
-                | Just pkgId <- simpleParsec pkgIdStr
-                , unPackageName (pkgName pkgId) == pkgName' ->
-                    Just pkgId
-              _ -> Nothing
-          )
-      ~~> \path pkgId ->
-        copyFileChanged (cabalFileForPkgId pkgId) path
+    hackgageExtraRules outputDir cabalFileForPkgId cabalFileRevisionForPkgId
 
     --
     -- Foliage metadata
     --
 
-    -- only require this when requested? the rule is always valid
-    -- when (buildOptsWriteMetadata buildOptions) $
-    outputDir </> "foliage/packages.json"
-      %> \path ->
-        getPkgSpecs >>= makeMetadataFile path
+    action $
+      when (buildOptsWriteMetadata buildOptions) $
+        need [outputDir </> "foliage/packages.json"]
 
-    --
-    -- Pages
-    --
-
-    outputDir </> "index.html"
-      %> makeIndexPage
-
-    outputDir </> "all-packages/index.html"
-      %> \path ->
-        getPkgSpecs >>= makeAllPackagesPage currentTime path
-
-    outputDir </> "all-package-versions/index.html"
-      %> \path ->
-        getPkgSpecs >>= makeAllPackageVersionsPage currentTime path
-
-    outputDir </> "package/*/index.html"
-      ~?~ ( \case
-              [pkgId] -> simpleParsec pkgId
-              _ -> Nothing
-          )
-      ~~> \path pkgId -> do
-        let metaFile = metaFileForPkgId pkgId
-        pkgSpec <- readPackageVersionSpec metaFile
-        let cabalFile = cabalFileForPkgId pkgId
-        need [cabalFile]
-        pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFile
-        makePackageVersionPage path pkgDesc pkgSpec
-
-coreRules :: FilePath -> (PackageIdentifier -> FilePath) -> Action [Tar.Entry] -> Rules ()
-coreRules outputDir cabalFileForPkgId indexEntries = do
-  action $ do
-    need
-      [ outputDir </> "mirrors.json"
-      , outputDir </> "root.json"
-      , outputDir </> "snapshot.json"
-      , outputDir </> "timestamp.json"
-      ]
-
-  outputDir </> "mirrors.json"
-    %> mkMirrors
-
-  outputDir </> "root.json"
-    %> mkRoot
-
-  outputDir </> "snapshot.json"
-    %> mkSnapshot outputDir
-
-  outputDir </> "timestmap.json"
-    %> mkTimestamp outputDir
-
-  outputDir </> "01-index.tar"
-    %> \path ->
-      indexEntries >>= liftIO . BL.writeFile path . Tar.write
-
-  outputDir </> "01-index.tar.gz"
-    %> \path ->
-      indexEntries >>= liftIO . BL.writeFile path . GZip.compress . Tar.write
-
-  outputDir </> "package/*.tar.gz"
-    ~?~ ( \case
-            [pkgId] -> simpleParsec pkgId
-            _ -> Nothing
-        )
-    ~~> \path pkgId -> do
-      let cabalFilePath = cabalFileForPkgId pkgId
-      need [cabalFilePath]
-      pkgDesc <- liftIO $ readGenericPackageDescription Verbosity.silent cabalFilePath
-      liftIO $ packageDirToSdist Verbosity.normal pkgDesc (takeDirectory cabalFilePath) >>= BSL.writeFile path
-
-makeCabalEntries :: UTCTime -> (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
-makeCabalEntries currentTime cabalFileForPkgId allPkgSpecs = do
-  fmap concat $ forP allPkgSpecs $ \(metaFile, pkgId, pkgSpec) -> do
-    let pkgCabalFile = cabalFileForPkgId pkgId
-        pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
-
-    uploadEntry <- makeIndexPkgCabal pkgId pkgTimestamp pkgCabalFile
-
-    revisionEntries <- for (packageVersionRevisions pkgSpec) $ \RevisionSpec{revisionTimestamp, revisionNumber} -> do
-      let cabalFileRevisionPath = takeDirectory metaFile </> "revisions" </> show revisionNumber <.> "cabal"
-      makeIndexPkgCabal pkgId revisionTimestamp cabalFileRevisionPath
-
-    -- WARN: So far Foliage allows publishing a package and a cabal file revision with the same timestamp
-    -- This accidentally works because 1) the following inserts the original cabal file before the revisions
-    -- AND 2) Data.List.sortOn is stable. The revised cabal file will always be after the original one.
-    return $ uploadEntry : revisionEntries
-
-makeMetadataEntries :: UTCTime -> (PackageId -> FilePath) -> [(FilePath, PackageId, PackageVersionSpec)] -> Action [Tar.Entry]
-makeMetadataEntries currentTime sdistPathForPkgId allPkgSpecs = do
-  Just expiryTime <- getShakeExtra
-
-  targetKeys <- readKeys "target"
-
-  forP allPkgSpecs $ \(_metaFile, pkgId, pkgSpec) -> do
-    let sdistPath = sdistPathForPkgId pkgId
-        pkgTimestamp = fromMaybe currentTime (packageVersionTimestamp pkgSpec)
-    targets <- makeIndexPkgMetadata expiryTime pkgId sdistPath
-    return $ mkTarEntry (renderSignedJSON targetKeys targets) (IndexPkgMetadata pkgId) pkgTimestamp
-
--- Currently `extraEntries` are only used for encoding `prefered-versions`.
-makeExtraEntries :: [(FilePath, PackageId, PackageVersionSpec)] -> [Tar.Entry]
-makeExtraEntries allPkgSpecs =
-  let
-    -- Group all (package) versions by package (name)
-    groupedPackageVersions :: [NE.NonEmpty (FilePath, PackageId, PackageVersionSpec)]
-    groupedPackageVersions = NE.groupWith sndOf3 allPkgSpecs
-
-    -- All versions of a given package together form a list of entries
-    -- The list of entries might be empty (in case no version has been deprecated)
-    generateEntriesForGroup :: NE.NonEmpty (FilePath, PackageId, PackageVersionSpec) -> [Tar.Entry]
-    generateEntriesForGroup packageGroup = map createTarEntry effectiveRanges
-     where
-      -- Get the package name of the current group.
-      pn :: PackageName
-      pn = packageName $ sndOf3 $ NE.head packageGroup
-      -- Collect and sort the deprecation changes for the package group, turning them into a action on VersionRange
-      deprecationChanges :: [(Meta.UTCTime, VersionRange -> VersionRange)]
-      deprecationChanges =
-        packageGroup
-          & foldMap
-            ( \(_metaFile, pkgId, pkgSpec) ->
-                [ (deprecationTimestamp, rangeAct)
-                | DeprecationSpec{deprecationTimestamp, deprecationIsDeprecated} <- packageVersionDeprecations pkgSpec
-                , let rangeAct =
-                        if deprecationIsDeprecated
-                          then intersectVersionRanges (notThisVersion (pkgVersion pkgId))
-                          else unionVersionRanges (thisVersion (pkgVersion pkgId))
-                ]
-            )
-
-      -- Calculate (by applying them chronologically) the effective `VersionRange` for the package group.
-      effectiveRanges :: [(Meta.UTCTime, VersionRange)]
-      effectiveRanges = NE.tail $ NE.scanl applyChangeToRange (posixSecondsToUTCTime 0, anyVersion) (sortOn fst deprecationChanges)
-
-      -- Apply a given change (`VersionRange -> VersionRange`) to a `VersionRange` and
-      -- return the simplified the result with a new timestamp.
-      applyChangeToRange
-        :: (Meta.UTCTime, VersionRange)
-        -> (Meta.UTCTime, VersionRange -> VersionRange)
-        -> (Meta.UTCTime, VersionRange)
-      applyChangeToRange (_, range) (ts, change) = (ts, simplifyVersionRange $ change range)
-
-      -- Create a `Tar.Entry` for the package group, its computed `VersionRange` and a timestamp.
-      createTarEntry (ts, effectiveRange) = mkTarEntry (BL.pack $ prettyShow dep) (IndexPkgPrefs pn) ts
-       where
-        -- Cabal uses `Dependency` to represent preferred versions, cf.
-        -- `parsePreferredVersions`. The (sub)libraries part is ignored.
-        dep = mkDependency pn effectiveRange mainLibSet
-   in
-    foldMap generateEntriesForGroup groupedPackageVersions
-
-makeMetadataFile :: FilePath -> [(FilePath, PackageId, PackageVersionSpec)] -> Action ()
-makeMetadataFile path allPkgSpecs = do
-  liftIO $ Aeson.encodeFile path metadata
- where
-  metadata =
-    map
-      ( \(_, pkgId, pkgSpec) ->
-          Aeson.object $
-            [ "pkg-name" Aeson..= pkgName pkgId
-            , "pkg-version" Aeson..= pkgVersion pkgId
-            , "url" Aeson..= Meta.packageVersionSourceToUri (packageVersionSource pkgSpec)
+    outputDir </> "foliage/packages.json" %> \path ->
+      getPkgSpecs >>= \pkgSpecs ->
+        liftIO $
+          Aeson.encodeFile
+            path
+            [ Aeson.object $
+              [ "pkg-name" Aeson..= pkgName pkgId
+              , "pkg-version" Aeson..= pkgVersion pkgId
+              , "url" Aeson..= packageVersionSourceToUri (packageVersionSource pkgSpec)
+              ]
+                ++ ["forced-version" Aeson..= True | packageVersionForce pkgSpec]
+                ++ (case packageVersionTimestamp pkgSpec of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
+            | (_, pkgId, pkgSpec) <- pkgSpecs
             ]
-              ++ ["forced-version" Aeson..= True | packageVersionForce pkgSpec]
-              ++ (case packageVersionTimestamp pkgSpec of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
-      )
-      allPkgSpecs
 
-makeIndexPkgCabal :: PackageId -> Meta.UTCTime -> FilePath -> Action Tar.Entry
-makeIndexPkgCabal pkgId timestamp filePath = do
-  need [filePath]
-  contents <- liftIO $ BS.readFile filePath
-  pure $ mkTarEntry (BL.fromStrict contents) (IndexPkgCabal pkgId) timestamp
+    --
+    -- Website pages
+    --
 
-makeIndexPkgMetadata :: FileExpires -> PackageId -> FilePath -> Action Targets
-makeIndexPkgMetadata expiryTime pkgId sdistPath = do
-  targetFileInfo <- computeFileInfoSimple sdistPath
-  let packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
-  return
-    Targets
-      { targetsVersion = FileVersion 1
-      , targetsExpires = expiryTime
-      , targetsTargets = FM.fromList [(TargetPathRepo packagePath, targetFileInfo)]
-      , targetsDelegations = Nothing
-      }
+    websitePagesRules outputDir currentTime getPkgSpecs metaFileForPkgId packageVersionSpec cabalFileForPkgId
 
--- | TEMP
 validateMeta :: (MonadFail m) => FilePath -> PackageVersionSpec -> m ()
 validateMeta metaFile PackageVersionSpec{..} = do
   case (NE.nonEmpty packageVersionRevisions, packageVersionTimestamp) of
@@ -508,39 +302,5 @@ validateMeta metaFile PackageVersionSpec{..} = do
   doubleDeprecations :: NE.NonEmpty DeprecationSpec -> [NE.NonEmpty DeprecationSpec]
   doubleDeprecations = filter ((> 1) . length) . NE.groupWith deprecationIsDeprecated
 
-mkTarEntry
-  :: BL.ByteString
-  -> IndexFile dec
-  -> Meta.UTCTime
-  -> Tar.Entry
-mkTarEntry contents indexFile timestamp =
-  (Tar.fileEntry tarPath contents)
-    { Tar.entryTime = floor $ utcTimeToPOSIXSeconds timestamp
-    , Tar.entryOwnership =
-        Tar.Ownership
-          { Tar.ownerName = "foliage"
-          , Tar.groupName = "foliage"
-          , Tar.ownerId = 0
-          , Tar.groupId = 0
-          }
-    }
- where
-  tarPath = case Tar.toTarPath False indexPath of
-    Left e -> error $ "Invalid tar path " ++ indexPath ++ "(" ++ e ++ ")"
-    Right tp -> tp
-
-  indexPath = Sec.toFilePath $ Sec.castRoot $ indexFileToPath hackageIndexLayout indexFile
-
-newtype IndexEntries = IndexEntries () deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
-type instance RuleResult IndexEntries = [Tar.Entry]
-
 newtype PkgSpecs = PkgSpecs () deriving (Show, Typeable, Eq, Hashable, Binary, NFData)
 type instance RuleResult PkgSpecs = [(FilePath, PackageId, PackageVersionSpec)]
-
-infixr 4 ~?~
-(~?~) :: FilePattern -> ([String] -> Maybe c) -> FilePath -> Maybe c
-pat ~?~ parser = filePattern pat >=> parser
-
-infixr 3 ~~>
-(~~>) :: (FilePath -> Maybe a) -> (FilePath -> a -> Action ()) -> Rules ()
-parser ~~> act = isJust . parser ?> \path -> act path $ fromJust $ parser path

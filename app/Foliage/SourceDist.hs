@@ -14,19 +14,34 @@ where
 import Data.Char (isAlpha)
 import Data.Foldable (for_)
 import Data.List (dropWhileEnd)
-import Development.Shake
-import Development.Shake.FilePath
+
+import Development.Shake (
+  Action,
+  CmdOption (..),
+  cmd_,
+  getDirectoryFiles,
+  liftIO,
+  putInfo,
+  withTempDir,
+  (<//>),
+ )
+import Development.Shake.FilePath (
+  replaceBaseName,
+  takeDirectory,
+  (</>),
+ )
 import Distribution.Compat.Lens (set)
 import Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
-import Distribution.Simple
+import Distribution.Simple (Version)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
 import Distribution.Types.Lens qualified as L
 import Distribution.Verbosity qualified as Verbosity
+import Network.URI (URI (..), URIAuth (..))
+import System.Directory qualified as IO
+
 import Foliage.FetchURL (fetchURL)
 import Foliage.Meta (PackageVersionSource (..))
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
-import Network.URI (URI (..), URIAuth (..))
-import System.Directory qualified as IO
 
 applyPatches :: FilePath -> FilePath -> Action ()
 applyPatches metaFile pkgDir = do

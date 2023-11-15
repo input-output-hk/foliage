@@ -6,37 +6,27 @@
 module Foliage.HackageSecurity where
 
 import Control.Monad (replicateM)
+import Data.Foldable (for_)
+import Data.Traversable (for)
+
 import Crypto.Sign.Ed25519 (unPublicKey)
 import Data.ByteString.Base16 (encodeBase16)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.Foldable (for_)
 import Data.Text qualified as T
-import Data.Traversable (for)
 import Development.Shake (
   Action,
   getDirectoryFiles,
   getShakeExtra,
   liftIO,
   need,
-  trackWrite,
  )
-import Foliage.Options (SignOptions (..))
-import Hackage.Security.Key.Env (fromKeys)
 import Hackage.Security.Server (
   FileInfo (..),
-  FileVersion (..),
   Key,
   KeyId (..),
-  KeyThreshold (..),
   KeyType (..),
-  Mirrors (..),
   PublicKey (..),
-  RoleSpec (..),
-  Root (..),
-  RootRoles (..),
-  Snapshot (..),
-  Timestamp (..),
   ToJSON,
   WriteJSON,
   computeFileInfo,
@@ -54,112 +44,7 @@ import Hackage.Security.Util.Some (Some (..))
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((<.>), (</>))
 
-mkMirrors :: FilePath -> Action ()
-mkMirrors path = do
-  Just expiryTime <- getShakeExtra
-  privateKeysMirrors <- readKeys "mirrors"
-
-  trackWrite [path]
-  liftIO $
-    writeSignedJSON path privateKeysMirrors $
-      Mirrors
-        { mirrorsVersion = FileVersion 1
-        , mirrorsExpires = expiryTime
-        , mirrorsMirrors = []
-        }
-
-mkRoot :: FilePath -> Action ()
-mkRoot path = do
-  Just expiryTime <- getShakeExtra
-
-  privateKeysRoot <- readKeys "root"
-  privateKeysTarget <- readKeys "target"
-  privateKeysSnapshot <- readKeys "snapshot"
-  privateKeysTimestamp <- readKeys "timestamp"
-  privateKeysMirrors <- readKeys "mirrors"
-
-  trackWrite [path]
-  liftIO $
-    writeSignedJSON path privateKeysRoot $
-      Root
-        { rootVersion = FileVersion 1
-        , rootExpires = expiryTime
-        , rootKeys =
-            fromKeys $
-              concat
-                [ privateKeysRoot
-                , privateKeysTarget
-                , privateKeysSnapshot
-                , privateKeysTimestamp
-                , privateKeysMirrors
-                ]
-        , rootRoles =
-            RootRoles
-              { rootRolesRoot =
-                  RoleSpec
-                    { roleSpecKeys = map somePublicKey privateKeysRoot
-                    , roleSpecThreshold = KeyThreshold 2
-                    }
-              , rootRolesSnapshot =
-                  RoleSpec
-                    { roleSpecKeys = map somePublicKey privateKeysSnapshot
-                    , roleSpecThreshold = KeyThreshold 1
-                    }
-              , rootRolesTargets =
-                  RoleSpec
-                    { roleSpecKeys = map somePublicKey privateKeysTarget
-                    , roleSpecThreshold = KeyThreshold 1
-                    }
-              , rootRolesTimestamp =
-                  RoleSpec
-                    { roleSpecKeys = map somePublicKey privateKeysTimestamp
-                    , roleSpecThreshold = KeyThreshold 1
-                    }
-              , rootRolesMirrors =
-                  RoleSpec
-                    { roleSpecKeys = map somePublicKey privateKeysMirrors
-                    , roleSpecThreshold = KeyThreshold 1
-                    }
-              }
-        }
-
-mkSnapshot :: FilePath -> FilePath -> Action ()
-mkSnapshot outputDir path = do
-  Just expiryTime <- getShakeExtra
-  privateKeysSnapshot <- readKeys "snapshot"
-
-  rootInfo <- computeFileInfoSimple $ outputDir </> "root.json"
-  mirrorsInfo <- computeFileInfoSimple $ outputDir </> "mirrors.json"
-  tarInfo <- computeFileInfoSimple $ outputDir </> "01-index.tar"
-  tarGzInfo <- computeFileInfoSimple $ outputDir </> "01-index.tar.gz"
-
-  trackWrite [path]
-  liftIO $
-    writeSignedJSON path privateKeysSnapshot $
-      Snapshot
-        { snapshotVersion = FileVersion 1
-        , snapshotExpires = expiryTime
-        , snapshotInfoRoot = rootInfo
-        , snapshotInfoMirrors = mirrorsInfo
-        , snapshotInfoTar = Just tarInfo
-        , snapshotInfoTarGz = tarGzInfo
-        }
-
-mkTimestamp :: FilePath -> FilePath -> Action ()
-mkTimestamp outputDir path = do
-  Just expiryTime <- getShakeExtra
-  privateKeysTimestamp <- readKeys "timestamp"
-
-  snapshotInfo <- computeFileInfoSimple $ outputDir </> "snapshot.json"
-
-  trackWrite [path]
-  liftIO $
-    writeSignedJSON path privateKeysTimestamp $
-      Timestamp
-        { timestampVersion = FileVersion 1
-        , timestampExpires = expiryTime
-        , timestampInfoSnapshot = snapshotInfo
-        }
+import Foliage.Options
 
 computeFileInfoSimple :: FilePath -> Action FileInfo
 computeFileInfoSimple path = do

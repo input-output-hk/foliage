@@ -21,7 +21,6 @@ executable foliage
     main-is:            Main.hs
     hs-source-dirs:     app
     other-modules:
-        Codec.Archive.Tar.Entry.Orphans
         Distribution.Aeson
         Distribution.Types.Orphans
         Foliage.CmdBuild
@@ -32,7 +31,9 @@ executable foliage
         Foliage.Meta
         Foliage.Meta.Aeson
         Foliage.Options
-        Foliage.Pages
+        Foliage.Rules.Core
+        Foliage.Rules.HackageExtra
+        Foliage.Rules.Pages
         Foliage.SourceDist
         Foliage.Time
         Foliage.Utils.Aeson

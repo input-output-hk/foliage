@@ -2,7 +2,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Foliage.Time (
-  UTCTime (..),
   truncateSeconds,
 )
 where
@@ -14,7 +13,7 @@ import Data.Time.Clock.POSIX (
  )
 import Data.Time.Compat ()
 import Data.Time.Format.ISO8601 (iso8601ParseM, iso8601Show)
-import Development.Shake.Classes (Binary (get, put))
+import Development.Shake.Classes (Binary (..))
 
 instance Binary UTCTime where
   get = iso8601ParseM =<< get

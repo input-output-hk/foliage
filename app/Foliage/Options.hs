@@ -15,10 +15,10 @@ where
 import Data.Bifunctor (Bifunctor (..))
 import Data.Char qualified as Char
 import Data.List (uncons)
+import Data.Time (UTCTime)
 import Data.Time.Format.ISO8601 (iso8601ParseM)
 import Development.Shake (Verbosity (..))
 import Development.Shake.Classes (Binary, Hashable, NFData)
-import Foliage.Time
 import GHC.Generics
 import Options.Applicative
 import Text.Read (readMaybe)

@@ -37,19 +37,22 @@ import Control.Monad (void)
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Ord (Down (Down))
+import GHC.Generics (Generic)
+
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Time (UTCTime)
 import Data.Time.LocalTime (utc, utcToZonedTime, zonedTimeToUTC)
 import Development.Shake.Classes (Binary, Hashable, NFData)
-import Distribution.Aeson ()
-import Distribution.Types.Orphans ()
-import Foliage.Time (UTCTime)
-import GHC.Generics (Generic)
 import Network.URI (URI (..), nullURI, parseURI)
-import Network.URI.Orphans ()
 import System.FilePath ((</>))
 import Toml (TomlCodec, (.=))
 import Toml qualified
+
+import Distribution.Aeson ()
+import Distribution.Types.Orphans ()
+import Foliage.Time ()
+import Network.URI.Orphans ()
 
 newtype GitHubRepo = GitHubRepo {unGitHubRepo :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
