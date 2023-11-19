@@ -84,7 +84,7 @@ timestamp = 2022-03-29T06:19:50+00:00
 github = { repo = "Company-XYZ/packageA", rev = "e76fdc753e660dfa615af6c8b6a2ad9ddf6afe70" }
 ```
 
-*Note*: Rather than `github = ` one che use the more generic `url = `, e.g.
+*Note*: Rather than `github = `, choose the more generic `url = `, e.g.
 
 ```toml
 url = "https://hackage.haskell.org/package/shake-0.19.6/shake-0.19.6.tar.gz"
