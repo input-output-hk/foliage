@@ -91,7 +91,7 @@ url = "https://hackage.haskell.org/package/shake-0.19.6/shake-0.19.6.tar.gz"
 ```
 
 :information_source: Although the `timestamp` field in the package source metadata is
-optional, it is highly reccomended if you intend your repository users to
+optional, it is highly recommended if you intend your repository users to
 be able to use cabal's `index-state` functionality. Adding a timestamp
 every time you add a package version ensures the newly created index is
 "compatible" with what the users have already fetched.
@@ -100,7 +100,7 @@ every time you add a package version ensures the newly created index is
 
 ### Adding one package
 
-It's reccomended to create a working directory first.
+It's recommended to create a working directory first.
 
 Let's add a package (say `typed-protocols-0.1.0.0` from https://github.com/input-output-hk/ouroboros-network/tree/master/typed-protocols, at commit hash fa10cb4eef1e7d3e095cec3c2bb1210774b7e5fa).
 
