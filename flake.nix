@@ -5,9 +5,6 @@
   inputs = {
     nixpkgs.follows = "haskell-nix/nixpkgs-unstable";
     haskell-nix.url = "github:input-output-hk/haskell.nix";
-    haskell-nix.inputs.hackage.follows = "hackage-nix";
-    hackage-nix.url = "github:input-output-hk/hackage.nix";
-    hackage-nix.flake = false;
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -16,8 +13,7 @@
       systems = [
         "x86_64-linux"
         "x86_64-darwin"
-        # TODO switch back on when ci.iog.io has builders for aarch64-linux
-        # "aarch64-linux"
+        "aarch64-linux"
         "aarch64-darwin"
       ];
     in
@@ -39,43 +35,45 @@
             haskell-language-server = "latest";
             fourmolu = "0.14.0.0";
           };
+
+          modules = [{
+            # Wrap executables with the needed dependencies in PATH. See #71.
+            packages.foliage.postInstall = ''
+              for exe in $(find $out/bin -type f -executable); do
+                wrapProgram "$exe" \
+                    --prefix PATH : ${with pkgs; lib.makeBinPath [ coreutils curl gnutar gitMinimal patch ]}
+              done
+            '';
+          }];
         };
 
         flake = project.flake (
           lib.attrsets.optionalAttrs (system == "x86_64-linux")
             { crossPlatforms = p: [ p.musl64 ]; }
         );
-
-        # Wrap the foliage executable with the needed dependencies in PATH.
-        # See #71.
-        wrapExe = drv:
-          pkgs.runCommand "foliage"
-            {
-              nativeBuildInputs = [ pkgs.makeWrapper ];
-            } ''
-            mkdir -p $out/bin
-            makeWrapper ${drv}/bin/foliage $out/bin/foliage \
-                --prefix PATH : ${with pkgs; lib.makeBinPath [ curl patch ]}:$out/bin
-          '';
-
       in
-
       flake // {
         inherit project;
 
-        # This is way too much boilerplate. I only want the default package to
-        # be the main exe (package or app) and "static" the static version on
-        # the systems where it is available.
+        apps =
+          flake.apps
+          // { default = flake.apps."foliage:exe:foliage"; }
+          # Expose the derivation for a static executable as "static"
+          // lib.attrsets.optionalAttrs (system == "x86_64-linux")
+            { static = flake.apps."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+          // lib.attrsets.optionalAttrs (system == "aarch64-linux")
+            { static = flake.apps."aarch64-multiplatform-musl:foliage:exe:foliage"; }
+        ;
 
-        apps = { default = flake.apps."foliage:exe:foliage"; }
-        // lib.attrsets.optionalAttrs (system == "x86_64-linux")
-          { static = wrapExe flake.apps."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
-        // lib.attrsets.optionalAttrs (system == "aarch64-linux")
-          { static = wrapExe flake.apps."aarch64-multiplatform-musl:foliage:exe:foliage"; };
+        packages =
+          flake.packages
+          // { default = flake.packages."foliage:exe:foliage"; }
 
-        packages = { default = flake.packages."foliage:exe:foliage"; }
-        // lib.attrsets.optionalAttrs (system == "x86_64-linux")
-          { static = flake.packages."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+          # Expose the derivation for a static executable as "static"
+          // lib.attrsets.optionalAttrs (system == "x86_64-linux")
+            { static = flake.packages."x86_64-unknown-linux-musl:foliage:exe:foliage"; }
+          // lib.attrsets.optionalAttrs (system == "aarch64-linux")
+            { static = flake.packages."aarch64-multiplatform-musl:foliage:exe:foliage"; }
         ;
       }
     );
