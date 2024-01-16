@@ -1,0 +1,16 @@
+name: Nix setup
+description: Installs and configures nix and related tools
+runs:
+  using: "composite"
+  steps:
+    - uses: DeterminateSystems/nix-installer-action@v9
+      with:
+        github-token: ${{ env.GITHUB_TOKEN }}
+        extra-conf: accept-flake-config = true
+
+    - uses: DeterminateSystems/magic-nix-cache-action@v2
+
+    - uses: cachix/cachix-action@v14
+      with:
+        name: foliage
+        authToken: ${{ env.CACHIX_AUTH_TOKEN }}
