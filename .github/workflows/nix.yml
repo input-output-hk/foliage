@@ -13,20 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: DeterminateSystems/magic-nix-cache-action@v2
-
-      - uses: cachix/cachix-action@v12
-        with:
-           name: foliage
-           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
-      - run: nix develop --accept-flake-config --command fourmolu -m check .
+      - uses: ./.github/actions/nix-setup
+      - run: nix develop --command fourmolu -m check .
 
   build:
     runs-on:
@@ -34,19 +22,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: DeterminateSystems/magic-nix-cache-action@v2
-
-      - uses: cachix/cachix-action@v12
-        with:
-           name: foliage
-           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
-      - run: nix build --accept-flake-config
-
-      - run: nix build --accept-flake-config .#checks.x86_64-linux.foliage:test:foliage-test-suite
+      - uses: ./.github/actions/nix-setup
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - run: nix build
+      - run: nix build --print-build-logs .#checks.x86_64-linux.foliage:test:foliage-test-suite
