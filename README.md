@@ -90,11 +90,12 @@ github = { repo = "Company-XYZ/packageA", rev = "e76fdc753e660dfa615af6c8b6a2ad9
 url = "https://hackage.haskell.org/package/shake-0.19.6/shake-0.19.6.tar.gz"
 ```
 
-:information_source: Although the `timestamp` field in the package source metadata is
-optional, it is highly recommended if you intend your repository users to
-be able to use cabal's `index-state` functionality. Adding a timestamp
-every time you add a package version ensures the newly created index is
-"compatible" with what the users have already fetched.
+> [!IMPORTANT]
+> Although the `timestamp` field in the package source metadata is
+> optional, it is highly recommended if you intend your repository users to
+> be able to use cabal's `index-state` functionality. Adding a timestamp
+> every time you add a package version ensures the newly created index is
+> "compatible" with what the users have already fetched.
 
 # Quickstart
 
@@ -149,11 +150,12 @@ subdir = "typed-protocols"
 timestamp = 2022-03-29T06:19:50+00:00
 ```
 
-:information_source: Foliage uses the metadata timestamps to determine the
-order of the entries in `01-index`. This allows you to create an index that
-can be updated incrementally and can be used with cabal's
-[index-state](https://cabal.readthedocs.io/en/3.6/cabal-project.html?highlight=index-state#cfg-field-index-state)
-feature.
+> [!NOTE]
+> Foliage uses the metadata timestamps to determine the
+> order of the entries in `01-index`. This allows you to create an index that
+> can be updated incrementally and can be used with cabal's
+> [index-state](https://cabal.readthedocs.io/en/3.6/cabal-project.html?highlight=index-state#cfg-field-index-state)
+> feature.
 
 With the input above foliage will produce the following:
 
@@ -231,8 +233,8 @@ $ mkdir _keys
 $ echo "$KEYS" | base64 -d | tar xz -C _keys
 ```
 
-:warning: These are private keys. Don't publish them along with your
-repository!
+> [!WARNING]
+> These are private keys. Don't publish them along with your repository!
 
 # Revisions
 
@@ -261,9 +263,10 @@ in the source tree.
 Revisions are independent of patches, a patched cabal file will be subject
 to revisions just like the original cabal file.
 
-:warning: It is not possible to "apply a timestamp" to a patch. A patch
-changes the content of the source distribution and the repository can only
-provide one source distribution for a given package name and version.
+> [!IMPORTANT]
+> It is not possible to "apply a timestamp" to a patch. A patch changes the
+> content of the source distribution and the repository can only
+> provide one source distribution for a given package name and version.
 
 # New package versions
 
