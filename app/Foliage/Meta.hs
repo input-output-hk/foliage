@@ -33,6 +33,8 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (void)
+import Control.Monad.State (modify)
+import Data.HashMap.Strict qualified as HashMap
 import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Ord (Down (Down))
@@ -141,7 +143,7 @@ data PackageVersionSpec = PackageVersionSpec
 sourceMetaCodec :: TomlCodec PackageVersionSpec
 sourceMetaCodec =
   PackageVersionSpec
-    <$> Toml.dioptional (timeCodec "timestamp")
+    <$> optionalTimeCodec "timestamp"
       .= packageVersionTimestamp
     <*> packageSourceCodec
       .= packageVersionSource
@@ -204,3 +206,38 @@ withDefault :: (Eq a) => a -> TomlCodec a -> TomlCodec a
 withDefault d c = (fromMaybe d <$> Toml.dioptional c) .= f
  where
   f a = if a == d then Nothing else Just a
+
+{- | Codec for a maybe-missing time value.
+
+Note this is different from dioptional timeCodec. With dioptional timeCodec,
+if the user writes
+    timestamp = '2022-08-22T10:38:45Z'
+rather then
+    timestamp = 2022-08-22T10:38:45Z
+the timestamp will parse as Nothing because it won't match the zoneTime
+type and it is not an error because it is optional.
+
+We use a handrolled version of match (matchMaybe) to make it work.
+
+See discussions at
+ 1. https://github.com/input-output-hk/foliage/issues/11
+ 2. https://github.com/input-output-hk/foliage/pull/57
+ 3. https://github.com/kowainik/tomland/issues/223
+-}
+optionalTimeCodec :: Toml.Key -> TomlCodec (Maybe UTCTime)
+optionalTimeCodec key =
+  Toml.dimap (fmap $ utcToZonedTime utc) (fmap zonedTimeToUTC) $ matchMaybe Toml._ZonedTime key
+
+matchMaybe :: forall a. Toml.TomlBiMap a Toml.AnyValue -> Toml.Key -> TomlCodec (Maybe a)
+matchMaybe bimap key = Toml.Codec input output
+ where
+  input :: Toml.TomlEnv (Maybe a)
+  input toml = case HashMap.lookup key (Toml.tomlPairs toml) of
+    Nothing -> pure Nothing
+    Just anyVal -> pure <$> Toml.whenLeftBiMapError key (Toml.backward bimap anyVal) pure
+
+  output :: Maybe a -> Toml.TomlState (Maybe a)
+  output Nothing = pure Nothing
+  output (Just a) = do
+    anyVal <- Toml.eitherToTomlState $ Toml.forward bimap a
+    Just a <$ modify (Toml.insertKeyAnyVal key anyVal)

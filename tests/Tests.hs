@@ -52,4 +52,9 @@ main = do
 
             step "Running checks"
             doesFileExist "_repo/foliage/packages.json" @? "foliage/packages.json does not exist"
+      , ---
+        testCaseSteps "timecodec" $ \step ->
+          inTemporaryDirectoryWithFixture "tests/fixtures/timecodec" $ do
+            step "Building repository"
+            callCommand "foliage build"
       ]
