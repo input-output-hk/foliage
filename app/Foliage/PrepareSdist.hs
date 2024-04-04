@@ -10,6 +10,7 @@ where
 
 import Control.Monad (when)
 import Crypto.Hash.SHA256 qualified as SHA256
+import Data.Base16.Types (extractBase16)
 import Data.Binary qualified as Binary
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16
@@ -110,4 +111,4 @@ readFileHashValue :: FilePath -> IO BS.ByteString
 readFileHashValue = fmap SHA256.hash . BS.readFile
 
 showHashValue :: BS.ByteString -> [Char]
-showHashValue = T.unpack . encodeBase16
+showHashValue = T.unpack . extractBase16 . encodeBase16
