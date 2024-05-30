@@ -113,7 +113,7 @@ buildAction
 
             -- all revised cabal files, with their timestamp
             revcf <- for (zip [1 :: Int ..] cabalFileRevisions) $ \(revNum, (timestamp, path)) -> do
-              copyFileChanged cabalFilePath (outputDir </> "package" </> prettyShow pkgId </> "revision" </> show revNum <.> "cabal")
+              copyFileChanged path (outputDir </> "package" </> prettyShow pkgId </> "revision" </> show revNum <.> "cabal")
               prepareIndexPkgCabal pkgId timestamp path
 
             -- current version of the cabal file (after the revisions, if any)
