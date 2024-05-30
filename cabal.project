@@ -1,6 +1,6 @@
 packages: .
 index-state: 2023-09-10T21:31:08Z
-with-compiler: ghc-9.4.7
+with-compiler: ghc-9.4.8
 
 tests: True
 test-show-details: direct
