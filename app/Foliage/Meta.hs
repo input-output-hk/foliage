@@ -24,7 +24,9 @@ module Foliage.Meta (
   pattern URISource,
   pattern GitHubSource,
   GitHubRepo (..),
+  gitHubRepoToString,
   GitHubRev (..),
+  gitHubRevToString,
   UTCTime,
   latestRevisionNumber,
   packageVersionSourceToUri,
@@ -53,8 +55,16 @@ import Toml qualified
 newtype GitHubRepo = GitHubRepo {unGitHubRepo :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
 
+gitHubRepoToString :: GitHubRepo -> String
+gitHubRepoToString =
+  T.unpack . unGitHubRepo
+
 newtype GitHubRev = GitHubRev {unGitHubRev :: Text}
   deriving (Show, Eq, Binary, Hashable, NFData) via Text
+
+gitHubRevToString :: GitHubRev -> String
+gitHubRevToString =
+  T.unpack . unGitHubRev
 
 data PackageVersionSource
   = URISource
