@@ -28,12 +28,12 @@
 
         project = pkgs.haskell-nix.cabalProject' {
           src = ./.;
-          compiler-nix-name = "ghc967";
+          compiler-nix-name = "ghc984";
           shell.tools = {
             cabal = "latest";
             hlint = "latest";
             haskell-language-server = "latest";
-            fourmolu = "0.14.0.0";
+            fourmolu = "0.19.0.1";
           };
 
           modules = [{

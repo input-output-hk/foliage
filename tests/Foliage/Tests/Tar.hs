@@ -1,7 +1,7 @@
 module Foliage.Tests.Tar where
 
 import Codec.Archive.Tar qualified as Tar
-import Codec.Archive.Tar.Entry (Entry (..))
+import Codec.Archive.Tar.Entry (Entry)
 import Codec.Archive.Tar.Index (TarIndexEntry (..))
 import Codec.Archive.Tar.Index qualified as Tar
 import Control.Monad (when)
