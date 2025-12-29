@@ -113,10 +113,10 @@ isCabalFile
     , Tar.entryContent = Tar.NormalFile contents _
     , Tar.entryTime = posixSecondsToUTCTime . fromIntegral -> time
     }
-    | ".cabal" `isSuffixOf` path =
-        let [pkgName, pkgVersion, _] = splitDirectories path
-            Just name = simpleParsec pkgName
-            Just version = simpleParsec pkgVersion
-            packageId = PackageIdentifier name version
-         in Just (packageId, contents, time)
+    | ".cabal" `isSuffixOf` path
+    , [pkgName, pkgVersion, _] <- splitDirectories path
+    , Just name <- simpleParsec pkgName
+    , Just version <- simpleParsec pkgVersion
+    , packageId <- PackageIdentifier name version =
+        Just (packageId, contents, time)
 isCabalFile _ = Nothing
