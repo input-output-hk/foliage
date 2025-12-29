@@ -150,7 +150,7 @@ makePackageVersionPage outputDir PreparedPackageVersion{pkgId, pkgTimestamp, pkg
       renderMustache packageVersionPageTemplate $
         object
           [ "pkgVersionSource" .= pkgVersionSource
-          , "cabalFileRevisions" .= map (revisionTimestamp . fst) cabalFileRevisions
+          , "cabalFileRevisions" .= map fst cabalFileRevisions
           , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
           , "pkgTimestamp" .= pkgTimestamp
           , "pkgVersionDeprecated" .= pkgVersionIsDeprecated
