@@ -1,7 +1,7 @@
 cabal-version:      3.8
 name:               foliage
 description:        Foliage is a tool to create custom Haskell package repositories, in a fully reproducible way.
-version:            0.6.1.0
+version:            0.6.1.1
 maintainer:         andrea@andreabedini.com
 author:             Andrea Bedini
 license:            MIT
