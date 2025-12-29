@@ -27,7 +27,7 @@ import Development.Shake (Action, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
 import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
-import Foliage.Meta (PackageVersionSource)
+import Foliage.Meta (PackageVersionSource, RevisionSpec (..))
 import Foliage.Meta.Aeson ()
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
@@ -83,7 +83,7 @@ makeAllPackagesPage currentTime outputDir packageVersions =
                       , allPackagesPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
                       , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
                       , allPackagesPageEntrySource = pkgVersionSource
-                      , allPackagesPageEntryLatestRevisionTimestamp = fst <$> listToMaybe cabalFileRevisions
+                      , allPackagesPageEntryLatestRevisionTimestamp = revisionTimestamp . fst <$> listToMaybe cabalFileRevisions
                       }
                 )
         )
@@ -135,7 +135,7 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
                   , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
                   , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
                   }
-              | (revisionTimestamp, _) <- cabalFileRevisions
+              | (RevisionSpec{revisionTimestamp}, _) <- cabalFileRevisions
               ]
       )
       packageVersions
@@ -150,7 +150,7 @@ makePackageVersionPage outputDir PreparedPackageVersion{pkgId, pkgTimestamp, pkg
       renderMustache packageVersionPageTemplate $
         object
           [ "pkgVersionSource" .= pkgVersionSource
-          , "cabalFileRevisions" .= map fst cabalFileRevisions
+          , "cabalFileRevisions" .= map (revisionTimestamp . fst) cabalFileRevisions
           , "pkgDesc" .= jsonGenericPackageDescription pkgDesc
           , "pkgTimestamp" .= pkgTimestamp
           , "pkgVersionDeprecated" .= pkgVersionIsDeprecated

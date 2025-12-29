@@ -52,7 +52,7 @@ data PreparedPackageVersion = PreparedPackageVersion
   , sdistPath :: FilePath
   , cabalFilePath :: FilePath
   , originalCabalFilePath :: FilePath
-  , cabalFileRevisions :: [(UTCTime, FilePath)]
+  , cabalFileRevisions :: [(RevisionSpec, FilePath)]
   }
 
 -- @andreabedini comments:
@@ -190,8 +190,8 @@ preparePackageVersion inputDir metaFile = do
   let cabalFileRevisions =
         sortOn
           Down
-          [ (revisionTimestamp, cabalFileRevisionPath revisionNumber)
-          | RevisionSpec{revisionTimestamp, revisionNumber} <- packageVersionRevisions pkgSpec
+          [ (revision, cabalFileRevisionPath revisionNumber)
+          | revision@RevisionSpec{revisionNumber} <- packageVersionRevisions pkgSpec
           ]
 
   let pkgVersionDeprecationChanges =
