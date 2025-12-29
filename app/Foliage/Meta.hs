@@ -176,9 +176,10 @@ revisionMetaCodec =
 data DeprecationSpec = DeprecationSpec
   { deprecationTimestamp :: UTCTime
   , deprecationIsDeprecated :: Bool
-  -- ^ 'True' means the package version has been deprecated
-  --   'False' means the package version has been undeprecated
-  --   FIXME: we should consider something better than 'Bool'
+  {- ^ 'True' means the package version has been deprecated
+  'False' means the package version has been undeprecated
+  FIXME: we should consider something better than 'Bool'
+  -}
   }
   deriving (Show, Eq, Generic, Ord)
   deriving anyclass (Binary, Hashable, NFData)

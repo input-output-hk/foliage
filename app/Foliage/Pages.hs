@@ -130,11 +130,11 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
             }
             -- list of revisions
             : [ AllPackageVersionsPageEntryRevision
-                { allPackageVersionsPageEntryPkgId = pkgId
-                , allPackageVersionsPageEntryTimestamp = revisionTimestamp
-                , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
-                }
+                  { allPackageVersionsPageEntryPkgId = pkgId
+                  , allPackageVersionsPageEntryTimestamp = revisionTimestamp
+                  , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                  , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
+                  }
               | (revisionTimestamp, _) <- cabalFileRevisions
               ]
       )
