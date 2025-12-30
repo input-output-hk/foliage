@@ -23,6 +23,7 @@ import Development.Shake.Rule
 import Distribution.Client.SrcDist (packageDirToSdist)
 import Distribution.Package (packageId)
 import Distribution.Simple.PackageDescription (readGenericPackageDescription)
+import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta ()
@@ -92,7 +93,7 @@ addPrepareSdistRule outputDirRoot = addBuiltinRule noLint noIdentity run
                 ]
 
     traced "cabal sdist" $ do
-      gpd <- readGenericPackageDescription Verbosity.normal (srcDir </> cabalFile)
+      gpd <- readGenericPackageDescription Verbosity.normal Nothing (makeSymbolicPath $ srcDir </> cabalFile)
       let pkgId = packageId gpd
           packagePath = repoLayoutPkgTarGz hackageRepoLayout pkgId
           path = toFilePath $ anchorRepoPathLocally outputDirRoot packagePath
