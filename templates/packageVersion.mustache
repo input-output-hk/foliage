@@ -82,7 +82,7 @@
       <dt class="col-sm-3">Revisions</dt>
       <dd class="col-sm-9">
         {{#cabalFileRevisions}}
-        <p>{{.}}</p>
+        <p><span class="fw-bold">r{{revisionNumber}}:</span> {{revisionTimestamp}}</p>
         {{/cabalFileRevisions}}
         {{^cabalFileRevisions}}
         <p>None</p>

@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 
-import Codec.Archive.Tar.Entry (Entry (..))
+import Codec.Archive.Tar.Entry (entryTime)
 import Foliage.Tests.Tar
 import Foliage.Tests.Utils
 import System.Directory

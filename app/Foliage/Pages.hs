@@ -27,7 +27,7 @@ import Development.Shake (Action, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
 import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
 import Distribution.Pretty (prettyShow)
-import Foliage.Meta (PackageVersionSource)
+import Foliage.Meta (PackageVersionSource, RevisionSpec (..))
 import Foliage.Meta.Aeson ()
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
 import Foliage.Utils.Aeson (MyAesonEncoding (..))
@@ -83,7 +83,7 @@ makeAllPackagesPage currentTime outputDir packageVersions =
                       , allPackagesPageEntryTimestamp = fromMaybe currentTime pkgTimestamp
                       , allPackagesPageEntryTimestampPosix = utcTimeToPOSIXSeconds (fromMaybe currentTime pkgTimestamp)
                       , allPackagesPageEntrySource = pkgVersionSource
-                      , allPackagesPageEntryLatestRevisionTimestamp = fst <$> listToMaybe cabalFileRevisions
+                      , allPackagesPageEntryLatestRevisionTimestamp = revisionTimestamp . fst <$> listToMaybe cabalFileRevisions
                       }
                 )
         )
@@ -130,12 +130,12 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
             }
             -- list of revisions
             : [ AllPackageVersionsPageEntryRevision
-                { allPackageVersionsPageEntryPkgId = pkgId
-                , allPackageVersionsPageEntryTimestamp = revisionTimestamp
-                , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
-                , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
-                }
-              | (revisionTimestamp, _) <- cabalFileRevisions
+                  { allPackageVersionsPageEntryPkgId = pkgId
+                  , allPackageVersionsPageEntryTimestamp = revisionTimestamp
+                  , allPackageVersionsPageEntryTimestampPosix = utcTimeToPOSIXSeconds revisionTimestamp
+                  , allPackageVersionsPageEntryDeprecated = pkgVersionIsDeprecated
+                  }
+              | (RevisionSpec{revisionTimestamp}, _) <- cabalFileRevisions
               ]
       )
       packageVersions

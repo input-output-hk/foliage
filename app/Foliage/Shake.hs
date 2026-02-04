@@ -11,6 +11,7 @@ import Development.Shake
 import Development.Shake.FilePath
 import Distribution.Simple.PackageDescription
 import Distribution.Types.GenericPackageDescription
+import Distribution.Utils.Path (makeSymbolicPath)
 import Distribution.Verbosity qualified as Verbosity
 import Foliage.HackageSecurity
 import Foliage.Meta
@@ -36,4 +37,4 @@ readPackageVersionSpec' fp = do
 readGenericPackageDescription' :: FilePath -> Action GenericPackageDescription
 readGenericPackageDescription' fp = do
   need [fp]
-  liftIO $ readGenericPackageDescription Verbosity.silent fp
+  liftIO $ readGenericPackageDescription Verbosity.silent Nothing (makeSymbolicPath fp)

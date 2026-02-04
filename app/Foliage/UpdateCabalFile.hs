@@ -5,6 +5,7 @@ import Distribution.PackageDescription.PrettyPrint
 import Distribution.Simple.PackageDescription
 import Distribution.Types.Lens
 import Distribution.Types.Version
+import Distribution.Utils.Path
 import Distribution.Verbosity
 
 rewritePackageVersion
@@ -14,5 +15,5 @@ rewritePackageVersion
   -- ^ new version
   -> IO ()
 rewritePackageVersion cabalPath ver = do
-  gpd <- readGenericPackageDescription normal cabalPath
+  gpd <- readGenericPackageDescription normal Nothing (makeSymbolicPath cabalPath)
   writeGenericPackageDescription cabalPath (set (packageDescription . package . pkgVersion) ver gpd)

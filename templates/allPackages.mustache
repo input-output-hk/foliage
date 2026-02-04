@@ -56,12 +56,12 @@
               </dl>
             </td>
             <td class="col-sm-3">
-              {{#allPackagesPageEntryRevision}}
-              Last revision at {{revisionTimestamp}}
-              {{/allPackagesPageEntryRevision}}
-              {{^allPackagesPageEntryRevision}}
+              {{#allPackagesPageEntryLatestRevisionTimestamp}}
+              Last revision at {{.}}
+              {{/allPackagesPageEntryLatestRevisionTimestamp}}
+              {{^allPackagesPageEntryLatestRevisionTimestamp}}
               No revision
-              {{/allPackagesPageEntryRevision}}
+              {{/allPackagesPageEntryLatestRevisionTimestamp}}
             </td>
           </tr>
         {{/packages}}

@@ -309,7 +309,7 @@ deriving via String instance ToJSON Token'
 
 deriving via String instance ToJSON FilePathNT
 
-deriving via String instance ToJSON CompatFilePath
+deriving via ViaUnpack CompatDataDir instance ToJSON CompatDataDir
 
 deriving via ViaUnpack CompatLicenseFile instance ToJSON CompatLicenseFile
 
@@ -325,7 +325,11 @@ deriving via (ViaPretty SpecLicense) instance ToJSON SpecLicense
 
 deriving via (ViaUnpack (List sep b a)) instance (ToJSON a) => ToJSON (List sep b a)
 
-deriving via (ViaPretty (SymbolicPath from to)) instance ToJSON (SymbolicPath from to)
+deriving via (ViaPretty (SymbolicPathX abs from to)) instance ToJSON (SymbolicPathX abs from to)
+
+deriving via (ViaPretty (SymbolicPathNT from to)) instance ToJSON (SymbolicPathNT from to)
+
+deriving via (ViaPretty (RelativePathNT from to)) instance ToJSON (RelativePathNT from to)
 
 deriving via (ViaPretty BuildType) instance ToJSON BuildType
 
