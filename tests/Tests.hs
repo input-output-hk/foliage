@@ -36,6 +36,15 @@ main = do
                 Just entry -> do
                   entryTime entry @?= 1648534790
       , ---
+        testCaseSteps "git submodules" $ \step ->
+          inTemporaryDirectoryWithFixture "tests/fixtures/git-submodule" $ do
+            step "Building repository"
+            callCommand "foliage build"
+
+            doesFileExist "_cache/git/cardano-scaling/foliage-test-with-submodule/README.md" @? "Missing working copy"
+            doesFileExist "_cache/foliage-test-with-submodule/1.0.0/README.md" @? "Missing packaged version"
+            doesFileExist "_cache/foliage-test-with-submodule/1.1.0/README.md" @? "Missing packaged version"
+      , ---
         testCaseSteps "accepts --no-signatures" $ \step ->
           inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
             step "Building repository"

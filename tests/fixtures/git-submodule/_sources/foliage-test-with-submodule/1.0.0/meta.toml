@@ -1,0 +1,2 @@
+timestamp = 2023-11-03T17:35:22+00:00
+github = { repo = "cardano-scaling/foliage-test-with-submodule", rev = "db5874494ee5bac3fa8fee07d5806fcec27a2f4e" }

@@ -15,9 +15,9 @@ import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.FetchURL (fetchURL)
+import Foliage.GitClone (gitClone)
 import Foliage.Meta
 import Foliage.UpdateCabalFile (rewritePackageVersion)
-import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
 import Network.URI (URI (..))
 import System.Directory qualified as IO
@@ -70,8 +70,8 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             tarballPath <- fetchURL uri
             extractFromTarball tarballPath mSubdir srcDir
           GitHubSource repo rev mSubdir -> do
-            tarballPath <- fetchURL (githubRepoTarballUrl repo rev)
-            extractFromTarball tarballPath mSubdir srcDir
+            repoDir <- gitClone repo
+            copyGitWorktree repoDir rev mSubdir srcDir
 
         let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
         hasPatches <- doesDirectoryExist patchesDir
@@ -117,16 +117,29 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
           applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
           srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
 
-      cmd_
-        [ "cp"
-        , -- copy directories recursively
-          "--recursive"
-        , -- treat DEST as a normal file
-          "--no-target-directory"
-        , -- always follow symbolic links in SOURCE
-          "--dereference"
-        , -- SOURCE
-          srcDir
-        , -- DEST
-          outDir
-        ]
+      copyDirectoryContents srcDir outDir
+
+-- | Copy package source from a git repository using 'git worktree'.
+copyGitWorktree :: FilePath -> GitHubRev -> Maybe FilePath -> FilePath -> Action ()
+copyGitWorktree repoDir rev mSubdir outDir = do
+  withTempDir $ \tmpDir -> do
+    command_ [Cwd repoDir] "git" ["worktree", "add", tmpDir, gitHubRevToString rev]
+    command_ [Cwd tmpDir] "git" ["submodule", "update", "--init"]
+    let packageDir = maybe tmpDir (tmpDir </>) mSubdir
+    copyDirectoryContents packageDir outDir
+    command_ [Cwd repoDir] "git" ["worktree", "prune"]
+
+-- | Copy all contents from one directory to another.
+copyDirectoryContents :: FilePath -> FilePath -> Action ()
+copyDirectoryContents source destination =
+  cmd_
+    [ "cp"
+    , -- copy directories recursively
+      "--recursive"
+    , -- treat DEST as a normal file
+      "--no-target-directory"
+    , -- always follow symbolic links in SOURCE
+      "--dereference"
+    , source
+    , destination
+    ]
