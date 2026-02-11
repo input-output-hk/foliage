@@ -41,7 +41,10 @@ cmdBuild buildOptions = do
   outputDirRoot <- makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
   shake opts $
     do
-      addFetchURLRule cacheDir
+      -- Cap concurrent downloads to avoid overwhelming upstream servers (e.g. GitHub 502s)
+      -- when running with high parallelism (-j 0). Non-network tasks are unaffected.
+      downloadResource <- newResource "downloads" 20
+      addFetchURLRule cacheDir downloadResource
       addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
       addPrepareSdistRule outputDirRoot
       phony "buildAction" (buildAction buildOptions)

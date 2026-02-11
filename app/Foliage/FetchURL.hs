@@ -36,8 +36,8 @@ type instance RuleResult FetchURL = FilePath
 fetchURL :: URI -> Action FilePath
 fetchURL = apply1 . FetchURL
 
-addFetchURLRule :: FilePath -> Rules ()
-addFetchURLRule cacheDir = addBuiltinRule noLint noIdentity run
+addFetchURLRule :: FilePath -> Resource -> Rules ()
+addFetchURLRule cacheDir downloadResource = addBuiltinRule noLint noIdentity run
  where
   run :: BuiltinRun FetchURL FilePath
   run (FetchURL uri) old _mode = do
@@ -56,11 +56,14 @@ addFetchURLRule cacheDir = addBuiltinRule noLint noIdentity run
     -- parse etag from store
     let oldETag = fromMaybe BS.empty old
 
+    -- Limit concurrent downloads to avoid overwhelming the server (e.g. GitHub 502s
+    -- under high parallelism with -j 0). Non-network tasks still run at full parallelism.
     newETag <-
-      withTempFile $ \etagFile -> do
-        liftIO $ createDirectoryIfMissing True (takeDirectory path)
-        liftIO $ BS.writeFile etagFile oldETag
-        actionRetry 5 $ runCurl uri path etagFile
+      withResource downloadResource 1 $
+        withTempFile $ \etagFile -> do
+          liftIO $ createDirectoryIfMissing True (takeDirectory path)
+          liftIO $ BS.writeFile etagFile oldETag
+          actionRetry 5 $ runCurl uri path etagFile
 
     let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
     return $ RunResult{runChanged = changed, runStore = newETag, runValue = path}
@@ -97,6 +100,12 @@ runCurl uri path etagFile = do
       -- option will make curl redo the request on the new place.
       -- NOTE: This is needed because github always replies with a redirect
       "--location"
+    , -- Retry on transient HTTP errors (408, 429, 500, 502, 503, 504)
+      -- with exponential backoff (1s, 2s, 4s)
+      "--retry"
+    , "3"
+    , -- Also retry on connection refused (transient network issues)
+      "--retry-connrefused"
     , -- This  option  makes  a conditional HTTP request for the specific ETag read from the
       -- given file by sending a custom If-None-Match header using the stored ETag.
       -- For correct results, make sure that the specified file contains only a single line
