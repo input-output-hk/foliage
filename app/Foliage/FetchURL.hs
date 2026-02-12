@@ -36,8 +36,8 @@ type instance RuleResult FetchURL = FilePath
 fetchURL :: URI -> Action FilePath
 fetchURL = apply1 . FetchURL
 
-addFetchURLRule :: FilePath -> Resource -> Rules ()
-addFetchURLRule cacheDir downloadResource = addBuiltinRule noLint noIdentity run
+addFetchURLRule :: FilePath -> Resource -> Int -> Rules ()
+addFetchURLRule cacheDir downloadResource maxRetries = addBuiltinRule noLint noIdentity run
  where
   run :: BuiltinRun FetchURL FilePath
   run (FetchURL uri) old _mode = do
@@ -63,13 +63,13 @@ addFetchURLRule cacheDir downloadResource = addBuiltinRule noLint noIdentity run
         withTempFile $ \etagFile -> do
           liftIO $ createDirectoryIfMissing True (takeDirectory path)
           liftIO $ BS.writeFile etagFile oldETag
-          actionRetry 5 $ runCurl uri path etagFile
+          actionRetry 5 $ runCurl maxRetries uri path etagFile
 
     let changed = if newETag == oldETag then ChangedRecomputeSame else ChangedRecomputeDiff
     return $ RunResult{runChanged = changed, runStore = newETag, runValue = path}
 
-runCurl :: URI -> String -> String -> Action ETag
-runCurl uri path etagFile = do
+runCurl :: Int -> URI -> String -> String -> Action ETag
+runCurl maxRetries uri path etagFile = do
   (Exit exitCode, Stdout out) <-
     traced "curl" $ cmd Shell curlInvocation
   case exitCode of
@@ -101,9 +101,9 @@ runCurl uri path etagFile = do
       -- NOTE: This is needed because github always replies with a redirect
       "--location"
     , -- Retry on transient HTTP errors (408, 429, 500, 502, 503, 504)
-      -- with exponential backoff (1s, 2s, 4s)
+      -- with exponential backoff
       "--retry"
-    , "3"
+    , show maxRetries
     , -- Also retry on connection refused (transient network issues)
       "--retry-connrefused"
     , -- This  option  makes  a conditional HTTP request for the specific ETag read from the
