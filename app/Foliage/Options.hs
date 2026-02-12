@@ -60,6 +60,8 @@ data BuildOptions = BuildOptions
   , buildOptsNumThreads :: Int
   , buildOptsWriteMetadata :: Bool
   , buildOptsVerbosity :: Verbosity
+  , buildOptsMaxRetries :: Int
+  , buildOptsMaxDownloads :: Int
   }
 
 buildCommand :: Parser Command
@@ -120,6 +122,22 @@ buildCommand =
                   <> help "What level of messages should be printed out [silent, error, warn, info, verbose, diagnostic]"
                   <> showDefaultWith (toLowercase . show)
                   <> value Info
+              )
+            <*> option
+              auto
+              ( long "max-retries"
+                  <> metavar "N"
+                  <> help "Maximum number of curl retries per download (uses exponential backoff)"
+                  <> showDefault
+                  <> value 7
+              )
+            <*> option
+              auto
+              ( long "max-concurrent-downloads"
+                  <> metavar "N"
+                  <> help "Maximum number of concurrent downloads"
+                  <> showDefault
+                  <> value 10
               )
         )
  where

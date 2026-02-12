@@ -43,8 +43,8 @@ cmdBuild buildOptions = do
     do
       -- Cap concurrent downloads to avoid overwhelming upstream servers (e.g. GitHub 502s)
       -- when running with high parallelism (-j 0). Non-network tasks are unaffected.
-      downloadResource <- newResource "downloads" 20
-      addFetchURLRule cacheDir downloadResource
+      downloadResource <- newResource "downloads" (buildOptsMaxDownloads buildOptions)
+      addFetchURLRule cacheDir downloadResource (buildOptsMaxRetries buildOptions)
       addPrepareSourceRule (buildOptsInputDir buildOptions) cacheDir
       addPrepareSdistRule outputDirRoot
       phony "buildAction" (buildAction buildOptions)
