@@ -5,7 +5,7 @@
 
 module Foliage.PrepareSource where
 
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Development.Shake
@@ -16,7 +16,6 @@ import Distribution.Types.PackageId
 import Distribution.Types.PackageName (unPackageName)
 import Foliage.FetchURL (fetchURL)
 import Foliage.Meta
-import Foliage.UpdateCabalFile (rewritePackageVersion)
 import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
 import Network.URI (URI (..))
@@ -83,9 +82,14 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             cmd_ Shell (Cwd srcDir) (FileStdin patch) "patch -p1"
 
         when packageVersionForce $ do
+          let revisionZero = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> "0" <.> "cabal"
+          hasRevisionZero <- doesFileExist revisionZero
+          unless hasRevisionZero $
+            error $
+              "force-version requires a modified Cabal file in " ++ revisionZero
           let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
-          putInfo $ "Updating version in cabal file" ++ cabalFilePath
-          liftIO $ rewritePackageVersion cabalFilePath pkgVersion
+          putInfo $ "Copying revision 0 of cabal file to " ++ cabalFilePath
+          copyFileChanged revisionZero cabalFilePath
 
         return $ RunResult ChangedRecomputeDiff BS.empty srcDir
 
