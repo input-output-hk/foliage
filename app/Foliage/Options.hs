@@ -26,6 +26,7 @@ data Command
   = CreateKeys FilePath
   | Build BuildOptions
   | ImportIndex ImportIndexOptions
+  | RewriteVersion String FilePath
 
 parseCommand :: IO Command
 parseCommand =
@@ -40,10 +41,12 @@ parseCommand =
 
 optionsParser :: Parser Command
 optionsParser =
-  hsubparser $
-    command "create-keys" (info createKeysCommand (progDesc "Create TUF keys"))
-      <> command "build" (info buildCommand (progDesc "Build repository"))
-      <> command "import-index" (info importIndexCommand (progDesc "Import from Hackage index"))
+  hsubparser . mconcat $
+    [ command "create-keys" (info createKeysCommand (progDesc "Create TUF keys"))
+    , command "build" (info buildCommand (progDesc "Build repository"))
+    , command "import-index" (info importIndexCommand (progDesc "Import from Hackage index"))
+    , command "rewrite-version" (info rewriteVersionCommand (progDesc "Rewrite the version in a Cabal file"))
+    ]
 
 data SignOptions
   = SignOptsSignWithKeys FilePath
@@ -191,6 +194,12 @@ importIndexCommand =
                 )
             )
       )
+
+rewriteVersionCommand :: Parser Command
+rewriteVersionCommand =
+  RewriteVersion
+    <$> strArgument (metavar "VERSION" <> help "New version")
+    <*> strArgument (metavar "FILE" <> help "Cabal file")
 
 toUppercase :: [Char] -> String
 toUppercase s =

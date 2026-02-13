@@ -5,6 +5,7 @@ module Main where
 import Foliage.CmdBuild
 import Foliage.CmdCreateKeys
 import Foliage.CmdImportIndex
+import Foliage.CmdRewriteVersion
 import Foliage.Options
 import Main.Utf8 (withUtf8)
 
@@ -15,3 +16,4 @@ main = withUtf8 $ do
     CreateKeys path -> cmdCreateKeys path
     Build buildOpts -> cmdBuild buildOpts
     ImportIndex importIndexOpts -> cmdImportIndex importIndexOpts
+    RewriteVersion version file -> cmdRewriteVersion version file
