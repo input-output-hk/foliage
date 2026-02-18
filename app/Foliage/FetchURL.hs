@@ -107,34 +107,31 @@ runCurl maxRetries uri path etagFile = do
     traced "curl" $ cmd Shell (curlInvocation tmpPath)
   case exitCode of
     ExitSuccess -> do
-      -- Debug: check file size and first few bytes
-      debugInfo <- liftIO $ do
-        exists <- System.Directory.doesFileExist tmpPath
-        if not exists
-          then return "File doesn't exist"
-          else do
-            content <- BS.readFile tmpPath
-            let size = BS.length content
-            let firstBytes = BS.take 10 content
-            return $ "Size: " ++ show size ++ " bytes, First bytes: " ++ show firstBytes
+      -- Check if curl actually downloaded content (or just got 304 Not Modified)
+      fileExists <- liftIO $ System.Directory.doesFileExist tmpPath
 
-      -- Validate the downloaded file before moving to cache
-      validGzip <- liftIO $ validateGzipFile tmpPath
-      if validGzip
+      if not fileExists
         then do
-          -- Atomic move to cache location (all-or-nothing semantics)
-          liftIO $ renameFile tmpPath path
+          -- 304 Not Modified - cached file is still valid
+          -- Return existing ETag (no change needed)
           liftIO $ BS.readFile etagFile
         else do
-          -- Clean up temp file before failing
-          liftIO $ System.Directory.removeFile tmpPath
-          error $
-            unlines
-              [ "Downloaded file failed gzip integrity check: " ++ show uri
-              , debugInfo
-              , "The file is corrupted or not a valid gzip archive."
-              , "This may indicate a network error or server issue."
-              ]
+          -- New content downloaded - validate and move to cache
+          validGzip <- liftIO $ validateGzipFile tmpPath
+          if validGzip
+            then do
+              -- Atomic move to cache location (all-or-nothing semantics)
+              liftIO $ renameFile tmpPath path
+              liftIO $ BS.readFile etagFile
+            else do
+              -- Clean up temp file before failing
+              liftIO $ System.Directory.removeFile tmpPath
+              error $
+                unlines
+                  [ "Downloaded file failed gzip integrity check: " ++ show uri
+                  , "The file is corrupted or not a valid gzip archive."
+                  , "This may indicate a network error or server issue."
+                  ]
     ExitFailure c -> do
       -- Clean up temp file before failing
       liftIO $ do

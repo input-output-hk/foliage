@@ -38,11 +38,13 @@ import System.Directory (createDirectoryIfMissing, removePathForcibly)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
-  -- Clean cache if requested
+  -- Clean cache if requested (respects verbosity settings)
   when (buildOptsCleanCache buildOptions) $ do
-    putStrLn $ "🧹 Cleaning cache directory: " ++ cacheDir
+    when (buildOptsVerbosity buildOptions >= Info) $ do
+      putStrLn $ "Cleaning cache directory: " ++ cacheDir
     removePathForcibly cacheDir
-    putStrLn "✓ Cache cleaned successfully"
+    when (buildOptsVerbosity buildOptions >= Info) $ do
+      putStrLn "Cache cleaned successfully"
 
   outputDirRoot <- makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
   shake opts $

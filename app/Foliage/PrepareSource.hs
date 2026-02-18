@@ -10,7 +10,6 @@ import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Development.Shake
 import Development.Shake.Classes
-import Development.Shake.Command (Exit (..))
 import Development.Shake.Rule
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
@@ -66,13 +65,16 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
         case packageVersionSource of
           URISource (URI{uriScheme, uriPath}) mSubdir | uriScheme == "file:" -> do
             tarballPath <- liftIO $ IO.makeAbsolute uriPath
-            extractFromTarball tarballPath mSubdir srcDir
+            -- Pass False to indicate this is NOT a cached download
+            extractFromTarball tarballPath mSubdir srcDir False
           URISource uri mSubdir -> do
             tarballPath <- fetchURL uri
-            extractFromTarball tarballPath mSubdir srcDir
+            -- Pass True to indicate this IS a cached download
+            extractFromTarball tarballPath mSubdir srcDir True
           GitHubSource repo rev mSubdir -> do
             tarballPath <- fetchURL (githubRepoTarballUrl repo rev)
-            extractFromTarball tarballPath mSubdir srcDir
+            -- Pass True to indicate this IS a cached download
+            extractFromTarball tarballPath mSubdir srcDir True
 
         let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
         hasPatches <- doesDirectoryExist patchesDir
@@ -95,7 +97,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
 
         return $ RunResult ChangedRecomputeDiff BS.empty srcDir
 
-  extractFromTarball tarballPath mSubdir outDir = do
+  extractFromTarball tarballPath mSubdir outDir isFromCache = do
     withTempDir $ \tmpDir -> do
       -- Use cmd instead of cmd_ to capture exit code and handle errors properly
       Exit exitCode <-
@@ -133,21 +135,21 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
               "--recursive"
             , -- treat DEST as a normal file
               "--no-target-directory"
-            , -- always follow symbolic links in SOURCE
-              "--dereference"
             , -- SOURCE
               srcDir
             , -- DEST
               outDir
             ]
         ExitFailure code -> do
-          -- Tar extraction failed - the cached tarball is corrupted.
-          -- Delete it to force re-download on next build.
-          liftIO $ IO.removePathForcibly tarballPath
+          -- Only delete cached files, not user-provided file: sources
+          when isFromCache $ do
+            liftIO $ IO.removePathForcibly tarballPath
+
           error $
             unlines
               [ "Tar extraction failed with exit code " ++ show code
               , "Tarball: " ++ tarballPath
-              , "The corrupted cache file has been removed."
-              , "Please run the build again to re-download the file."
+              , if isFromCache
+                  then "The corrupted cache file has been removed. Please run the build again to re-download the file."
+                  else "User-provided tarball may be corrupted."
               ]
