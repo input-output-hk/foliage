@@ -10,7 +10,6 @@ module Foliage.Meta (
   packageVersionSource,
   packageVersionRevisions,
   packageVersionDeprecations,
-  packageVersionForce,
   PackageVersionSpec (PackageVersionSpec),
   readPackageVersionSpec,
   writePackageVersionSpec,
@@ -132,8 +131,6 @@ data PackageVersionSpec = PackageVersionSpec
   -- ^ revisions
   , packageVersionDeprecations :: [DeprecationSpec]
   -- ^ deprecations
-  , packageVersionForce :: Bool
-  -- ^ force version
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (Binary, Hashable, NFData)
@@ -149,8 +146,6 @@ sourceMetaCodec =
       .= packageVersionRevisions
     <*> Toml.list deprecationMetaCodec "deprecations"
       .= packageVersionDeprecations
-    <*> withDefault False (Toml.bool "force-version")
-      .= packageVersionForce
 
 readPackageVersionSpec :: FilePath -> IO PackageVersionSpec
 readPackageVersionSpec = Toml.decodeFile sourceMetaCodec

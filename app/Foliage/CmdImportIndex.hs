@@ -66,7 +66,6 @@ importIndex f (Tar.Next e es) m =
                       , packageVersionTimestamp = Just time
                       , packageVersionRevisions = []
                       , packageVersionDeprecations = []
-                      , packageVersionForce = False
                       }
               -- Existing package, new revision
               go (Just sm) = do

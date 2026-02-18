@@ -5,7 +5,7 @@
 
 module Foliage.PrepareSource where
 
-import Control.Monad (unless, when)
+import Control.Monad (when)
 import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Development.Shake
@@ -44,7 +44,7 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
   run :: PrepareSourceRule -> Maybe BS.ByteString -> RunMode -> Action (RunResult FilePath)
   run (PrepareSourceRule pkgId pkgMeta) _old mode = do
     let PackageIdentifier{pkgName, pkgVersion} = pkgId
-    let PackageVersionSpec{packageVersionSource, packageVersionForce} = pkgMeta
+    let PackageVersionSpec{packageVersionSource} = pkgMeta
     let srcDir = cacheDir </> unPackageName pkgName </> prettyShow pkgVersion
 
     case mode of
@@ -81,12 +81,10 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             let patch = patchesDir </> patchfile
             cmd_ Shell (Cwd srcDir) (FileStdin patch) "patch -p1"
 
-        when packageVersionForce $ do
-          let revisionZero = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> "0" <.> "cabal"
-          hasRevisionZero <- doesFileExist revisionZero
-          unless hasRevisionZero $
-            error $
-              "force-version requires a modified Cabal file in " ++ revisionZero
+        let revisionZero = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "revisions" </> "0" <.> "cabal"
+        hasRevisionZero <- doesFileExist revisionZero
+
+        when hasRevisionZero $ do
           let cabalFilePath = srcDir </> unPackageName pkgName <.> "cabal"
           putInfo $ "Copying revision 0 of cabal file to " ++ cabalFilePath
           copyFileChanged revisionZero cabalFilePath

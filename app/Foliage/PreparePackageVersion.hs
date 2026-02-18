@@ -7,7 +7,6 @@ module Foliage.PreparePackageVersion (
     pkgId,
     pkgTimestamp,
     pkgVersionSource,
-    pkgVersionForce,
     pkgVersionIsDeprecated,
     pkgVersionDeprecationChanges,
     pkgDesc,
@@ -45,7 +44,6 @@ data PreparedPackageVersion = PreparedPackageVersion
   { pkgId :: PackageId
   , pkgTimestamp :: Maybe UTCTime
   , pkgVersionSource :: PackageVersionSource
-  , pkgVersionForce :: Bool
   , pkgVersionIsDeprecated :: Bool
   , pkgVersionDeprecationChanges :: [(UTCTime, Bool)]
   , pkgDesc :: GenericPackageDescription
@@ -208,7 +206,6 @@ preparePackageVersion inputDir metaFile = do
       { pkgId
       , pkgTimestamp = packageVersionTimestamp pkgSpec
       , pkgVersionSource = packageVersionSource pkgSpec
-      , pkgVersionForce = packageVersionForce pkgSpec
       , pkgVersionDeprecationChanges
       , pkgVersionIsDeprecated
       , pkgDesc
