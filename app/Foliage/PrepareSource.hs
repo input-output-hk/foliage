@@ -10,7 +10,7 @@ import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Development.Shake
 import Development.Shake.Classes
-import Development.Shake.Command (Exit(..))
+import Development.Shake.Command (Exit (..))
 import Development.Shake.Rule
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
@@ -21,7 +21,7 @@ import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
 import Network.URI (URI (..))
 import System.Directory qualified as IO
-import System.Exit (ExitCode(ExitSuccess, ExitFailure))
+import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.FilePath ((<.>), (</>))
 
 data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionSpec
@@ -140,7 +140,6 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
             , -- DEST
               outDir
             ]
-
         ExitFailure code -> do
           -- Tar extraction failed - the cached tarball is corrupted.
           -- Delete it to force re-download on next build.

@@ -8,7 +8,7 @@ module Foliage.FetchURL (
 )
 where
 
-import Control.Exception (handle, IOException)
+import Control.Exception (IOException, handle)
 import Control.Monad
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
@@ -22,10 +22,10 @@ import Development.Shake.Rule
 import GHC.Generics (Generic)
 import Network.URI (URI (..), URIAuth (..), pathSegments)
 import Network.URI.Orphans ()
-import System.Directory qualified as System.Directory
 import System.Directory (createDirectoryIfMissing, renameFile)
+import System.Directory qualified as System.Directory
 import System.Exit (ExitCode (..))
-import System.IO (withFile, IOMode(ReadMode))
+import System.IO (IOMode (ReadMode), withFile)
 
 newtype FetchURL = FetchURL URI
   deriving (Eq)
@@ -39,12 +39,13 @@ type instance RuleResult FetchURL = FilePath
 fetchURL :: URI -> Action FilePath
 fetchURL = apply1 . FetchURL
 
--- | Validate that a file is a valid gzip archive by checking magic bytes.
--- Returns False for non-existent files, too-small files, or invalid headers.
---
--- All gzip files start with magic bytes 0x1f 0x8b per RFC 1952 section 2.3.1.
--- This is a fast check (only reads 2 bytes) that catches corrupted/truncated files
--- before they cause tar extraction errors.
+{- | Validate that a file is a valid gzip archive by checking magic bytes.
+Returns False for non-existent files, too-small files, or invalid headers.
+
+All gzip files start with magic bytes 0x1f 0x8b per RFC 1952 section 2.3.1.
+This is a fast check (only reads 2 bytes) that catches corrupted/truncated files
+before they cause tar extraction errors.
+-}
 validateGzipFile :: FilePath -> IO Bool
 validateGzipFile path = handle (\(_ :: IOException) -> return False) $ do
   fileExists <- System.Directory.doesFileExist path
