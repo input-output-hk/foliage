@@ -34,10 +34,16 @@ import Foliage.PrepareSource (addPrepareSourceRule)
 import Foliage.Shake
 import Foliage.Time qualified as Time
 import Hackage.Security.Util.Path (castRoot, toFilePath)
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, removePathForcibly)
 
 cmdBuild :: BuildOptions -> IO ()
 cmdBuild buildOptions = do
+  -- Clean cache if requested
+  when (buildOptsCleanCache buildOptions) $ do
+    putStrLn $ "🧹 Cleaning cache directory: " ++ cacheDir
+    removePathForcibly cacheDir
+    putStrLn "✓ Cache cleaned successfully"
+
   outputDirRoot <- makeAbsolute (fromFilePath (buildOptsOutputDir buildOptions))
   shake opts $
     do

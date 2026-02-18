@@ -8,6 +8,7 @@ module Foliage.FetchURL (
 )
 where
 
+import Control.Exception (handle, IOException)
 import Control.Monad
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
@@ -21,8 +22,10 @@ import Development.Shake.Rule
 import GHC.Generics (Generic)
 import Network.URI (URI (..), URIAuth (..), pathSegments)
 import Network.URI.Orphans ()
-import System.Directory (createDirectoryIfMissing)
+import System.Directory qualified as System.Directory
+import System.Directory (createDirectoryIfMissing, renameFile)
 import System.Exit (ExitCode (..))
+import System.IO (withFile, IOMode(ReadMode))
 
 newtype FetchURL = FetchURL URI
   deriving (Eq)
@@ -35,6 +38,23 @@ type instance RuleResult FetchURL = FilePath
 
 fetchURL :: URI -> Action FilePath
 fetchURL = apply1 . FetchURL
+
+-- | Validate that a file is a valid gzip archive by checking magic bytes.
+-- Returns False for non-existent files, too-small files, or invalid headers.
+--
+-- All gzip files start with magic bytes 0x1f 0x8b per RFC 1952 section 2.3.1.
+-- This is a fast check (only reads 2 bytes) that catches corrupted/truncated files
+-- before they cause tar extraction errors.
+validateGzipFile :: FilePath -> IO Bool
+validateGzipFile path = handle (\(_ :: IOException) -> return False) $ do
+  fileExists <- System.Directory.doesFileExist path
+  if not fileExists
+    then return False
+    else withFile path ReadMode $ \h -> do
+      header <- BS.hGet h 2
+      -- gzip magic number: 0x1f 0x8b
+      -- See: https://www.ietf.org/rfc/rfc1952.txt section 2.3.1
+      return (BS.length header == 2 && header == BS.pack [0x1f, 0x8b])
 
 addFetchURLRule :: FilePath -> Resource -> Int -> Rules ()
 addFetchURLRule cacheDir downloadResource maxRetries = addBuiltinRule noLint noIdentity run
@@ -70,25 +90,69 @@ addFetchURLRule cacheDir downloadResource maxRetries = addBuiltinRule noLint noI
 
 runCurl :: Int -> URI -> String -> String -> Action ETag
 runCurl maxRetries uri path etagFile = do
+  -- Use atomic download pattern: download to temp file, validate, then move to cache.
+  -- This prevents partial/corrupted downloads from persisting in the cache.
+  -- Create temp file alongside the target path to ensure it's on the same filesystem
+  -- (required for atomic rename)
+  liftIO $ createDirectoryIfMissing True (takeDirectory path)
+  let tmpPath = path ++ ".tmp"
+
+  -- Ensure temp file doesn't exist from previous run
+  liftIO $ do
+    exists <- System.Directory.doesFileExist tmpPath
+    when exists $ System.Directory.removeFile tmpPath
+
   (Exit exitCode, Stdout out) <-
-    traced "curl" $ cmd Shell curlInvocation
+    traced "curl" $ cmd Shell (curlInvocation tmpPath)
   case exitCode of
-    ExitSuccess -> liftIO $ BS.readFile etagFile
-    ExitFailure c -> do
-      -- We show the curl exit code only if we cannot parse curl's write-out.
-      -- If we can parse it, we can craft a better error message.
-      case Aeson.eitherDecode out :: Either String CurlWriteOut of
-        Left err ->
+    ExitSuccess -> do
+      -- Debug: check file size and first few bytes
+      debugInfo <- liftIO $ do
+        exists <- System.Directory.doesFileExist tmpPath
+        if not exists
+          then return "File doesn't exist"
+          else do
+            content <- BS.readFile tmpPath
+            let size = BS.length content
+            let firstBytes = BS.take 10 content
+            return $ "Size: " ++ show size ++ " bytes, First bytes: " ++ show firstBytes
+
+      -- Validate the downloaded file before moving to cache
+      validGzip <- liftIO $ validateGzipFile tmpPath
+      if validGzip
+        then do
+          -- Atomic move to cache location (all-or-nothing semantics)
+          liftIO $ renameFile tmpPath path
+          liftIO $ BS.readFile etagFile
+        else do
+          -- Clean up temp file before failing
+          liftIO $ System.Directory.removeFile tmpPath
           error $
             unlines
-              [ "curl failed with return code " ++ show c ++ " while fetching " ++ show uri
-              , "Error while reading curl diagnostic: " ++ err
+              [ "Downloaded file failed gzip integrity check: " ++ show uri
+              , debugInfo
+              , "The file is corrupted or not a valid gzip archive."
+              , "This may indicate a network error or server issue."
               ]
-        -- We can consider displaying different messages based on some fields (e.g. response_code)
-        Right CurlWriteOut{errormsg} ->
-          error $ unlines ["calling", unwords curlInvocation, "failed with", errormsg]
+    ExitFailure c -> do
+      -- Clean up temp file before failing
+      liftIO $ do
+        exists <- System.Directory.doesFileExist tmpPath
+        when exists $ System.Directory.removeFile tmpPath
+        -- We show the curl exit code only if we cannot parse curl's write-out.
+        -- If we can parse it, we can craft a better error message.
+        case Aeson.eitherDecode out :: Either String CurlWriteOut of
+          Left err ->
+            error $
+              unlines
+                [ "curl failed with return code " ++ show c ++ " while fetching " ++ show uri
+                , "Error while reading curl diagnostic: " ++ err
+                ]
+          -- We can consider displaying different messages based on some fields (e.g. response_code)
+          Right CurlWriteOut{errormsg} ->
+            error $ unlines ["calling", unwords (curlInvocation tmpPath), "failed with", errormsg]
  where
-  curlInvocation =
+  curlInvocation tmpPath =
     [ "curl"
     , -- Silent or quiet mode. Do not show progress meter or error messages. Makes Curl mute.
       "--silent"
@@ -117,8 +181,9 @@ runCurl maxRetries uri path etagFile = do
       "--etag-save"
     , etagFile
     , -- Write output to <file> instead of stdout.
+      -- NOTE: Download to temporary file first, then atomically move to cache after validation
       "--output"
-    , path
+    , tmpPath
     , "--write-out"
     , "%{json}"
     , -- URL to fetch

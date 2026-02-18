@@ -10,6 +10,7 @@ import Data.ByteString qualified as BS
 import Data.Foldable (for_)
 import Development.Shake
 import Development.Shake.Classes
+import Development.Shake.Command (Exit(..))
 import Development.Shake.Rule
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId
@@ -20,6 +21,7 @@ import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
 import Network.URI (URI (..))
 import System.Directory qualified as IO
+import System.Exit (ExitCode(ExitSuccess, ExitFailure))
 import System.FilePath ((<.>), (</>))
 
 data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionSpec
@@ -95,42 +97,58 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
 
   extractFromTarball tarballPath mSubdir outDir = do
     withTempDir $ \tmpDir -> do
-      cmd_
-        [ "tar"
-        , -- Extract files from an archive
-          "--extract"
-        , -- Filter the archive through gunzip
-          "--gunzip"
-        , -- Use archive file
-          "--file"
-        , tarballPath
-        , -- Change to DIR before performing any operations
-          "--directory"
-        , tmpDir
-        ]
+      -- Use cmd instead of cmd_ to capture exit code and handle errors properly
+      Exit exitCode <-
+        cmd
+          [ "tar"
+          , -- Extract files from an archive
+            "--extract"
+          , -- Filter the archive through gunzip
+            "--gunzip"
+          , -- Use archive file
+            "--file"
+          , tarballPath
+          , -- Change to DIR before performing any operations
+            "--directory"
+          , tmpDir
+          ]
 
-      ls <-
-        -- remove "." and ".."
-        filter (not . all (== '.'))
-          -- NOTE: Don't let shake look into tmpDir! it will cause
-          -- unnecessary rework because tmpDir is always new
-          <$> liftIO (IO.getDirectoryContents tmpDir)
+      case exitCode of
+        ExitSuccess -> do
+          ls <-
+            -- remove "." and ".."
+            filter (not . all (== '.'))
+              -- NOTE: Don't let shake look into tmpDir! it will cause
+              -- unnecessary rework because tmpDir is always new
+              <$> liftIO (IO.getDirectoryContents tmpDir)
 
-      -- Special treatment of top-level directory: we remove it
-      let byPassSingleTopLevelDir = case ls of [l] -> (</> l); _ -> id
-          applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
-          srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
+          -- Special treatment of top-level directory: we remove it
+          let byPassSingleTopLevelDir = case ls of [l] -> (</> l); _ -> id
+              applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
+              srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
 
-      cmd_
-        [ "cp"
-        , -- copy directories recursively
-          "--recursive"
-        , -- treat DEST as a normal file
-          "--no-target-directory"
-        , -- always follow symbolic links in SOURCE
-          "--dereference"
-        , -- SOURCE
-          srcDir
-        , -- DEST
-          outDir
-        ]
+          cmd_
+            [ "cp"
+            , -- copy directories recursively
+              "--recursive"
+            , -- treat DEST as a normal file
+              "--no-target-directory"
+            , -- always follow symbolic links in SOURCE
+              "--dereference"
+            , -- SOURCE
+              srcDir
+            , -- DEST
+              outDir
+            ]
+
+        ExitFailure code -> do
+          -- Tar extraction failed - the cached tarball is corrupted.
+          -- Delete it to force re-download on next build.
+          liftIO $ IO.removePathForcibly tarballPath
+          error $
+            unlines
+              [ "Tar extraction failed with exit code " ++ show code
+              , "Tarball: " ++ tarballPath
+              , "The corrupted cache file has been removed."
+              , "Please run the build again to re-download the file."
+              ]
