@@ -62,6 +62,7 @@ data BuildOptions = BuildOptions
   , buildOptsVerbosity :: Verbosity
   , buildOptsMaxRetries :: Int
   , buildOptsMaxDownloads :: Int
+  , buildOptsCleanCache :: Bool
   }
 
 buildCommand :: Parser Command
@@ -138,6 +139,10 @@ buildCommand =
                   <> help "Maximum number of concurrent downloads"
                   <> showDefault
                   <> value 10
+              )
+            <*> switch
+              ( long "clean-cache"
+                  <> help "Clean the download cache before building"
               )
         )
  where

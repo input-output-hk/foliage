@@ -20,6 +20,7 @@ import Foliage.Utils.GitHub (githubRepoTarballUrl)
 import GHC.Generics
 import Network.URI (URI (..))
 import System.Directory qualified as IO
+import System.Exit (ExitCode (ExitFailure, ExitSuccess))
 import System.FilePath ((<.>), (</>))
 
 data PrepareSourceRule = PrepareSourceRule PackageId PackageVersionSpec
@@ -64,13 +65,16 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
         case packageVersionSource of
           URISource (URI{uriScheme, uriPath}) mSubdir | uriScheme == "file:" -> do
             tarballPath <- liftIO $ IO.makeAbsolute uriPath
-            extractFromTarball tarballPath mSubdir srcDir
+            -- Pass False to indicate this is NOT a cached download
+            extractFromTarball tarballPath mSubdir srcDir False
           URISource uri mSubdir -> do
             tarballPath <- fetchURL uri
-            extractFromTarball tarballPath mSubdir srcDir
+            -- Pass True to indicate this IS a cached download
+            extractFromTarball tarballPath mSubdir srcDir True
           GitHubSource repo rev mSubdir -> do
             tarballPath <- fetchURL (githubRepoTarballUrl repo rev)
-            extractFromTarball tarballPath mSubdir srcDir
+            -- Pass True to indicate this IS a cached download
+            extractFromTarball tarballPath mSubdir srcDir True
 
         let patchesDir = inputDir </> unPackageName pkgName </> prettyShow pkgVersion </> "patches"
         hasPatches <- doesDirectoryExist patchesDir
@@ -93,44 +97,59 @@ addPrepareSourceRule inputDir cacheDir = addBuiltinRule noLint noIdentity run
 
         return $ RunResult ChangedRecomputeDiff BS.empty srcDir
 
-  extractFromTarball tarballPath mSubdir outDir = do
+  extractFromTarball tarballPath mSubdir outDir isFromCache = do
     withTempDir $ \tmpDir -> do
-      cmd_
-        [ "tar"
-        , -- Extract files from an archive
-          "--extract"
-        , -- Filter the archive through gunzip
-          "--gunzip"
-        , -- Use archive file
-          "--file"
-        , tarballPath
-        , -- Change to DIR before performing any operations
-          "--directory"
-        , tmpDir
-        ]
+      -- Use cmd instead of cmd_ to capture exit code and handle errors properly
+      Exit exitCode <-
+        cmd
+          [ "tar"
+          , -- Extract files from an archive
+            "--extract"
+          , -- Filter the archive through gunzip
+            "--gunzip"
+          , -- Use archive file
+            "--file"
+          , tarballPath
+          , -- Change to DIR before performing any operations
+            "--directory"
+          , tmpDir
+          ]
 
-      ls <-
-        -- remove "." and ".."
-        filter (not . all (== '.'))
-          -- NOTE: Don't let shake look into tmpDir! it will cause
-          -- unnecessary rework because tmpDir is always new
-          <$> liftIO (IO.getDirectoryContents tmpDir)
+      case exitCode of
+        ExitSuccess -> do
+          ls <-
+            -- remove "." and ".."
+            filter (not . all (== '.'))
+              -- NOTE: Don't let shake look into tmpDir! it will cause
+              -- unnecessary rework because tmpDir is always new
+              <$> liftIO (IO.getDirectoryContents tmpDir)
 
-      -- Special treatment of top-level directory: we remove it
-      let byPassSingleTopLevelDir = case ls of [l] -> (</> l); _ -> id
-          applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
-          srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
+          -- Special treatment of top-level directory: we remove it
+          let byPassSingleTopLevelDir = case ls of [l] -> (</> l); _ -> id
+              applyMSubdir = case mSubdir of Just s -> (</> s); _ -> id
+              srcDir = applyMSubdir $ byPassSingleTopLevelDir tmpDir
 
-      cmd_
-        [ "cp"
-        , -- copy directories recursively
-          "--recursive"
-        , -- treat DEST as a normal file
-          "--no-target-directory"
-        , -- always follow symbolic links in SOURCE
-          "--dereference"
-        , -- SOURCE
-          srcDir
-        , -- DEST
-          outDir
-        ]
+          cmd_
+            [ "cp"
+            , -- copy directories recursively
+              "--recursive"
+            , -- treat DEST as a normal file
+              "--no-target-directory"
+            , -- SOURCE
+              srcDir
+            , -- DEST
+              outDir
+            ]
+        ExitFailure code -> do
+          -- Only delete cached files, not user-provided file: sources
+          when isFromCache $ do
+            liftIO $ IO.removePathForcibly tarballPath
+
+          error $
+            unlines
+              [ "Tar extraction failed with exit code " ++ show code
+              , "Tarball: " ++ tarballPath
+              , if isFromCache
+                  then "The corrupted cache file has been removed. Please run the build again to re-download the file."
+                  else "User-provided tarball may be corrupted."
+              ]

@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 import Codec.Archive.Tar.Entry (entryTime)
+import Foliage.Tests.FetchURL
 import Foliage.Tests.Tar
 import Foliage.Tests.Utils
 import System.Directory
@@ -15,7 +16,9 @@ main = do
   defaultMain $
     testGroup
       "foliage-test-suite"
-      [ testCaseSteps "one" $ \step ->
+      [ fetchURLTests
+      , ---
+        testCaseSteps "one" $ \step ->
           inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
             step "Building repository"
             callCommand "foliage build"
@@ -52,4 +55,18 @@ main = do
 
             step "Running checks"
             doesFileExist "_repo/foliage/packages.json" @? "foliage/packages.json does not exist"
+      , ---
+        testCaseSteps "accepts --clean-cache" $ \step ->
+          inTemporaryDirectoryWithFixture "tests/fixtures/simple" $ do
+            step "Building repository (first time)"
+            callCommand "foliage build"
+            doesDirectoryExist "_cache" @? "_cache should exist after first build"
+
+            step "Building with --clean-cache"
+            callCommand "foliage build --clean-cache"
+
+            step "Running checks"
+            doesDirectoryExist "_cache" @? "_cache should exist after rebuild"
+            -- The cache should have been cleaned and recreated
+            doesDirectoryExist "_repo" @? "_repo should exist"
       ]
