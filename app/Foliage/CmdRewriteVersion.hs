@@ -2,14 +2,14 @@ module Foliage.CmdRewriteVersion (cmdRewriteVersion) where
 
 import Data.Maybe (fromMaybe)
 import Distribution.Compat.Lens (Lens', (&), (.~), (^.))
-import Distribution.PackageDescription.PrettyPrint
+import Distribution.PackageDescription.PrettyPrint (writeGenericPackageDescription)
 import Distribution.Parsec (simpleParsec)
 import Distribution.Pretty (prettyShow)
-import Distribution.Simple.PackageDescription
-import Distribution.Types.Lens
+import Distribution.Simple.PackageDescription (readGenericPackageDescription)
+import Distribution.Types.Lens (GenericPackageDescription, package, packageDescription, pkgVersion)
 import Distribution.Types.Version (Version)
-import Distribution.Utils.Path
-import Distribution.Verbosity
+import Distribution.Utils.Path (makeSymbolicPath)
+import Distribution.Verbosity (normal)
 
 cmdRewriteVersion
   :: String
