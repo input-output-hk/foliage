@@ -5,6 +5,7 @@
 module Foliage.FetchURL (
   fetchURL,
   addFetchURLRule,
+  validateGzipFile,
 )
 where
 

@@ -75,16 +75,26 @@ test-suite foliage-test-suite
   main-is:             Tests.hs
   other-modules:       Foliage.Tests.Utils
                      , Foliage.Tests.Tar
+                     , Foliage.Tests.FetchURL
+                     , Foliage.FetchURL
+                     , Network.URI.Orphans
   build-depends:       base
+                     , aeson
+                     , binary
                      , bytestring
                      , containers
                      , directory
                      , filepath
+                     , hashable
                      , network
+                     , network-uri
                      , process
+                     , shake
                      , tasty
                      , tasty-hunit
                      , tar
+                     , temporary
                      , unix
   build-tool-depends:  foliage:foliage
   hs-source-dirs:      tests
+                     , app
