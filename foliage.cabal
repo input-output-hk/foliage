@@ -26,6 +26,7 @@ executable foliage
         Foliage.CmdBuild
         Foliage.CmdCreateKeys
         Foliage.CmdImportIndex
+        Foliage.CmdRewriteVersion
         Foliage.FetchURL
         Foliage.HackageSecurity
         Foliage.Meta
@@ -37,7 +38,6 @@ executable foliage
         Foliage.PrepareSdist
         Foliage.Shake
         Foliage.Time
-        Foliage.UpdateCabalFile
         Foliage.Utils.Aeson
         Foliage.Utils.GitHub
         Network.URI.Orphans

@@ -242,7 +242,6 @@ makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
     PreparedPackageVersion
       { pkgId = PackageIdentifier{pkgName, pkgVersion}
       , pkgTimestamp
-      , pkgVersionForce
       , pkgVersionSource
       } =
       Aeson.object
@@ -250,7 +249,6 @@ makeMetadataFile outputDir packageVersions = traced "writing metadata" $ do
           , "pkg-version" Aeson..= pkgVersion
           , "url" Aeson..= packageVersionSourceToUri pkgVersionSource
           ]
-            ++ ["forced-version" Aeson..= True | pkgVersionForce]
             ++ (case pkgTimestamp of Nothing -> []; Just t -> ["timestamp" Aeson..= t])
         )
 
