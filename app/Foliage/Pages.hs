@@ -26,7 +26,6 @@ import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
 import Development.Shake (Action, traced)
 import Distribution.Aeson (jsonGenericPackageDescription)
 import Distribution.Package (PackageIdentifier (pkgName, pkgVersion))
-import Distribution.Pretty (prettyShow)
 import Foliage.Meta (PackageVersionSource, RevisionSpec (..))
 import Foliage.Meta.Aeson ()
 import Foliage.PreparePackageVersion (PreparedPackageVersion (..))
@@ -142,11 +141,12 @@ makeAllPackageVersionsPage currentTime outputDir packageVersions =
       -- sort them by timestamp
       & sortOn (Down . allPackageVersionsPageEntryTimestamp)
 
-makePackageVersionPage :: FilePath -> PreparedPackageVersion -> Action ()
-makePackageVersionPage outputDir PreparedPackageVersion{pkgId, pkgTimestamp, pkgVersionSource, pkgDesc, cabalFileRevisions, pkgVersionIsDeprecated} = do
-  traced ("webpages / package / " ++ prettyShow pkgId) $ do
-    IO.createDirectoryIfMissing True (outputDir </> "package" </> prettyShow pkgId)
-    TL.writeFile (outputDir </> "package" </> prettyShow pkgId </> "index.html") $
+makePackageVersionPage :: (PackageIdentifier -> FilePath) -> FilePath -> PreparedPackageVersion -> Action ()
+makePackageVersionPage mkPageName outputDir PreparedPackageVersion{pkgId, pkgTimestamp, pkgVersionSource, pkgDesc, cabalFileRevisions, pkgVersionIsDeprecated} = do
+  let page = mkPageName pkgId
+  traced ("webpages / package / " ++ page) $ do
+    IO.createDirectoryIfMissing True (outputDir </> "package" </> page)
+    TL.writeFile (outputDir </> "package" </> page </> "index.html") $
       renderMustache packageVersionPageTemplate $
         object
           [ "pkgVersionSource" .= pkgVersionSource
