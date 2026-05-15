@@ -39,6 +39,11 @@ main = do
             built <- BL.readFile "_repo/package/pkg-a-2.3.4.5/pkg-a.cabal"
             built @?= revised
 
+            step "Running latest package checks"
+            specificHtml <- BL.readFile "_repo/package/pkg-a-2.3.4.5/index.html"
+            latestHtml <- BL.readFile "_repo/package/pkg-a/index.html"
+            latestHtml @?= specificHtml
+
             step "Running tarball checks"
             withTarball "_repo/01-index.tar" $ \TarballAccessFn{lookupEntry} -> do
               lookupEntry "pkg-a/2.3.4.5/pkg-a.cabal" >>= \case
