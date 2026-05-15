@@ -12,9 +12,11 @@ import Data.Aeson qualified as Aeson
 import Data.Bifunctor (second)
 import Data.ByteString.Char8 qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as BL
-import Data.List (sortOn)
+import Data.Function (on)
+import Data.List (sortOn, groupBy, sortBy)
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, listToMaybe)
+import Data.Ord (comparing, Down(..))
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Traversable (for)
 import Development.Shake
@@ -102,7 +104,14 @@ buildAction
 
     makeAllPackageVersionsPage currentTime outputDir packageVersions
 
-    void $ forP packageVersions $ makePackageVersionPage outputDir
+    void $ forP packageVersions $ makePackageVersionPage prettyShow outputDir
+
+    let latestPackageVersions
+          = mapMaybe listToMaybe
+          . groupBy (on (==) $ pkgName . pkgId)
+          . sortBy (comparing (pkgName . pkgId) <> comparing (Down . pkgVersion . pkgId))
+          $ packageVersions
+    void $ forP latestPackageVersions $ makePackageVersionPage (prettyShow . packageName) outputDir
 
     when doWritePackageMeta $
       makeMetadataFile outputDir packageVersions
